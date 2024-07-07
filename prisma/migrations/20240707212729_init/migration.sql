@@ -44,7 +44,7 @@ CREATE TABLE `Cliente` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `Cliente_Empresa` (
+CREATE TABLE `cliente_empresa` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `cliente_id` INTEGER NOT NULL,
     `empresa_id` INTEGER NOT NULL,
@@ -59,7 +59,7 @@ CREATE TABLE `Factura` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `numero_factura` VARCHAR(191) NOT NULL,
     `usuario_id` INTEGER NOT NULL,
-    `cliente_empresa_id` INTEGER NOT NULL,
+    `clienteempresa_id` INTEGER NOT NULL,
     `fecha_creacion` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `fecha_modificacion` DATETIME(3) NOT NULL,
     `iva_10` DOUBLE NOT NULL,
@@ -114,16 +114,16 @@ ALTER TABLE `Usuario` ADD CONSTRAINT `Usuario_empresa_id_fkey` FOREIGN KEY (`emp
 ALTER TABLE `Usuario` ADD CONSTRAINT `Usuario_rol_id_fkey` FOREIGN KEY (`rol_id`) REFERENCES `Rol`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `Cliente_Empresa` ADD CONSTRAINT `Cliente_Empresa_cliente_id_fkey` FOREIGN KEY (`cliente_id`) REFERENCES `Cliente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `cliente_empresa` ADD CONSTRAINT `cliente_empresa_cliente_id_fkey` FOREIGN KEY (`cliente_id`) REFERENCES `Cliente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `Cliente_Empresa` ADD CONSTRAINT `Cliente_Empresa_empresa_id_fkey` FOREIGN KEY (`empresa_id`) REFERENCES `Empresa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `cliente_empresa` ADD CONSTRAINT `cliente_empresa_empresa_id_fkey` FOREIGN KEY (`empresa_id`) REFERENCES `Empresa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `Factura` ADD CONSTRAINT `Factura_usuario_id_fkey` FOREIGN KEY (`usuario_id`) REFERENCES `Usuario`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `Factura` ADD CONSTRAINT `Factura_cliente_empresa_id_fkey` FOREIGN KEY (`cliente_empresa_id`) REFERENCES `Cliente_Empresa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `Factura` ADD CONSTRAINT `Factura_clienteempresa_id_fkey` FOREIGN KEY (`clienteempresa_id`) REFERENCES `cliente_empresa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `Post` ADD CONSTRAINT `Post_authorId_fkey` FOREIGN KEY (`authorId`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;

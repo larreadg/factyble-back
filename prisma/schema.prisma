@@ -38,7 +38,7 @@ model Empresa {
   id        Int         @id @default(autoincrement())
   ruc       String  
   usuarios  Usuario[]
-  clientes  Cliente_Empresa[]
+  clientes  ClienteEmpresa[]
 }
 
 model Cliente {
@@ -49,10 +49,11 @@ model Cliente {
   estado              String     @db.VarChar(15)
   fecha_creacion      DateTime   @default(now())
   fecha_modificacion  DateTime   @updatedAt
-  empresas            Cliente_Empresa[]
+  empresas            ClienteEmpresa[]
 }
 
-model Cliente_Empresa {
+model ClienteEmpresa {
+  @@map("cliente_empresa")
   id                  Int       @id @default(autoincrement())
   cliente             Cliente   @relation(fields: [cliente_id], references: [id])
   cliente_id          Int
@@ -68,8 +69,8 @@ model Factura {
   numero_factura      String
   usuario             Usuario         @relation(fields: [usuario_id], references: [id])
   usuario_id          Int
-  cliente_empresa     Cliente_Empresa  @relation(fields: [cliente_empresa_id], references: [id])
-  cliente_empresa_id  Int
+  clienteempresa     ClienteEmpresa  @relation(fields: [clienteempresa_id], references: [id])
+  clienteempresa_id  Int
   fecha_creacion      DateTime        @default(now())
   fecha_modificacion  DateTime        @updatedAt
   iva_10              Float
