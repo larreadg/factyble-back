@@ -1,22 +1,22 @@
 const { validationResult } = require('express-validator');
-const genericoService = require('../services/genericoService');
+const usuarioService = require('../services/usuarioService');
 const Response = require('../utils/response');
 const ErrorApp = require('../utils/error');
 
-const getDatosByRuc = async (req, res) => {
+const authenticateUsuario = async (req, res) => {
 
     try {
 
         const errors = validationResult(req);
         if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, null, errors.array()));
 
-        const data = await genericoService.getDatosByRuc(req.query);
+        const data = await usuarioService.authenticateUsuario(req.body);
 
-        return res.status(200).send(Response.success(data));
+        return res.status(200).send(Response.success(data, 'Autenticación exitosa'));
 
     } catch (error) {
         
-        const { code, message } = ErrorApp.handleControllerError(error, 'Error al obtener datos del contribuyente');
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al crear usuario');
 
         return res.status(code).send(Response.error(message, code));
         
@@ -24,5 +24,5 @@ const getDatosByRuc = async (req, res) => {
 }
 
 module.exports = {
-    getDatosByRuc
+    authenticateUsuario
 }

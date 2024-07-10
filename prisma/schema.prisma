@@ -17,6 +17,7 @@ model Usuario {
   id                  Int       @id @default(autoincrement())
   nombres             String    @db.VarChar(255)
   apellidos           String    @db.VarChar(255)
+  usuario             String    @db.VarChar(50)
   email               String    @unique @db.VarChar(100)
   password            String    @db.VarChar(100)
   activo              Boolean   @default(true) @db.TinyInt
@@ -30,7 +31,10 @@ model Usuario {
 }
 
 model Rol {
-  id        Int @id @default(autoincrement())
+  id                  Int         @id @default(autoincrement())
+  nombre              String      @db.VarChar(255)
+  fecha_creacion      DateTime    @default(now())
+  fecha_modificacion  DateTime    @updatedAt
   usuarios  Usuario[]
 }
 
@@ -64,15 +68,21 @@ model ClienteEmpresa {
   facturas            Factura[]
 }
 
+enum CondicionVenta {
+  CONTADO
+  CREDITO
+}
+
 model Factura {
   id                  Int             @id @default(autoincrement())
   numero_factura      String
   usuario             Usuario         @relation(fields: [usuario_id], references: [id])
   usuario_id          Int
-  clienteempresa     ClienteEmpresa  @relation(fields: [clienteempresa_id], references: [id])
-  clienteempresa_id  Int
+  client_empresa     ClienteEmpresa  @relation(fields: [cliente_empresa_id], references: [id])
+  cliente_empresa_id  Int
   fecha_creacion      DateTime        @default(now())
   fecha_modificacion  DateTime        @updatedAt
+  condicion_venta     CondicionVenta
   iva_10              Float
   iva_5               Float
   total_exentas       Float
@@ -81,31 +91,4 @@ model Factura {
   kude                String          @db.VarChar(255)
   cdc                 String          @db.VarChar(255)
   xml                 String          @db.VarChar(255)
-}
-
-
-model Post {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  title     String   @db.VarChar(255)
-  content   String?
-  published Boolean  @default(false)
-  author    User     @relation(fields: [authorId], references: [id])
-  authorId  Int
-}
-
-model Profile {
-  id     Int     @id @default(autoincrement())
-  bio    String?
-  user   User    @relation(fields: [userId], references: [id])
-  userId Int     @unique
-}
-
-model User {
-  id      Int      @id @default(autoincrement())
-  email   String   @unique
-  name    String?
-  posts   Post[]
-  profile Profile?
 }

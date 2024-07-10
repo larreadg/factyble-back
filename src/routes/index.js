@@ -1,6 +1,6 @@
 const routes = require('express').Router();
 
-routes.use('/factura', require('./facturaRoute'));
 routes.use('/', require('./genericoRoute'));
+routes.use('/usuario', require('./usuarioRoute'));
 
 module.exports = routes;
