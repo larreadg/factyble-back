@@ -35,7 +35,7 @@ model Rol {
   nombre              String      @db.VarChar(255)
   fecha_creacion      DateTime    @default(now())
   fecha_modificacion  DateTime    @updatedAt
-  usuarios  Usuario[]
+  usuarios            Usuario[]
 }
 
 model Empresa {
@@ -78,7 +78,7 @@ model Factura {
   numero_factura      String
   usuario             Usuario         @relation(fields: [usuario_id], references: [id])
   usuario_id          Int
-  client_empresa     ClienteEmpresa  @relation(fields: [cliente_empresa_id], references: [id])
+  client_empresa     ClienteEmpresa   @relation(fields: [cliente_empresa_id], references: [id])
   cliente_empresa_id  Int
   fecha_creacion      DateTime        @default(now())
   fecha_modificacion  DateTime        @updatedAt
@@ -91,4 +91,20 @@ model Factura {
   kude                String          @db.VarChar(255)
   cdc                 String          @db.VarChar(255)
   xml                 String          @db.VarChar(255)
+  detalles            FacturaDetalle[]
+}
+
+model FacturaDetalle {
+  @@map("factura_detalle")
+  id                  Int             @id @default(autoincrement())
+  factura             Factura         @relation(fields: [id_factura], references: [id])
+  id_factura          Int             
+  cantidad            Int
+  precio_unitario     Float
+  tasa                Int
+  impuesto            Float
+  total               Float
+  descripcion         String          @db.VarChar(255)
+  fecha_creacion      DateTime        @default(now())
+  fecha_modificacion  DateTime        @updatedAt
 }

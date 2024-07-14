@@ -53,6 +53,74 @@ const authenticateUsuario = async ({ usuario, password } = {}) => {
 
 }
 
+const register = async ({ nombres, apellidos, email, usuario, password, empresaId, rolId } = {}) => {
+    const prisma = new PrismaClient();
+
+    try {
+        //Verificar usuario existente
+        const user = await prisma.usuario.findFirst({
+            where: {
+                OR: [
+                    {usuario},
+                    {email: usuario}
+                ]
+            }
+        });
+
+        if(user){
+            const message = user.usuario == usuario ? `Usuario ${usuario} ya existe` : `El email ${email} ya existe`;
+            throw new ErrorApp(message, 400);
+        }
+
+        //Verificar si existe rol y empresa
+        const rol = await prisma.rol.findFirst({
+            where: {
+                id: rolId
+            }
+        });
+
+        if(!rol) {
+            throw new ErrorApp(`Rol no existe`, 400);
+        }
+
+        const empresa = await prisma.empresa.findFirst({
+            where: {
+                id: empresaId
+            }
+        });
+
+        if(!empresa){
+            throw new ErrorApp(`Empresa no existe`, 400);
+        }
+
+        const hashedPassword = await hashPassword(password);
+
+        const newUser = await prisma.usuario.create({
+            data: {
+                nombres,
+                apellidos,
+                email,
+                usuario,
+                password: hashedPassword,
+                rol_id: rolId,
+                empresa_id: empresaId
+            },
+            
+        });
+
+        delete newUser['password'];
+
+        return newUser;
+
+    } catch (error) {
+
+        ErrorApp.handleServiceError(error, 'Error al crear usuario');
+    }finally{
+        prisma.$disconnect();
+    }
+}
+
 module.exports = {
-    authenticateUsuario
+    authenticateUsuario,
+    register
 }

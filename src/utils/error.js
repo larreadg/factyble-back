@@ -13,6 +13,10 @@ class ErrorApp extends Error {
             error.response.data.message : error.message;
             throw new ErrorApp(message, error.response.status);
         }
+
+        if(error instanceof Prisma.PrismaClientValidationError){
+            throw new ErrorApp('Error de Validación', 400);
+        }
         
         if(error instanceof ErrorApp){
             throw error;

@@ -9,4 +9,16 @@ routes.post(
     usuarioController.authenticateUsuario
 );
 
+routes.post(
+    '/register',
+    body('usuario','Parámetro usuario es requerido').isString().notEmpty(),
+    body('email').isEmail().withMessage('Parámetro email requerito'),
+    body('password', 'Parámetro password requerido').isString().notEmpty(),
+    body('nombres', 'Parámetro nombres es requerido').isString().notEmpty(),
+    body('apellidos', 'Parámetro apellidos es requerido').isString().notEmpty(),
+    body('rolId', 'Parámetro rolId es requerido').isInt(),
+    body('empresaId', 'Parámetro empresaId es requerido').isInt(),
+    usuarioController.register
+);
+
 module.exports = routes;
