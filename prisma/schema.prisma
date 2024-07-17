@@ -39,10 +39,11 @@ model Rol {
 }
 
 model Empresa {
-  id        Int         @id @default(autoincrement())
-  ruc       String  
-  usuarios  Usuario[]
-  clientes  ClienteEmpresa[]
+  id              Int         @id @default(autoincrement())
+  ruc             String
+  nombre_empresa  String
+  usuarios        Usuario[]
+  clientes        ClienteEmpresa[]
 }
 
 model Cliente {

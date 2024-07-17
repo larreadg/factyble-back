@@ -1,4 +1,4 @@
-const { PrismaClient, Prisma } = require('@prisma/client');
+const { PrismaClient } = require('@prisma/client');
 const { hashPassword, comparePassword } = require('../utils/password');
 const ErrorApp = require('../utils/error');
 const { generateToken } = require('../utils/jwt');
