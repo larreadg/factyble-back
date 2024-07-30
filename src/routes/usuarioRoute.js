@@ -11,12 +11,14 @@ routes.post(
 
 routes.post(
     '/register',
-    body('usuario','Parámetro usuario es requerido').isString().notEmpty(),
     body('email').isEmail().withMessage('Parámetro email requerito'),
     body('password', 'Parámetro password requerido').isString().notEmpty(),
     body('nombres', 'Parámetro nombres es requerido').isString().notEmpty(),
     body('apellidos', 'Parámetro apellidos es requerido').isString().notEmpty(),
-    body('rolId', 'Parámetro rolId es requerido').isInt(),
+    body('documento', 'Parámetro documento es requerido').isString().notEmpty(),
+    body('telefono', 'Parámetro telefono es requerido').isString().notEmpty(),
+    body('roles', 'Parámetro roles es requerido').isArray({min: 1}),
+    body('roles.*', 'Parámetro roles incorrecto').isInt({min: 1}),
     body('empresaId', 'Parámetro empresaId es requerido').isInt(),
     usuarioController.register
 );

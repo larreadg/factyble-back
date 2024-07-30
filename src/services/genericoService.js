@@ -1,7 +1,7 @@
 const axios = require('axios');
 const ErrorApp = require('../utils/error');
 
-const getDatosByRuc = async ({ ruc } = {}) => {
+const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
     
     try {
         const { data: { data } } = await axios({

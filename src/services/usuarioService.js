@@ -14,16 +14,17 @@ const authenticateUsuario = async ({ usuario, password } = {}) => {
     try {
         const user = await prisma.usuario.findFirst({
             where: {
-                OR: [
-                    {usuario},
-                    {email: usuario}
-                ]
+                email: usuario
             },
             include: {
-                rol: true
+                roles: {
+                    include: {
+                        rol: true
+                    }
+                }
             }
         });
-
+        
         if(!user){
             throw new ErrorApp('Error al autenticar usuario', 401);
         }
@@ -37,8 +38,9 @@ const authenticateUsuario = async ({ usuario, password } = {}) => {
         const tokenPayload = {
             id: user.id,
             email: user.email,
-            usuario: user.usuario,
-            rol: user.rol.nombre
+            documento: user.documento,
+            telefono: user.telefono,
+            roles: user.roles.map(r => r.rol.nombre)
         }
 
         const token = generateToken(tokenPayload);
@@ -53,33 +55,27 @@ const authenticateUsuario = async ({ usuario, password } = {}) => {
 
 }
 
-const register = async ({ nombres, apellidos, email, usuario, password, empresaId, rolId } = {}) => {
+const register = async ({ nombres, apellidos, email, documento, telefono, password, empresaId, roles } = {}) => {
     const prisma = new PrismaClient();
 
     try {
         //Verificar usuario existente
         const user = await prisma.usuario.findFirst({
-            where: {
-                OR: [
-                    {usuario},
-                    {email: usuario}
-                ]
-            }
+            where: {email}
         });
 
         if(user){
-            const message = user.usuario == usuario ? `Usuario ${usuario} ya existe` : `El email ${email} ya existe`;
-            throw new ErrorApp(message, 400);
+            throw new ErrorApp('El email ya está en uso', 400);
         }
 
         //Verificar si existe rol y empresa
-        const rol = await prisma.rol.findFirst({
+        const rolesData = await prisma.rol.findMany({
             where: {
-                id: rolId
+                id: {in: roles}
             }
         });
 
-        if(!rol) {
+        if(!rolesData || rolesData.length != roles.length) {
             throw new ErrorApp(`Rol no existe`, 400);
         }
 
@@ -100,20 +96,29 @@ const register = async ({ nombres, apellidos, email, usuario, password, empresaI
                 nombres,
                 apellidos,
                 email,
-                usuario,
+                documento,
+                telefono,
                 password: hashedPassword,
-                rol_id: rolId,
                 empresa_id: empresaId
             },
             
         });
-
+        
         delete newUser['password'];
+
+        //Agregar rol a usuario
+        const usuarioRolData = rolesData.map(e => ({
+            usuario_id: newUser.id,
+            rol_id: e.id
+        }));
+
+        const usuarioRol = await prisma.usuarioRol.createMany({
+            data: usuarioRolData
+        });
 
         return newUser;
 
     } catch (error) {
-
         ErrorApp.handleServiceError(error, 'Error al crear usuario');
     }finally{
         prisma.$disconnect();
