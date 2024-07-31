@@ -7,7 +7,8 @@ routes.get(
     '/buscar',
     authJwt(),
     query('ruc').notEmpty().withMessage('Parámetro ruc requerido'),
-    query('situacionTributaria').isIn(['CONTRIBUYENTE','NO_CONTRIBUYENTE','NO_DOMICILIADO']).withMessage('Parámetros válidos "CONTRIBUYENTE","NO_CONTRIBUYENTE","NO_DOMICILIADO"'),
+    query('situacionTributaria').notEmpty().withMessage('Parámetro situacionTributaria requerido')
+    .isIn(['CONTRIBUYENTE','NO_CONTRIBUYENTE','NO_DOMICILIADO']).withMessage('Parámetros válidos CONTRIBUYENTE, NO_CONTRIBUYENTE, NO_DOMICILIADO'),
     genericoController.getDatosByRuc
 );
 

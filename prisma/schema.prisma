@@ -80,6 +80,7 @@ enum SituacionTributaria {
 model Cliente {
   id                    Int                 @id @default(autoincrement())
   ruc                   String              @db.VarChar(255)
+  documento             String              @db.VarChar(255)
   dv                    Int?                @db.TinyInt
   razon_social          String?             @db.VarChar(255)
   estado                String?             @db.VarChar(15)

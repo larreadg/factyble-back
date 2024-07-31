@@ -104,7 +104,7 @@ const emitirFactura = async (datos, datosUsuario) => {
         
         
     } catch (error) {
-        console.log(error);
+        
         ErrorApp.handleServiceError(error, 'Error al crear factura');
 
     }finally{
