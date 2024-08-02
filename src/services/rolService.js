@@ -1,9 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
 const ErrorApp = require('../utils/error');
+const prisma = require('../prisma/cliente');
 
 const getRoles = async () => {
-    
-    const prisma = new PrismaClient();
 
     try {
         const roles = await prisma.rol.findMany();
@@ -12,11 +10,7 @@ const getRoles = async () => {
     } catch (error) {
         ErrorApp.handleServiceError(error, 'Error al obtener roles');
 
-    }finally{
-        prisma.$disconnect();
-
     }
-
 }
 
 module.exports = {

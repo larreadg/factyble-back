@@ -1,20 +1,26 @@
-const { PrismaClient } = require("@prisma/client");
+const dayjs = require("dayjs");
+const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
 const { calcularImpuesto } = require("../utils/facturacion");
+const generarPdf = require("../utils/generarPdf");
+const path = require('path');
+const PUBLIC_LOGOS = path.resolve(__dirname, '..', 'public/logos/');
 
 const emitirFactura = async (datos, datosUsuario) => {
-    const prisma = new PrismaClient();
 
     try {
         //Buscar datos del usuario
         const usuario = await prisma.usuario.findFirst({
-            where: {id: datosUsuario.id}
+            where: {id: datosUsuario.id},
+            include: {
+                empresa: true
+            }
         });
 
         if(!usuario){
             throw new ErrorApp('Usuario no encontrado', 404);
         }
-
+        
         //Buscar si existe cliente
         let cliente = await prisma.cliente.findFirst({
             where: {ruc: datos.ruc}
@@ -26,6 +32,9 @@ const emitirFactura = async (datos, datosUsuario) => {
                 data: {
                     ruc: datos.ruc,
                     razon_social: datos.razonSocial,
+                    documento: datos.ruc,
+                    tipo_identificacion: datos.situacionTributaria == 'CONTRIBUYENTE' ? 'RUC' : 'CEDULA',
+                    situacion_tributaria: datos.situacionTributaria,
                     dv: Number(datos.ruc.split('-')[1])
                 }
             });
@@ -54,6 +63,10 @@ const emitirFactura = async (datos, datosUsuario) => {
         //Verificar cálculos
         let total = 0;
         let totalIva = 0;
+        let totalIva5 = 0;
+        let totalIva10 = 0;
+        let totalExentas = 0;
+
         datos.items.forEach(e => {
             const impuesto = calcularImpuesto(e.cantidad, e.precioUnitario, e.tasa);
             if(Number(e.impuesto) != impuesto){
@@ -64,6 +77,15 @@ const emitirFactura = async (datos, datosUsuario) => {
                 throw new ErrorApp('Datos proporcionados incorrectos', 400);
             }
 
+            switch (e.tasa) {
+                case '0%': 
+                    totalExentas += e.impuesto
+                case '5%':
+                    totalIva5 += e.impuesto
+                default:
+                    totalIva10 += e.impuesto
+            }
+
             total += Number(e.total);
             totalIva += Number(e.impuesto);
         });
@@ -72,10 +94,13 @@ const emitirFactura = async (datos, datosUsuario) => {
             throw new ErrorApp('Datos proporcionados incorrectos', 400);
         }
 
+        //Llamar a la API de Facturación electrónica
+        const resultado = await apiFacturacionElectronica();
+        
         //Crear factura
         const factura = await prisma.factura.create({
             data: {
-                numero_factura: '',
+                numero_factura: 'nro factura',
                 usuario_id: usuario.id,
                 cliente_empresa_id: clienteEmpresa.id,
                 condicion_venta: datos.condicionVenta,
@@ -101,15 +126,41 @@ const emitirFactura = async (datos, datosUsuario) => {
         const facturaDetalle = await prisma.facturaDetalle.createMany({
             data: datosFacturaDetalle
         });
+
+        const facturaPdf = generarPdf({
+            empresaLogo: PUBLIC_LOGOS + usuario.empresa.nombre_empresa + '.png',
+            empresaRuc: usuario.empresa.ruc,
+            empresaTimbrado: usuario.empresa.timbrado,
+            empresaVigenteDesde: dayjs(usuario.empresa.vigente_desde).format('YYYY-MM-DD'),
+            empresaNombre: usuario.empresa.nombre_empresa,
+            empresaDireccion: usuario.empresa.direccion,
+            empresaTelefono: usuario.empresa.telefono,
+            empresaCiudad: usuario.empresa.ciudad,
+            empresaCorreoElectronico: usuario.empresa.email,
+            facturaId: factura.numero_factura,
+            condicionVenta: datos.condicionVenta,
+            ruc: cliente.ruc,
+            razonSocial: cliente.razon_social,
+            correoElectronico: cliente.email,
+            total: datos.total,
+            totalIva: datos.totalIva,
+            totalExentas,
+            totalIva5,
+            totalIva10,
+            moneda: 'PYG',
+            items: datos.items
+        });
         
         
     } catch (error) {
-        
+        console.log(error);
         ErrorApp.handleServiceError(error, 'Error al crear factura');
 
-    }finally{
-        prisma.$disconnect;
     }
+}
+
+const apiFacturacionElectronica = async (datos) => {
+
 }
 
 module.exports = {

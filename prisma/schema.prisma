@@ -51,12 +51,14 @@ model UsuarioRol {
 
 model Empresa {
   id                  Int             @id @default(autoincrement())
-  ruc                 String
-  nombre_empresa      String
-  direccion           String
+  ruc                 String          @db.VarChar(255)
+  nombre_empresa      String          @db.VarChar(255)
+  timbrado            String          @db.VarChar(255)
+  direccion           String          @db.VarChar(255)
+  vigente_desde       DateTime
   telefono            String          @db.VarChar(20)
   email               String          @db.VarChar(255)
-  ciudad              String?         @db.VarChar(100)
+  ciudad              String          @db.VarChar(100)
   fecha_creacion      DateTime        @default(now())
   fecha_modificacion  DateTime        @updatedAt  
   usuarios            Usuario[]

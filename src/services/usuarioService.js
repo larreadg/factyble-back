@@ -1,7 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
 const { hashPassword, comparePassword } = require('../utils/password');
 const ErrorApp = require('../utils/error');
 const { generateToken } = require('../utils/jwt');
+const prisma = require('../prisma/cliente');
 
 /**
  * @param {String} usuario
@@ -9,7 +9,6 @@ const { generateToken } = require('../utils/jwt');
  * @returns 
  */
 const authenticateUsuario = async ({ usuario, password } = {}) => {
-    const prisma = new PrismaClient();
 
     try {
         const user = await prisma.usuario.findFirst({
@@ -56,7 +55,6 @@ const authenticateUsuario = async ({ usuario, password } = {}) => {
 }
 
 const register = async ({ nombres, apellidos, email, documento, telefono, password, empresaId, roles } = {}) => {
-    const prisma = new PrismaClient();
 
     try {
         //Verificar usuario existente
@@ -120,8 +118,6 @@ const register = async ({ nombres, apellidos, email, documento, telefono, passwo
 
     } catch (error) {
         ErrorApp.handleServiceError(error, 'Error al crear usuario');
-    }finally{
-        prisma.$disconnect();
     }
 }
 

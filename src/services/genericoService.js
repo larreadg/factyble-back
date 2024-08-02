@@ -1,9 +1,8 @@
 const axios = require('axios');
 const ErrorApp = require('../utils/error');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma/cliente');
 
 const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
-    const prisma = new PrismaClient();
 
     try {
 
@@ -33,7 +32,7 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
             });
 
             if(!data){
-                throw new ErrorApp('Error al obtener datos', 500);
+                throw new ErrorApp('No se encontró datos', 404);
             }
 
             const nuevoCliente = await prisma.cliente.create({
@@ -64,7 +63,7 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
             });
             
             if(!data){
-                throw new ErrorApp('Error al obtener datos', 500);
+                throw new ErrorApp('No se encontró datos', 404);
             }
             
             const nuevoCliente = await prisma.cliente.create({
@@ -85,10 +84,8 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
         
     } catch (error) {
         
-        ErrorApp.handleServiceError(error, 'Error al obtener datos del contribuyente');
+        ErrorApp.handleServiceError(error, 'Error al obtener datos');
 
-    } finally {
-        prisma.$disconnect();
     }
 
 }
