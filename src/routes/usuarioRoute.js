@@ -6,6 +6,7 @@ routes.post(
     '/authenticate',
     body('usuario').notEmpty().withMessage('El email o usuario es obligatorio'),
     body('password').notEmpty().withMessage('La contraseña es obligatoria'),
+    body('captcha').notEmpty().withMessage('La captcha es obligatoria'),
     usuarioController.authenticateUsuario
 );
 

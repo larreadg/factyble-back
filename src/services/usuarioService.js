@@ -1,6 +1,7 @@
 const { hashPassword, comparePassword } = require('../utils/password');
 const ErrorApp = require('../utils/error');
 const { generateToken } = require('../utils/jwt');
+const dayjs = require('dayjs');
 const prisma = require('../prisma/cliente');
 
 /**
@@ -8,9 +9,29 @@ const prisma = require('../prisma/cliente');
  * @param {String} password
  * @returns 
  */
-const authenticateUsuario = async ({ usuario, password } = {}) => {
-
+const authenticateUsuario = async ({ usuario, password, captcha } = {}) => {
+    
     try {
+
+        const captchaCheck = await prisma.captcha.findFirst({
+            where: {
+                captcha,
+                fecha_expiracion: {
+                    gt: dayjs().toDate()
+                }
+            }
+        })
+
+        if(!captchaCheck){
+            throw new ErrorApp('Captcha inválida o expirada', 401);
+        }
+
+        await prisma.captcha.deleteMany({
+            where: {
+                captcha
+            }
+        })
+
         const user = await prisma.usuario.findFirst({
             where: {
                 email: usuario

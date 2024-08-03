@@ -154,3 +154,10 @@ model FacturaDetalle {
   fecha_creacion      DateTime    @default(now())
   fecha_modificacion  DateTime    @updatedAt
 }
+
+model Captcha {
+  id                  Int           @id @default(autoincrement())
+  captcha             String        @db.VarChar(6)
+  ip                  String        @db.VarChar(15)
+  fecha_expiracion    DateTime    
+}
