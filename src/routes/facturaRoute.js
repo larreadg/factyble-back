@@ -10,4 +10,10 @@ routes.post(
     facturaController.emitirFactura
 );
 
+routes.get(
+    '/',
+    // authJwt(['ADMIN']),
+    facturaController.getFacturas
+);
+
 module.exports = routes;

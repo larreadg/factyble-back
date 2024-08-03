@@ -36,11 +36,8 @@ const generarCaptcha = async ({ ip }) => {
 
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al crear factura")
-  } finally {
-    prisma.$disconnect()
   }
-
-  
+ 
 }
 
 module.exports = {

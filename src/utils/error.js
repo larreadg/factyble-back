@@ -15,6 +15,7 @@ class ErrorApp extends Error {
         }
 
         if(error instanceof Prisma.PrismaClientValidationError){
+            console.log(error.message)
             // const m = error.message ? error.message.substring(error.message.lastIndexOf('\n\n')+2, error.message.length) : '';
             throw new ErrorApp(`Error de Validación de datos`, 400);
         }

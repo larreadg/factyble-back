@@ -10,7 +10,7 @@ const prisma = require('../prisma/cliente');
  * @returns 
  */
 const authenticateUsuario = async ({ usuario, password, captcha } = {}) => {
-    
+
     try {
 
         const captchaCheck = await prisma.captcha.findFirst({
@@ -69,8 +69,6 @@ const authenticateUsuario = async ({ usuario, password, captcha } = {}) => {
     
     } catch (error) {
         ErrorApp.handleServiceError(error, 'Error al autenticar usuario');
-    } finally {
-        prisma.$disconnect();
     }
 
 }

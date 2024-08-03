@@ -121,16 +121,18 @@ model Factura {
   numero_factura      String
   usuario             Usuario         @relation(fields: [usuario_id], references: [id])
   usuario_id          Int
-  client_empresa     ClienteEmpresa   @relation(fields: [cliente_empresa_id], references: [id])
+  cliente_empresa     ClienteEmpresa   @relation(fields: [cliente_empresa_id], references: [id])
   cliente_empresa_id  Int
   fecha_creacion      DateTime        @default(now())
   fecha_modificacion  DateTime        @updatedAt
   condicion_venta     CondicionVenta
   total_iva           Float
   total               Float
-  kude                String          @db.VarChar(255)
+  kude                String?           @db.Text
   cdc                 String          @db.VarChar(255)
-  xml                 String          @db.VarChar(255)
+  xml                 String?           @db.Text
+  sifen_estado        String?           @db.Text
+  sifen_estado_mensaje String?          @db.Text
   detalles            FacturaDetalle[]
 }
 
