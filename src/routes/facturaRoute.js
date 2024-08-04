@@ -12,7 +12,7 @@ routes.post(
 
 routes.get(
     '/',
-    // authJwt(['ADMIN']),
+    authJwt(['ADMIN']),
     facturaController.getFacturas
 );
 
