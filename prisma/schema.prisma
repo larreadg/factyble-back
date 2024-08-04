@@ -59,6 +59,7 @@ model Empresa {
   telefono            String          @db.VarChar(20)
   email               String          @db.VarChar(255)
   ciudad              String          @db.VarChar(100)
+  logo                String?         @db.VarChar(255)
   fecha_creacion      DateTime        @default(now())
   fecha_modificacion  DateTime        @updatedAt  
   usuarios            Usuario[]
@@ -85,11 +86,13 @@ model Cliente {
   documento             String              @db.VarChar(255)
   dv                    Int?                @db.TinyInt
   razon_social          String?             @db.VarChar(255)
-  estado                String?             @db.VarChar(15)
   tipo_identificacion   TipoIdentificacion
-  nombres               String?             @db.VarChar(255)
-  apellidos             String?             @db.VarChar(255)
+  nombres               String              @db.VarChar(255)
+  apellidos             String              @db.VarChar(255)
   pais                  String?             @db.VarChar(255)
+  direccion             String?
+  email                 String?             @db.VarChar(255)
+  telefono              String?             @db.VarChar(20)
   situacion_tributaria  SituacionTributaria
   fecha_creacion        DateTime            @default(now())
   fecha_modificacion    DateTime            @updatedAt
@@ -103,9 +106,6 @@ model ClienteEmpresa {
   cliente_id          Int
   empresa             Empresa   @relation(fields: [empresa_id], references: [id])
   empresa_id          Int
-  direccion           String?
-  email               String?    @db.VarChar(255)
-  telefono            String?    @db.VarChar(20)
   fecha_creacion      DateTime   @default(now())
   fecha_modificacion  DateTime   @updatedAt
   facturas            Factura[]
@@ -119,6 +119,7 @@ enum CondicionVenta {
 model Factura {
   id                  Int             @id @default(autoincrement())
   numero_factura      String
+  factura_uuid        String
   usuario             Usuario         @relation(fields: [usuario_id], references: [id])
   usuario_id          Int
   cliente_empresa     ClienteEmpresa   @relation(fields: [cliente_empresa_id], references: [id])

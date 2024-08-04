@@ -13,6 +13,7 @@ const generarCaptchaController = async (req, res) => {
     const captcha = await generarCaptcha({ ip })
     res.type('svg')
     res.status(200).send(captcha)
+    
   } catch (e) {
     if (e instanceof ErrorApp) {
       return res.status(e.code).send(new Response('error', e.code, null, e.message))
