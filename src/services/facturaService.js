@@ -4,7 +4,8 @@ const ErrorApp = require("../utils/error");
 const { calcularImpuesto } = require("../utils/facturacion");
 const generarPdf = require("../utils/generarPdf");
 const path = require("path");
-const PUBLIC_LOGOS = path.resolve(__dirname, "..", "public/logos/");
+const { v4: uuidv4} = require('uuid');
+const { conectarDbApiFacturacion } = require("../db/dbApiFacturacion");
 
 const emitirFactura = async (datos, datosUsuario) => {
   try {
@@ -32,11 +33,24 @@ const emitirFactura = async (datos, datosUsuario) => {
           ruc: datos.ruc,
           razon_social: datos.razonSocial,
           documento: datos.ruc,
-          tipo_identificacion:
-            datos.situacionTributaria == "CONTRIBUYENTE" ? "RUC" : "CEDULA",
+          tipo_identificacion: datos.situacionTributaria == "CONTRIBUYENTE" ? "RUC" : "CEDULA",
           situacion_tributaria: datos.situacionTributaria,
-          dv: Number(datos.ruc.split("-")[1]),
+          dv: datos.ruc.include('-') ? Number(datos.ruc.split("-")[1]) : null,
+          direccion: datos.direccion,
+          email: datos.email,
+          telefono: datos.telefono
         },
+      });
+    }
+
+    //Actualizar datos de cliente
+    if(datos.direccion != cliente.direccion || datos.email != cliente.email){
+      await prisma.cliente.update({
+        data: {
+          direccion: datos.direccion ? datos.direccion : cliente.direccion,
+          email: datos.email ? datos.email : cliente.email
+        },
+        where: {id: cliente.id}
       });
     }
 
@@ -62,7 +76,7 @@ const emitirFactura = async (datos, datosUsuario) => {
     let totalIva = 0;
     let totalIva5 = 0;
     let totalIva10 = 0;
-    let totalExentas = 0;
+    let totalExenta = 0;
 
     datos.items.forEach((e) => {
       const impuesto = calcularImpuesto(e.cantidad, e.precioUnitario, e.tasa);
@@ -76,7 +90,7 @@ const emitirFactura = async (datos, datosUsuario) => {
 
       switch (e.tasa) {
         case "0%":
-          totalExentas += e.impuesto;
+          totalExenta += e.impuesto;
         case "5%":
           totalIva5 += e.impuesto;
         default:
@@ -97,7 +111,8 @@ const emitirFactura = async (datos, datosUsuario) => {
     //Crear factura
     const factura = await prisma.factura.create({
       data: {
-        numero_factura: "nro factura",
+        numero_factura: "",
+        factura_uuid: uuidv4(),
         usuario_id: usuario.id,
         cliente_empresa_id: clienteEmpresa.id,
         condicion_venta: datos.condicionVenta,
@@ -125,7 +140,7 @@ const emitirFactura = async (datos, datosUsuario) => {
     });
 
     const facturaPdf = generarPdf({
-      empresaLogo: PUBLIC_LOGOS + usuario.empresa.nombre_empresa + ".png",
+      empresaLogo: usuario.empresa.logo,
       empresaRuc: usuario.empresa.ruc,
       empresaTimbrado: usuario.empresa.timbrado,
       empresaVigenteDesde: dayjs(usuario.empresa.vigente_desde).format(
@@ -143,19 +158,25 @@ const emitirFactura = async (datos, datosUsuario) => {
       correoElectronico: cliente.email,
       total: datos.total,
       totalIva: datos.totalIva,
-      totalExentas,
+      totalExenta,
       totalIva5,
       totalIva10,
       moneda: "PYG",
       items: datos.items,
+      facturaUuid: factura.factura_uuid
     });
+
+    return factura;
+
   } catch (error) {
     console.log(error);
     ErrorApp.handleServiceError(error, "Error al crear factura");
   }
 };
 
-const apiFacturacionElectronica = async (datos) => {};
+const apiFacturacionElectronica = async (datos) => {
+  
+};
 
 const getFacturas = async (page = 1, itemsPerPage = 10, filter = null) => {
   try {
@@ -220,11 +241,46 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null) => {
     }
 
   } catch (error) {
+    console.log(error);
     ErrorApp.handleServiceError(error, "Error al obtener facturas");
   }
 };
 
+const getFacturaById = async (id) => {
+  try {
+    
+    const factura = await prisma.factura.findFirst({
+      where: {
+        id: Number(id)
+      },
+      include: {
+        detalles: true
+      }
+    });
+
+    if(!factura){
+      throw new ErrorApp(`Factura con ID ${id} no encontrado`, 404);
+    }
+
+    return factura;
+
+  } catch (error) {
+    ErrorApp.handleServiceError(error, 'Error al obtener datos de factura');
+  }
+}
+
+const checkFacturaStatus = async () => {
+  const dbApiFacturacion = conectarDbApiFacturacion();
+  await dbApiFacturacion.connect();
+
+  
+
+  dbApiFacturacion.end();
+}
+
 module.exports = {
   emitirFactura,
   getFacturas,
+  getFacturaById,
+  checkFacturaStatus
 };
