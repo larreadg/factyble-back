@@ -5,7 +5,6 @@ const bodyParser = require('body-parser');
 const app = express();
 const cors = require('cors');
 const routes = require('./routes');
-const generarPdf = require('./utils/generarPdf');
 
 app.use(cors());
 app.use(bodyParser.json());

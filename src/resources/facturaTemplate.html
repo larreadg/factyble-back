@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f7f7f7;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            padding: 20px;
+            border: 1px solid #dddddd;
+        }
+        .header, .footer {
+            text-align: center;
+            padding: 10px 0;
+        }
+        .header {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .content {
+            margin: 20px 0;
+        }
+        .content p {
+            line-height: 1.5;
+            margin: 10px 0;
+        }
+        .content .highlight {
+            font-weight: bold;
+            font-size: 24px;
+        }
+        .content .dte-number {
+            color: #1a0dab;
+            text-decoration: none;
+        }
+        .footer {
+            font-size: 12px;
+            color: #555555;
+        }
+        .footer a {
+            color: #1a0dab;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            Estimado(a) cliente/a
+        </div>
+        <div class="content">
+            <p class="highlight">$cliente</p>
+            <p>Por este medio adjuntamos el Documento Tributario Electrónico (DTE) número 
+                <a href="https://ekuatia.set.gov.py/consultas/" class="dte-number">$cdc</a> 
+                correspondiente a su operación/transacción.
+            </p>
+            <p>El Documento puede ser validado en el sitio web de la SET: 
+                <a href="https://ekuatia.set.gov.py/consultas/" class="dte-number">ekuatia.set.gov.py/consultas/</a>
+            </p>
+        </div>
+        <div class="footer">
+            <p>Por favor no responder este mail, corresponde a un proceso automático de facturas.</p>
+            <p>Ante consultas o dudas escribinos a: 
+                <a href="mailto:contabilidad@dynamus.com">contabilidad@dynamus.com</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
