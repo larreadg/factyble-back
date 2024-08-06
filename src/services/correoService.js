@@ -12,7 +12,7 @@ const enviarFactura = async ({ email, cdc, cliente, pdf }) => {
     html = html.replace('$cdc', cdc)
     html = html.replace('$cliente', cliente)
 
-    const xmlResponse = await axios.get(`${process.env.API_FACT_XML_PATH}/${cdc}.xml`, { responseType: 'arraybuffer' });
+    const xmlResponse = await axios.get(`http://${process.env.HOST_API_FACT}/facturacion-api/firmados/${cdc}.xml`, { responseType: 'arraybuffer' });
     const xmlBuffer = Buffer.from(xmlResponse.data, 'binary');
 
     let transporter = nodemailer.createTransport({
