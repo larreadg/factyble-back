@@ -39,4 +39,12 @@ routes.get(
     facturaController.getFacturaById
 );
 
+routes.post(
+    '/reenviar',
+    authJwt(['ADMIN']),
+    body('email').isEmail().withMessage('Parámetro email requerito'),
+    body('facturaId', 'Parámetro facturaId requerido').isInt().notEmpty(),
+    facturaController.reenviarFactura
+);
+
 module.exports = routes;

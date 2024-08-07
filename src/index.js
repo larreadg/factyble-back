@@ -6,10 +6,13 @@ const app = express()
 const cors = require('cors')
 const routes = require('./routes')
 const path = require('path')
+const cronJobs = require('./services/cronJobs')
 
 app.use(cors())
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended : false }))
+
+cronJobs()
 
 app.use('/public', express.static(path.join(__dirname, '..', 'public')))
 app.use(routes)
