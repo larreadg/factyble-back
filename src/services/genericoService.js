@@ -41,7 +41,6 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
                     documento: String(data.doc),
                     razon_social: data.razonSocial,
                     dv: data.dv,
-                    estado: data.estado,
                     situacion_tributaria: situacionTributaria,
                     tipo_identificacion: 'RUC',
                     nombres: data.razonSocial.split(',')[1].trim(),
