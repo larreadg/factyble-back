@@ -1,8 +1,8 @@
 const java = require("java");
-const fs = require("fs");
 const path = require("path");
 const dayjs = require("dayjs");
 const QRCode = require("qrcode");
+const { formatNumber } = require("./format");
 const PUBLIC_LOGOS = path.resolve(__dirname,"../../public/logos");
 const PUBLIC_QR = path.resolve(__dirname, '../../public/qr');
 
@@ -41,23 +41,23 @@ const generarPdf = async (datos) => {
     params.putSync("empresaTelefono", String(datos.empresaTelefono));
     params.putSync("empresaCiudad", datos.empresaCiudad);
     params.putSync("empresaCorreoElectronico", datos.empresaCorreoElectronico);
-    params.putSync("facturaId", datos.facturaId);
+    params.putSync("facturaId", String(datos.facturaId));
     params.putSync("fechaHora", dayjs().format('YYYY-MM-DD HH:MM:ss'));
     params.putSync("condicionVenta", datos.condicionVenta);
-    params.putSync("moneda", datos.moneda); //??como vamos a hacer
+    params.putSync("moneda", datos.moneda);
     params.putSync("ruc", String(datos.ruc));
     params.putSync("razonSocial", datos.razonSocial);
     params.putSync("correoElectronico", datos.correoElectronico);
-    params.putSync("total", String(datos.total));
-    params.putSync("totalIva", String(datos.totalIva));
-    params.putSync("totalIva5", String(datos.totalIva5));
-    params.putSync("totalIva10", String(datos.totalIva10));
-    params.putSync("totalExenta", String(datos.totalExenta)); //?? no faltaría este campo?
+    params.putSync("total", formatNumber(datos.total));
+    params.putSync("totalIva", formatNumber(datos.totalIva));
+    params.putSync("totalIva5", formatNumber(datos.totalIva5));
+    params.putSync("totalIva10", formatNumber(datos.totalIva10));
+    params.putSync("totalExenta", formatNumber(datos.totalExenta)); //?? no faltaría este campo?
     params.putSync("cdc", datos.cdc);
 
     const qrFilename = `${datos.facturaUuid}.png`;
     const qrPath = await generarQr(
-      "https://ekuatia.set.gov.py/consultas/qr?nVersion=150&Id=01800192702001001726491922024072512599984166&dFeEmiDE=323032342d30372d32355431323a30303a3030&dRucRec=5249657&dTotGralOpe=177&dTotIVA=16&cItems=2&DigestValue=4147535a4e735155507a65537751616b4a532b5730444f4b64332f35476a75786d3945492b6b71697646773d&IdCSC=0001&cHashQR=fd1de10f0f2a5f38bd70a7d4022b5d66e4442ecde819358de34507ff33f6e8c8",
+      datos.linkqr,
       qrFilename
     );
     params.putSync("qr", qrPath);
@@ -69,7 +69,7 @@ const generarPdf = async (datos) => {
     const itemList = datos.items.map((item) => {
       const map = java.newInstanceSync("java.util.HashMap");
       for (let key in item) {
-        map.putSync(key, String(item[key]));
+        map.putSync(key, item[key]);
       }
       return map;
     });

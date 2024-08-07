@@ -90,7 +90,7 @@ model Cliente {
   nombres               String              @db.VarChar(255)
   apellidos             String              @db.VarChar(255)
   pais                  String?             @db.VarChar(255)
-  direccion             String?
+  direccion             String?             @db.Text
   email                 String?             @db.VarChar(255)
   telefono              String?             @db.VarChar(20)
   situacion_tributaria  SituacionTributaria
@@ -117,24 +117,26 @@ enum CondicionVenta {
 }
 
 model Factura {
-  id                  Int             @id @default(autoincrement())
-  numero_factura      String
-  factura_uuid        String
-  usuario             Usuario         @relation(fields: [usuario_id], references: [id])
-  usuario_id          Int
-  cliente_empresa     ClienteEmpresa   @relation(fields: [cliente_empresa_id], references: [id])
-  cliente_empresa_id  Int
-  fecha_creacion      DateTime        @default(now())
-  fecha_modificacion  DateTime        @updatedAt
-  condicion_venta     CondicionVenta
-  total_iva           Float
-  total               Float
-  kude                String?           @db.Text
-  cdc                 String          @db.VarChar(255)
-  xml                 String?           @db.Text
-  sifen_estado        String?           @db.Text
-  sifen_estado_mensaje String?          @db.Text
-  detalles            FacturaDetalle[]
+  id                    Int               @id @default(autoincrement())
+  numero_factura        Int
+  factura_uuid          String            @db.VarChar(255)
+  usuario               Usuario           @relation(fields: [usuario_id], references: [id])
+  usuario_id            Int
+  cliente_empresa       ClienteEmpresa    @relation(fields: [cliente_empresa_id], references: [id])
+  cliente_empresa_id    Int
+  fecha_creacion        DateTime          @default(now())
+  fecha_modificacion    DateTime          @updatedAt
+  condicion_venta       CondicionVenta
+  total_iva             Float
+  total                 Float
+  kude                  String?           @db.Text
+  cdc                   String            @db.VarChar(255)
+  xml                   String?           @db.Text
+  linkqr                String?           @db.Text
+  sifen_estado          String?           @db.Text
+  sifen_estado_mensaje  String?           @db.Text
+  codigo_seguridad      String            @db.VarChar(10)    
+  detalles              FacturaDetalle[]
 }
 
 enum Tasa {
