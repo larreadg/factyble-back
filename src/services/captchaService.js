@@ -1,7 +1,7 @@
 const dayjs = require("dayjs")
 const svgCaptcha = require("svg-captcha")
 const prisma = require('../prisma/cliente')
-
+const ErrorApp = require('../utils/error');
 
 /**
  * Función que genera una captcha por ip
@@ -35,7 +35,7 @@ const generarCaptcha = async ({ ip }) => {
     return captchaImg.data
 
   } catch (error) {
-    ErrorApp.handleServiceError(error, "Error al crear factura")
+    ErrorApp.handleServiceError(error, "Error al generar captcha")
   }
  
 }
