@@ -8,7 +8,7 @@ const { v4: uuidv4 } = require("uuid");
 const { conectarDbApiFacturacion } = require("../db/dbApiFacturacion");
 const FormData = require("form-data");
 const axios = require('axios');
-const { formatNumber } = require("../utils/format");
+const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
 
 const emitirFactura = async (datos, datosUsuario) => {
   try {
@@ -60,6 +60,9 @@ const emitirFactura = async (datos, datosUsuario) => {
         },
         where: { id: cliente.id },
       });
+
+      cliente.direccion = datos.direccion ? datos.direccion : cliente.direccion;
+      cliente.email =  datos.email ? datos.email : cliente.email
     }
 
     //Buscar en cliente_empresa
@@ -148,8 +151,6 @@ const emitirFactura = async (datos, datosUsuario) => {
       codigoSeguridadAleatorio,
       numeroFactura
     });
-    
-    console.log(resultado)
 
     if(!resultado || resultado.status != true){
       throw new ErrorApp('Error al generar factura', 500);
@@ -165,7 +166,6 @@ const emitirFactura = async (datos, datosUsuario) => {
         condicion_venta: datos.condicionVenta,
         total_iva: datos.totalIva,
         total: datos.total,
-        kude: "",
         cdc: resultado.cdc,
         xml: resultado.xmlLink,
         linkqr: resultado.link,
@@ -214,7 +214,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       empresaTelefono: usuario.empresa.telefono,
       empresaCiudad: usuario.empresa.ciudad,
       empresaCorreoElectronico: usuario.empresa.email,
-      facturaId: numeroFactura,
+      facturaId: '001-' + '001-' + formatNumberWithLeadingZeros(numeroFactura),
       condicionVenta: datos.condicionVenta,
       ruc: cliente.ruc,
       razonSocial: cliente.razon_social,
@@ -241,6 +241,8 @@ const emitirFactura = async (datos, datosUsuario) => {
 
 const apiFacturacionElectronica = async (datos) => {
   
+  // return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
+
   const form = new FormData();
 
   const condicionPago = datos.condicionVenta == "CONTADO" ? 1 : 2; //TODO: verificar
@@ -315,6 +317,7 @@ const apiFacturacionElectronica = async (datos) => {
     }
   });
 
+  console.log(resultado)
   return resultado;
 
 };

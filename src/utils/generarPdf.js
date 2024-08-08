@@ -23,7 +23,7 @@ const generarQr = async (url, filename) => {
   });
 };
 const generarPdf = async (datos) => {
-  console.log(path.resolve(PUBLIC_LOGOS, datos.empresaLogo));
+  
   try {
     // Configurar el reporte
     const reportPath = path.resolve(__dirname, "..", "resources/Factura.jasper");
@@ -41,7 +41,7 @@ const generarPdf = async (datos) => {
     params.putSync("empresaTelefono", String(datos.empresaTelefono));
     params.putSync("empresaCiudad", datos.empresaCiudad);
     params.putSync("empresaCorreoElectronico", datos.empresaCorreoElectronico);
-    params.putSync("facturaId", String(datos.facturaId));
+    params.putSync("facturaId", datos.facturaId);
     params.putSync("fechaHora", dayjs().format('YYYY-MM-DD HH:MM:ss'));
     params.putSync("condicionVenta", datos.condicionVenta);
     params.putSync("moneda", datos.moneda);

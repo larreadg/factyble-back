@@ -129,7 +129,6 @@ model Factura {
   condicion_venta       CondicionVenta
   total_iva             Float
   total                 Float
-  kude                  String?           @db.Text
   cdc                   String            @db.VarChar(255)
   xml                   String?           @db.Text
   linkqr                String?           @db.Text
