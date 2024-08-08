@@ -3,20 +3,21 @@ const path = require('path')
 const fs = require('fs')
 const axios = require('axios')
 
-const enviarFactura = async ({ email, cdc, cliente, pdf }) => {
+const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, emailEmpresa }) => {
 
     let filePath = path.join(__dirname, '..', 'resources', 'facturaTemplate.html')
     let html = fs.readFileSync(filePath, {encoding:'utf-8'})
-    let pdfPath = path.join(__dirname, '..', '..', 'public', pdf)
+    let pdfPath = path.join(__dirname, '..', '..', 'public', `${uuid}.pdf`)
 
-    html = html.replace('$cdc', cdc)
-    html = html.replace('$cliente', cliente)
+    html = html.replace(/\$cdc/g, cdc)
+    html = html.replace(/\$cliente/g, cliente)
+    html = html.replace(/\$emailEmpresa/g, emailEmpresa)
 
     const xmlResponse = await axios.get(`http://${process.env.HOST_API_FACT}/facturacion-api/firmados/${cdc}.xml`, { responseType: 'arraybuffer' });
     const xmlBuffer = Buffer.from(xmlResponse.data, 'binary');
 
     let transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
+        host: 'smtp.gmail.com',
         port: 587,
         secure: false, // true for 465, false for other ports
         auth: {
@@ -26,13 +27,13 @@ const enviarFactura = async ({ email, cdc, cliente, pdf }) => {
     })
 
     let mailObj = {
-        from: `"Dynamus" <factyble@gmail.com>`, // sender address
+        from: `"No Reply" <factyble@gmail.com>`, // sender address
         to: email, // list of receivers
-        subject: 'Factura electronica',
+        subject: `Factura electrónica Nro. ${nroFactura} | ${empresa}`,
         html,
         attachments: [
             {
-                filename: pdf, 
+                filename: `${uuid}.pdf`, 
                 path: pdfPath,
                 contentType: 'application/pdf'
             },
@@ -50,4 +51,38 @@ const enviarFactura = async ({ email, cdc, cliente, pdf }) => {
 
 }
 
-module.exports = enviarFactura
+const enviarErrorFactura = async ({ email, nroFactura, errorFactura, empresa }) => {
+
+    let filePath = path.join(__dirname, '..', 'resources', 'facturaErrorTemplate.html')
+    let html = fs.readFileSync(filePath, {encoding:'utf-8'})
+
+    html = html.replace(/\$nroFactura/g, nroFactura)
+    html = html.replace(/\$errorFactura/g, errorFactura)
+
+    let transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false, // true for 465, false for other ports
+        auth: {
+            user: process.env.EMAIL,
+            pass: process.env.EMAIL_PW,
+        },
+    })
+
+    let mailObj = {
+        from: `"No Reply" <factyble@gmail.com>`, // sender address
+        to: email, // list of receivers
+        subject: `Error Factura Nro.: ${nroFactura} | ${empresa}`,
+        html
+    }
+
+    let info = await transporter.sendMail(mailObj)
+
+    console.log("Message sent: %s", info.messageId)
+
+}
+
+module.exports = {
+    enviarFactura,
+    enviarErrorFactura
+}

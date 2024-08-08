@@ -1,12 +1,12 @@
-const cron = require('node-cron');
-const { checkFacturaStatus } = require('./facturaService');
+const cron = require('node-cron')
+const { checkFacturaStatus } = require('./facturaService')
 
 const cronJobs = () => {
 
     cron.schedule('*/10 * * * *', () => {
-        checkFacturaStatus();
-    });
+        checkFacturaStatus()
+    })
 
 }
 
-module.exports = cronJobs;
+module.exports = cronJobs

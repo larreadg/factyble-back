@@ -63,8 +63,29 @@ const getFacturaById = async (req, res) => {
     }
 }
 
+const reenviarFactura = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const { email, facturaId } = req.body;
+        
+        await facturaService.reenviarFactura({ email, facturaId });
+
+        return res.status(200).send(Response.success(null, 'Datos obtenidos'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al obtener facturas');
+
+        return res.status(code).send(Response.error(message, code));
+        
+    }
+}
+
 module.exports = {
     emitirFactura,
     getFacturas,
-    getFacturaById
+    getFacturaById,
+    reenviarFactura
 }

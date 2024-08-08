@@ -32,23 +32,8 @@
             line-height: 1.5;
             margin: 10px 0;
         }
-        .content .highlight {
-            font-weight: bold;
-            font-size: 24px;
-        }
-        .content .dte-number {
-            color: #006fee;
-            text-decoration: none;
-        }
-        .footer {
-            font-size: 12px;
-            color: #555555;
-        }
-        .footer a {
-            color: #006fee;
-            text-decoration: none;
-        }
         img {
+            margin-left: auto;
             width: 124px;
             height: 124px;
         }
@@ -57,23 +42,13 @@
 <body>
     <div class="container">
         <div class="header">
-            Estimado(a) cliente/a
+            ¡Hola!
         </div>
         <div class="content">
-            <p class="highlight">$cliente</p>
-            <p>Por este medio adjuntamos el Documento Tributario Electrónico (DTE) número 
-                <a href="https://ekuatia.set.gov.py/consultas/" class="dte-number">$cdc</a> 
-                correspondiente a su operación/transacción.
-            </p>
-            <p>El Documento puede ser validado en el sitio web de la SET: 
-                <a href="https://ekuatia.set.gov.py/consultas/" class="dte-number">ekuatia.set.gov.py/consultas/</a>
-            </p>
+            <p>Por este medio informamos que la factura nro.: <b>$nroFactura</b> ha sido rechazado por la SET:</p>
+            <p><b>$errorFactura</b></p>
         </div>
         <div class="footer">
-            <p>Por favor no responder este mail, corresponde a un proceso automático de facturas.</p>
-            <p>Ante consultas o dudas escribinos a: 
-                <a href="mailto:$emailEmpresa">$emailEmpresa</a>
-            </p>
             <img src="https://i.imgur.com/0Jmstvt.png" alt="Factyble">
         </div>
     </div>

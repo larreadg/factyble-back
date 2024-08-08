@@ -7,8 +7,9 @@ const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const { conectarDbApiFacturacion } = require("../db/dbApiFacturacion");
 const FormData = require("form-data");
-const axios = require('axios');
+const axios = require("axios");
 const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
+const { enviarErrorFactura, enviarFactura } = require("./correoService");
 
 const emitirFactura = async (datos, datosUsuario) => {
   try {
@@ -31,24 +32,33 @@ const emitirFactura = async (datos, datosUsuario) => {
 
     //Crear cliente si no existe
     if (!cliente) {
-      const nombres = datos.razonSocial.includes(',') ? (datos.razonSocial.split(',')[1] ? datos.razonSocial.split(',')[1].trim() : datos.razonSocial) : datos.razonSocial;
-      const apellidos = datos.razonSocial.includes(',') ? (datos.razonSocial.split(',')[0] ? datos.razonSocial.split(',')[0]: '') : '';
+      const nombres = datos.razonSocial.includes(",")
+        ? datos.razonSocial.split(",")[1]
+          ? datos.razonSocial.split(",")[1].trim()
+          : datos.razonSocial
+        : datos.razonSocial;
+      const apellidos = datos.razonSocial.includes(",")
+        ? datos.razonSocial.split(",")[0]
+          ? datos.razonSocial.split(",")[0]
+          : ""
+        : "";
 
-        cliente = await prisma.cliente.create({
-          data: {
-            ruc: datos.ruc,
-            razon_social: datos.razonSocial,
-            documento: datos.ruc,
-            tipo_identificacion: datos.situacionTributaria == "CONTRIBUYENTE" ? "RUC" : "CEDULA",
-            situacion_tributaria: datos.situacionTributaria,
-            dv: datos.ruc.includes("-") ? Number(datos.ruc.split("-")[1]) : null,
-            nombres,
-            apellidos,
-            direccion: datos.direccion,
-            email: datos.email,
-            telefono: datos.telefono,
-          },
-        });
+      cliente = await prisma.cliente.create({
+        data: {
+          ruc: datos.ruc,
+          razon_social: datos.razonSocial,
+          documento: datos.ruc,
+          tipo_identificacion:
+            datos.situacionTributaria == "CONTRIBUYENTE" ? "RUC" : "CEDULA",
+          situacion_tributaria: datos.situacionTributaria,
+          dv: datos.ruc.includes("-") ? Number(datos.ruc.split("-")[1]) : null,
+          nombres,
+          apellidos,
+          direccion: datos.direccion,
+          email: datos.email,
+          telefono: datos.telefono,
+        },
+      });
     }
 
     //Actualizar datos de cliente
@@ -98,12 +108,12 @@ const emitirFactura = async (datos, datosUsuario) => {
       if (Number(e.total) != Number(e.cantidad) * Number(e.precioUnitario)) {
         throw new ErrorApp("Datos proporcionados incorrectos", 400);
       }
-      
-      if(e.tasa == '0%'){
+
+      if (e.tasa == "0%") {
         totalExenta += e.impuesto;
-      }else if(e.tasa == '5%'){
+      } else if (e.tasa == "5%") {
         totalIva5 += e.impuesto;
-      }else {
+      } else {
         totalIva10 += e.impuesto;
       }
 
@@ -118,16 +128,18 @@ const emitirFactura = async (datos, datosUsuario) => {
     //Datos adicionales
     const facturaUuid = uuidv4();
 
-    const { _max: { numero_factura: maxNroFactura } } = await prisma.factura.aggregate({
+    const {
+      _max: { numero_factura: maxNroFactura },
+    } = await prisma.factura.aggregate({
       _max: {
         numero_factura: true,
       },
     });
-  
+
     if (maxNroFactura === undefined || maxNroFactura === null) {
       throw new ErrorApp("Error al obtener número de factura", 500);
     }
-  
+
     const numeroFactura = Number(maxNroFactura) + 1;
 
     const codigosSeguridadRaw = await prisma.factura.findMany({
@@ -149,11 +161,13 @@ const emitirFactura = async (datos, datosUsuario) => {
       ...datos,
       facturaUuid,
       codigoSeguridadAleatorio,
-      numeroFactura
+      numeroFactura,
     });
 
-    if(!resultado || resultado.status != true){
-      throw new ErrorApp('Error al generar factura', 500);
+    console.log(resultado);
+
+    if (!resultado || resultado.status != true) {
+      throw new ErrorApp("Error al generar factura", 500);
     }
 
     //Crear factura
@@ -169,7 +183,7 @@ const emitirFactura = async (datos, datosUsuario) => {
         cdc: resultado.cdc,
         xml: resultado.xmlLink,
         linkqr: resultado.link,
-        codigo_seguridad: codigoSeguridadAleatorio
+        codigo_seguridad: codigoSeguridadAleatorio,
       },
     });
 
@@ -198,7 +212,7 @@ const emitirFactura = async (datos, datosUsuario) => {
         iva10,
         exentas,
         descripcion: e.descripcion,
-        cantidad: String(e.cantidad)
+        cantidad: String(e.cantidad),
       };
     });
 
@@ -228,11 +242,10 @@ const emitirFactura = async (datos, datosUsuario) => {
       items: itemsPdf,
       facturaUuid: facturaUuid,
       linkqr: resultado.link,
-      cdc: resultado.cdc
+      cdc: resultado.cdc,
     });
 
     return factura;
-
   } catch (error) {
     console.log(error);
     ErrorApp.handleServiceError(error, "Error al crear factura");
@@ -304,22 +317,21 @@ const apiFacturacionElectronica = async (datos) => {
 
   const datajson = JSON.stringify(data, null, 2);
 
-  form.append('datajson', datajson);
-  form.append('recordID', '123'); //TODO: consultar qué es
-  console.log(data)
-  
-  const {data: resultado} = await axios({
+  form.append("datajson", datajson);
+  form.append("recordID", "123"); //TODO: consultar qué es
+  console.log(data);
+
+  const { data: resultado } = await axios({
     url: `${process.env.URL_API_FACT}/data.php`,
-    method: 'POST',
+    method: "POST",
     data: form,
     headers: {
-      ...form.getHeaders()
-    }
+      ...form.getHeaders(),
+    },
   });
 
   console.log(resultado)
   return resultado;
-
 };
 
 const generarCodigoSeguridad = (length = 9) => {
@@ -347,6 +359,7 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null) => {
               { nombres: { contains: filter } },
               { apellidos: { contains: filter } },
               { razon_social: { contains: filter } },
+              { email: { contains: filter } },
             ],
           }),
         },
@@ -421,15 +434,79 @@ const getFacturaById = async (id) => {
 };
 
 const checkFacturaStatus = async () => {
-  const dbApiFacturacion = conectarDbApiFacturacion();
-  await dbApiFacturacion.connect();
+  console.log(`${new Date().toISOString()} checkFacturaStatus Iniciado`)
+  const facturasPendientes = await prisma.factura.findMany({
+    where: { sifen_estado: null },
+    include: { cliente_empresa: { include: { cliente: true, empresa: true } }, usuario: true },
+  })
+  const cdcFacturas = facturasPendientes.map((el) => el.cdc)
 
-  dbApiFacturacion.end();
-};
+  if (cdcFacturas.length > 0) {
+    const dbApiFacturacion = conectarDbApiFacturacion()
+    await dbApiFacturacion.connect()
+
+    const { rows: resultApiFacturacion } = await dbApiFacturacion.query({
+      text: `SELECT * FROM datos_factura2 WHERE cdc IN (${Array.from(
+        { length: cdcFacturas.length },
+        (_, index) => `$${index + 1}`
+      ).join(",")})`,
+      values: cdcFacturas,
+    })
+
+    dbApiFacturacion.end()
+
+    for (const item of resultApiFacturacion) {
+      const {
+        cdc,
+        sifen_estado: sifenEstado,
+        sifen_mensaje: sifenMensaje,
+      } = item
+      if (sifenEstado !== null && sifenEstado !== '') {
+        await prisma.factura.updateMany({
+          where: {
+            cdc,
+          },
+          data: {
+            sifen_estado: sifenEstado,
+            sifen_estado_mensaje: sifenMensaje,
+          },
+        })
+
+        const factura = facturasPendientes.find((el) => el.cdc === cdc)
+        if(typeof factura !== 'undefined'){
+          const { cliente, empresa } = factura.cliente_empresa 
+          if (sifenEstado === 'Aprobado') {
+            await enviarFactura({ cdc: factura.cdc, cliente: cliente.tipo_identificacion === 'RUC' ? cliente.razon_social : `${cliente.nombres} ${cliente.apellidos}`, email: cliente.email, uuid: factura.factura_uuid, nroFactura: factura.numero_factura, empresa: empresa.nombre_empresa, emailEmpresa: empresa.email })
+          } else if(sifenEstado === 'Rechazado') {
+            await enviarErrorFactura({ email: factura.usuario.email, empresa: empresa.nombre_empresa, errorFactura: sifenMensaje, nroFactura: factura.numero_factura})
+          }
+        }
+      }
+    }
+  }
+  console.log(`${new Date().toISOString()} checkFacturaStatus Finalizado`)
+}
+
+const reenviarFactura = async({ email, facturaId }) => {
+  const factura = await prisma.factura.findFirst({
+    where: { id: facturaId, sifen_estado: 'Aprobado' },
+    include: { cliente_empresa: { include: { cliente: true, empresa: true } }, usuario: true },
+  })
+
+  if(!factura){
+    throw new ErrorApp('La factura no existe', 404)
+  }
+
+  const { cliente, empresa } = factura.cliente_empresa
+
+  await enviarFactura({ cdc: factura.cdc, cliente: cliente.tipo_identificacion === 'RUC' ? cliente.razon_social : `${cliente.nombres} ${cliente.apellidos}`, email, uuid: factura.factura_uuid, nroFactura: factura.numero_factura, empresa: empresa.nombre_empresa, emailEmpresa: empresa.email })
+
+}
 
 module.exports = {
   emitirFactura,
   getFacturas,
   getFacturaById,
   checkFacturaStatus,
+  reenviarFactura
 };
