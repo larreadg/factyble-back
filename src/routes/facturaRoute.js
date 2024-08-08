@@ -13,7 +13,7 @@ routes.post(
     ]),
     body('total', 'Parámetro total requerido').isNumeric(),
     body('totalIva', 'Parámetro totalIva requerido').isNumeric(),
-    body('direccion', 'Parámetro direccion requerido').isString(),
+    body('direccion', 'Parámetro direccion requerido').optional().isString(),
     body('email', 'Parámetro email requerido').isEmail(),
     body('items', 'Parámetro items requerido').isArray({min: 1}),
     body('items.*', 'Parámetros item requerido Object').isObject(),
