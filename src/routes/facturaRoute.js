@@ -13,6 +13,7 @@ routes.post(
     ]),
     body('total', 'Parámetro total requerido').isNumeric(),
     body('totalIva', 'Parámetro totalIva requerido').isNumeric(),
+    body('condicionVenta', 'Parámetro condicionVenta requerido').isIn(['CONTADO', 'CREDITO']),
     body('direccion', 'Parámetro direccion requerido').optional().isString(),
     body('email', 'Parámetro email requerido').isEmail(),
     body('items', 'Parámetro items requerido').isArray({min: 1}),
@@ -23,6 +24,30 @@ routes.post(
     body('items.*.total', 'Parámetro total dentro de items requerido').isNumeric(),
     body('items.*.descripcion', 'Parámetro descripcion dentro de items requerido').isString().notEmpty(),
     body('items.*.tasa', 'Parámetro tasa dentro de items requerido').isIn(['0%','5%','10%']),
+    body('tipoCredito', 'Parámetro tipoCredito requerido').custom((tipoCredito, { req: { body }}) => {
+        if(body && body.condicionVenta == 'CONTADO') return true;
+        if(body && body.condicionVenta == 'CREDITO'){
+            return tipoCredito && ['CUOTA', 'A_PLAZO'].includes(tipoCredito);
+        }
+        return false;
+    }),
+    body('periodicidad', 'Parámetro periodicidad requerido').custom((periodicidad, { req: { body }}) => {
+        if(body && body.condicionVenta == 'CONTADO') return true;
+        if(body && body.condicionVenta == 'CREDITO'){
+            return periodicidad && ['SEMANAL','QUINCENAL','MENSUAL','TRIMESTRAL','SEMESTRAL','ANUAL'].includes(periodicidad);
+        }
+        return false;
+    }),
+    body('cantidadCuota', 'Parámetro cantidadCuota requerido').custom((cantidadCuota, { req: { body }}) => {
+        if(body && body.condicionVenta == 'CONTADO') return true;
+        if(body && body.tipoCredito == 'A_PLAZO') return true;
+        return body.cantidadCuota && body.cantidadCuota > 0;
+    }),
+    body('plazoDescripcion', 'Parámetro plazoDescripcion requerido').custom((plazoDescripcion, { req: { body }}) => {
+        if(body && body.condicionVenta == 'CONTADO') return true;
+        if(body && body.tipoCredito == 'CUOTA') return true;
+        return typeof body.plazoDescripcion == 'string' ;
+    }),
     facturaController.emitirFactura
 );
 

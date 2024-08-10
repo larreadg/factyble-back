@@ -10,6 +10,7 @@ const FormData = require("form-data");
 const axios = require("axios");
 const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
 const { enviarErrorFactura, enviarFactura } = require("./correoService");
+const { obtenerPeriodicidad } = require("../utils/date");
 
 const emitirFactura = async (datos, datosUsuario) => {
   try {
@@ -153,8 +154,6 @@ const emitirFactura = async (datos, datosUsuario) => {
       numeroFactura,
     });
 
-    console.log(resultado);
-
     if (!resultado || resultado.status != true) {
       throw new ErrorApp("Error al generar factura", 500);
     }
@@ -237,7 +236,7 @@ const emitirFactura = async (datos, datosUsuario) => {
     return factura;
 
   } catch (error) {
-
+    console.log(error);
     ErrorApp.handleServiceError(error, "Error al crear factura");
   }
 };
@@ -263,12 +262,28 @@ const apiFacturacionElectronica = async (datos) => {
   } else {
 
     if(datos.tipoCredito == 'CUOTA'){
+      let cuotas = [];
+      const monto = Number(datos.total) / Number(datos.cantidadCuota);
+      let fechaVencimiento = dayjs();
+      const periodicidad = obtenerPeriodicidad(datos.periodicidad);
+
+      for (let i = 0; i < Number(datos.cantidadCuota); i++) {
+        fechaVencimiento = fechaVencimiento.add(periodicidad.valor, periodicidad.unidad);
+
+        const cuota = {
+          numero: i + 1,
+          monto,
+          fechaVencimiento: fechaVencimiento.format('YYYY-MM-DD')
+        }
+        
+        cuotas.push(cuota);
+      }
 
       credito = {
         condicionCredito: 2,
         descripcion: 'CUOTA',
         cantidadCuota: datos.cantidadCuota,
-        cuotas: datos.coutas // TODO: despues ajustar [{numero: 1, monto: 5000, fechaVencimiento: '2024-08-09'}, {numero: 2, ...} ...]
+        cuotas
       }
 
     }else { // A plazo
@@ -280,7 +295,6 @@ const apiFacturacionElectronica = async (datos) => {
 
     }
   }
-
 
   const items = datos.items.map((e) => {
     const baseGravItem = e.tasa == "0%" ? 0 : Number(e.total) - Number(e.impuesto);
@@ -347,6 +361,7 @@ const apiFacturacionElectronica = async (datos) => {
   });
 
   console.log(resultado);
+
   return resultado;
 };
 
