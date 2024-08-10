@@ -60,6 +60,7 @@ const authenticateUsuario = async ({ usuario, password, captcha } = {}) => {
             email: user.email,
             documento: user.documento,
             telefono: user.telefono,
+            empresaId: user.empresa_id,
             roles: user.roles.map(r => r.rol.nombre)
         }
 

@@ -72,4 +72,12 @@ routes.post(
     facturaController.reenviarFactura
 );
 
+routes.post(
+    '/cancelar',
+    authJwt(['ADMIN']),
+    body('facturaId', 'Parámetro facturaId requerido').isInt({min: 1}),
+    body('motivo', 'Parámetro motivo requerido').isString().notEmpty(),
+    facturaController.cancelarFactura
+);
+
 module.exports = routes;

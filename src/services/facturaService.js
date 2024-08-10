@@ -315,7 +315,7 @@ const apiFacturacionElectronica = async (datos) => {
     };
   });
 
-  //Armar jsondata
+  //Armar datajson
   let data = {
     fecha: dayjs().format("YYYY-MM-DD HH:mm:ss"),
     documentoAsociado: {
@@ -352,7 +352,7 @@ const apiFacturacionElectronica = async (datos) => {
   console.log(data);
 
   const { data: resultado } = await axios({
-    url: `${process.env.URL_API_FACT}/data.php`,
+    url: `${process.env.URL_API_FACT}/facturacion-api/data.php`,
     method: "POST",
     data: form,
     headers: {
@@ -569,10 +569,73 @@ const reenviarFactura = async ({ email, facturaId }) => {
   });
 };
 
+const cancelarFactura = async(datos, datosUsuario) => {
+
+    try {
+        
+        const factura = await prisma.factura.findFirst({
+        where: {
+            AND: [
+            {id: datos.facturaId},
+            {
+                usuario: {
+                    empresa_id: datosUsuario.empresaId
+                }
+            }
+            ]
+        }
+        });
+        
+        if(!factura){
+        throw new ErrorApp('Factura no encontrada', 404);
+        }
+        
+        const resultado = await apiFacturacionElectronicaCancelar({cdc: factura.cdc, motivo: datos.motivo});
+        
+        return resultado;
+
+    } catch (error) {
+        console.log(error);
+        ErrorApp.handleServiceError(error);
+    }
+
+}
+
+const apiFacturacionElectronicaCancelar = async ({cdc, motivo} = {}) => {
+    const form = new FormData();
+
+    //Armar jsondata
+    const data = {
+        tipoEvento: 2,
+        cdc,
+        motivo
+    }
+    console.log(data);
+
+    const datajson = JSON.stringify(data, null, 2);
+
+    form.append("datajson", datajson);
+    form.append("recordID", "123");
+
+    const { data: resultado } = await axios({
+        url: `${process.env.URL_API_FACT}/sifen/v2/eventos.php`,
+        method: "POST",
+        data: form,
+        headers: {
+            ...form.getHeaders(),
+        },
+    });
+    
+    console.log(resultado);
+
+    return resultado;
+}
+
 module.exports = {
   emitirFactura,
   getFacturas,
   getFacturaById,
   checkFacturaStatus,
   reenviarFactura,
+  cancelarFactura
 };
