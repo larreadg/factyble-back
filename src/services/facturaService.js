@@ -587,16 +587,29 @@ const cancelarFactura = async(datos, datosUsuario) => {
         });
         
         if(!factura){
-        throw new ErrorApp('Factura no encontrada', 404);
+          throw new ErrorApp('Factura no encontrada', 404)
         }
         
         const resultado = await apiFacturacionElectronicaCancelar({cdc: factura.cdc, motivo: datos.motivo});
         
-        return resultado;
+        if(resultado && resultado.status){
+          await prisma.factura.update({
+            where: {
+              id: datos.facturaId
+            },
+            data: {
+              sifen_estado: 'Cancelado',
+              sifen_estado_mensaje: datos.motivo
+            }
+          })
+          return resultado
+        } else {
+          throw new ErrorApp(resultado.code || 'No se pudo cancelar la factura', 400)
+        }
 
     } catch (error) {
         console.log(error);
-        ErrorApp.handleServiceError(error);
+        ErrorApp.handleServiceError(error)
     }
 
 }
