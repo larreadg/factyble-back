@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE `Usuario` (
+CREATE TABLE `usuario` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `nombres` VARCHAR(255) NOT NULL,
     `apellidos` VARCHAR(255) NOT NULL,
@@ -12,12 +12,12 @@ CREATE TABLE `Usuario` (
     `fecha_modificacion` DATETIME(3) NOT NULL,
     `empresa_id` INTEGER NOT NULL,
 
-    UNIQUE INDEX `Usuario_email_key`(`email`),
+    UNIQUE INDEX `usuario_email_key`(`email`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `Rol` (
+CREATE TABLE `rol` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `nombre` VARCHAR(255) NOT NULL,
     `fecha_creacion` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -38,7 +38,7 @@ CREATE TABLE `usuario_rol` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `Empresa` (
+CREATE TABLE `empresa` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `ruc` VARCHAR(255) NOT NULL,
     `nombre_empresa` VARCHAR(255) NOT NULL,
@@ -56,7 +56,7 @@ CREATE TABLE `Empresa` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `Cliente` (
+CREATE TABLE `cliente` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `ruc` VARCHAR(255) NOT NULL,
     `documento` VARCHAR(255) NOT NULL,
@@ -88,7 +88,7 @@ CREATE TABLE `cliente_empresa` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `Factura` (
+CREATE TABLE `factura` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `numero_factura` INTEGER NOT NULL,
     `factura_uuid` VARCHAR(255) NOT NULL,
@@ -126,35 +126,35 @@ CREATE TABLE `factura_detalle` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `Captcha` (
+CREATE TABLE `captcha` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `captcha` VARCHAR(6) NOT NULL,
-    `ip` VARCHAR(15) NOT NULL,
+    `ip` VARCHAR(40) NOT NULL,
     `fecha_expiracion` DATETIME(3) NOT NULL,
 
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- AddForeignKey
-ALTER TABLE `Usuario` ADD CONSTRAINT `Usuario_empresa_id_fkey` FOREIGN KEY (`empresa_id`) REFERENCES `Empresa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `usuario` ADD CONSTRAINT `usuario_empresa_id_fkey` FOREIGN KEY (`empresa_id`) REFERENCES `empresa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `usuario_rol` ADD CONSTRAINT `usuario_rol_usuario_id_fkey` FOREIGN KEY (`usuario_id`) REFERENCES `Usuario`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `usuario_rol` ADD CONSTRAINT `usuario_rol_usuario_id_fkey` FOREIGN KEY (`usuario_id`) REFERENCES `usuario`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `usuario_rol` ADD CONSTRAINT `usuario_rol_rol_id_fkey` FOREIGN KEY (`rol_id`) REFERENCES `Rol`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `usuario_rol` ADD CONSTRAINT `usuario_rol_rol_id_fkey` FOREIGN KEY (`rol_id`) REFERENCES `rol`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `cliente_empresa` ADD CONSTRAINT `cliente_empresa_cliente_id_fkey` FOREIGN KEY (`cliente_id`) REFERENCES `Cliente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `cliente_empresa` ADD CONSTRAINT `cliente_empresa_cliente_id_fkey` FOREIGN KEY (`cliente_id`) REFERENCES `cliente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `cliente_empresa` ADD CONSTRAINT `cliente_empresa_empresa_id_fkey` FOREIGN KEY (`empresa_id`) REFERENCES `Empresa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `cliente_empresa` ADD CONSTRAINT `cliente_empresa_empresa_id_fkey` FOREIGN KEY (`empresa_id`) REFERENCES `empresa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `Factura` ADD CONSTRAINT `Factura_usuario_id_fkey` FOREIGN KEY (`usuario_id`) REFERENCES `Usuario`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `factura` ADD CONSTRAINT `factura_usuario_id_fkey` FOREIGN KEY (`usuario_id`) REFERENCES `usuario`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `Factura` ADD CONSTRAINT `Factura_cliente_empresa_id_fkey` FOREIGN KEY (`cliente_empresa_id`) REFERENCES `cliente_empresa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `factura` ADD CONSTRAINT `factura_cliente_empresa_id_fkey` FOREIGN KEY (`cliente_empresa_id`) REFERENCES `cliente_empresa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `factura_detalle` ADD CONSTRAINT `factura_detalle_id_factura_fkey` FOREIGN KEY (`id_factura`) REFERENCES `Factura`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `factura_detalle` ADD CONSTRAINT `factura_detalle_id_factura_fkey` FOREIGN KEY (`id_factura`) REFERENCES `factura`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
