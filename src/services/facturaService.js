@@ -290,7 +290,7 @@ const apiFacturacionElectronica = async (datos) => {
 
       credito = {
         condicionCredito: 1,
-        descripcion: datos.plazoDescripcion // Ej: Plazo a 30 días
+        descripcion: datos.plazoDescripcion.slice(0, 15) // Ej: Plazo a 30 días // Hasta 15 caracteres
       }
 
     }
