@@ -17,9 +17,9 @@ const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, e
     const xmlBuffer = Buffer.from(xmlResponse.data, 'binary');
 
     let transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 587,
-        secure: false, // true for 465, false for other ports
+        host: process.env.EMAIL_HOST,
+        port: Number(process.env.EMAIL_PORT),
+        secure: Number(process.env.EMAIL_SECURE) === 1, // true for 465, false for other ports
         auth: {
             user: process.env.EMAIL,
             pass: process.env.EMAIL_PW,
@@ -27,7 +27,7 @@ const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, e
     })
 
     let mailObj = {
-        from: `"No Reply" <factyble@gmail.com>`, // sender address
+        from: process.env.EMAIL_FROM, // sender address
         to: email, // list of receivers
         subject: `Factura electrónica Nro. ${nroFactura} | ${empresa}`,
         html,
@@ -60,9 +60,9 @@ const enviarErrorFactura = async ({ email, nroFactura, errorFactura, empresa }) 
     html = html.replace(/\$errorFactura/g, errorFactura)
 
     let transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 587,
-        secure: false, // true for 465, false for other ports
+        host: process.env.EMAIL_HOST,
+        port: Number(process.env.EMAIL_PORT),
+        secure: Number(process.env.EMAIL_SECURE) === 1, // true for 465, false for other ports
         auth: {
             user: process.env.EMAIL,
             pass: process.env.EMAIL_PW,
@@ -70,7 +70,7 @@ const enviarErrorFactura = async ({ email, nroFactura, errorFactura, empresa }) 
     })
 
     let mailObj = {
-        from: `"No Reply" <factyble@gmail.com>`, // sender address
+        from: process.env.EMAIL_FROM, // sender address
         to: email, // list of receivers
         subject: `Error Factura Nro.: ${nroFactura} | ${empresa}`,
         html
