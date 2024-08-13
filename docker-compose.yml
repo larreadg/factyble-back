@@ -10,6 +10,8 @@ services:
       - "12100:12100"
     depends_on:
       - db
+    volumes:
+      - ./public:/app/public
     networks:
       - factyble-network
 
