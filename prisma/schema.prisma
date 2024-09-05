@@ -67,6 +67,7 @@ model Empresa {
   fecha_modificacion  DateTime        @updatedAt  
   usuarios            Usuario[]
   clientes            ClienteEmpresa[]
+  establecimientos    Establecimiento[]
 }
 
 enum TipoIdentificacion {
@@ -170,4 +171,35 @@ model Captcha {
   captcha             String        @db.VarChar(6)
   ip                  String        @db.VarChar(40)
   fecha_expiracion    DateTime    
+}
+
+model Establecimiento {
+  @@map("establecimiento")
+  id                  Int           @id @default(autoincrement())
+  nombre              String        @db.Text
+  direccion           String        @db.Text
+  numero_casa         String?       @db.VarChar(255)
+  telefono            String?       @db.VarChar(255)
+  codigo              String        @db.VarChar(255)
+  cod_distrito        String        @db.VarChar(255)
+  cod_ciudad          String        @db.VarChar(255)
+  cod_departamento    String        @db.VarChar(255)
+  empresa_id          Int
+  fecha_creacion      DateTime      @default(now())
+  fecha_modificacion  DateTime      @updatedAt 
+
+  empresa             Empresa       @relation(fields: [empresa_id], references: [id])
+  cajas               Caja[]
+}
+
+model Caja {
+  @@map("caja")
+  id                  Int           @id @default(autoincrement())
+  nombre              String        @db.Text
+  codigo              String        @db.VarChar(255)
+  establecimiento_id  Int
+  fecha_creacion      DateTime      @default(now())
+  fecha_modificacion  DateTime      @updatedAt 
+
+  establecimiento     Establecimiento   @relation(fields: [establecimiento_id], references: [id])
 }

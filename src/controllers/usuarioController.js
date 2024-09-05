@@ -1,5 +1,6 @@
 const { validationResult } = require('express-validator');
 const usuarioService = require('../services/usuarioService');
+const establecimientoService = require('../services/establecimientoService');
 const Response = require('../utils/response');
 const ErrorApp = require('../utils/error');
 
@@ -42,7 +43,27 @@ const register = async (req, res) => {
     }
 }
 
+const getEstablecimientosByEmpresaUsuario = async (req, res) => {
+
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const data = await establecimientoService.getEstablecimientosByEmpresa({ empresaId: req.usuario.empresaId });
+
+        return res.status(200).send(Response.success(data, 'Operación exitosa'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al obtener establecimientos');
+
+        return res.status(code).send(Response.error(message, code));
+        
+    }
+}
+
 module.exports = {
     authenticateUsuario,
+    getEstablecimientosByEmpresaUsuario,
     register
 }

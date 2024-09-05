@@ -1,6 +1,7 @@
-const routes = require('express').Router();
-const { query, body } = require('express-validator');
-const usuarioController = require('../controllers/usuarioController');
+const routes = require('express').Router()
+const { body } = require('express-validator')
+const usuarioController = require('../controllers/usuarioController')
+const { authJwt } = require('../middleware/authJwt');
 
 routes.post(
     '/authenticate',
@@ -8,7 +9,7 @@ routes.post(
     body('password').notEmpty().withMessage('La contraseña es obligatoria'),
     body('captcha').notEmpty().withMessage('La captcha es obligatoria'),
     usuarioController.authenticateUsuario
-);
+)
 
 routes.post(
     '/register',
@@ -22,6 +23,12 @@ routes.post(
     body('roles.*', 'Parámetro roles incorrecto').isInt({min: 1}),
     body('empresaId', 'Parámetro empresaId es requerido').isInt(),
     usuarioController.register
-);
+)
 
-module.exports = routes;
+routes.get(
+    '/establecimientos',
+    authJwt(['ADMIN']),
+    usuarioController.getEstablecimientosByEmpresaUsuario
+)
+
+module.exports = routes
