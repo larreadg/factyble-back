@@ -41,7 +41,8 @@ const authenticateUsuario = async ({ usuario, password, captcha } = {}) => {
                     include: {
                         rol: true
                     }
-                }
+                },
+                empresa: true
             }
         });
         
@@ -61,6 +62,8 @@ const authenticateUsuario = async ({ usuario, password, captcha } = {}) => {
             documento: user.documento,
             telefono: user.telefono,
             empresaId: user.empresa_id,
+            empresaNombre: user.empresa.nombre_empresa,
+            empresaRuc: user.empresa.ruc,
             roles: user.roles.map(r => r.rol.nombre)
         }
 
@@ -141,7 +144,43 @@ const register = async ({ nombres, apellidos, email, documento, telefono, passwo
     }
 }
 
+
+const getCajasEstablecimientosByUsuarioId = async ({ usuarioId }) => {
+
+    const usuario = await prisma.usuario.findFirst({
+        where: {
+            id: usuarioId
+        },
+        include: {
+            empresa: {
+                include: {
+                    establecimientos: true,
+                }
+            }
+        }
+    })
+
+    const establecimientos = usuario.empresa.establecimientos
+
+    const cajas = await prisma.caja.findMany({
+        where: {
+            establecimiento_id: {
+                in: establecimientos.map(el => el.id)
+            }
+        },
+        include: {
+            establecimiento: true
+        }
+    })
+
+    console.log(cajas)
+
+    return cajas
+
+}
+
 module.exports = {
     authenticateUsuario,
-    register
+    register,
+    getCajasEstablecimientosByUsuarioId
 }

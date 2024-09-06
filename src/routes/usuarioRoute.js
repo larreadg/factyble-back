@@ -1,7 +1,7 @@
 const routes = require('express').Router()
 const { body } = require('express-validator')
+const { authJwt } = require('../middleware/authJwt')
 const usuarioController = require('../controllers/usuarioController')
-const { authJwt } = require('../middleware/authJwt');
 
 routes.post(
     '/authenticate',
@@ -26,9 +26,9 @@ routes.post(
 )
 
 routes.get(
-    '/establecimientos',
+    '/establecimientos-cajas',
     authJwt(['ADMIN']),
-    usuarioController.getEstablecimientosByEmpresaUsuario
+    usuarioController.getCajasEstablecimientosByUsuarioId
 )
 
 module.exports = routes
