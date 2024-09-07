@@ -3,7 +3,6 @@ const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
 const { calcularImpuesto } = require("../utils/facturacion");
 const generarPdf = require("../utils/generarPdf");
-const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const { conectarDbApiFacturacion } = require("../db/dbApiFacturacion");
 const FormData = require("form-data");
@@ -159,6 +158,9 @@ const emitirFactura = async (datos, datosUsuario) => {
         select: {
           codigo_seguridad: true,
         },
+        where: {
+          caja_id: caja.id
+        }
       });
   
       const codigosSeguridad = codigosSeguridadRaw.map((e) => e.codigo_seguridad);
@@ -268,7 +270,7 @@ const emitirFactura = async (datos, datosUsuario) => {
 };
 
 const apiFacturacionElectronica = async (datos) => {
-  // return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
+  return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
 
   const form = new FormData();
 

@@ -29,6 +29,7 @@ model Usuario {
   empresa_id          Int
   facturas            Factura[]
   roles               UsuarioRol[]
+  nota_credito        NotaCredito[]
 }
 
 model Rol {
@@ -140,8 +141,11 @@ model Factura {
   linkqr                String?           @db.Text
   sifen_estado          String?           @db.Text
   sifen_estado_mensaje  String?           @db.Text
-  codigo_seguridad      String            @db.VarChar(10)    
+  codigo_seguridad      String            @db.VarChar(10)
   detalles              FacturaDetalle[]
+  nota_credito          NotaCredito[]
+  caja_id               Int
+  caja                  Caja              @relation(fields: [caja_id], references: [id])
 }
 
 enum Tasa {
@@ -194,18 +198,67 @@ model Establecimiento {
 
 model Caja {
   @@map("caja")
-  id                  Int               @id @default(autoincrement())
-  nombre              String            @db.Text
-  codigo              String            @db.VarChar(255)
-  establecimiento_id  Int
-  fecha_creacion      DateTime          @default(now())
-  fecha_modificacion  DateTime          @updatedAt 
-  establecimiento     Establecimiento   @relation(fields: [establecimiento_id], references: [id])
-  secuencia_factura   SecuenciaFactura?
+  id                      Int               @id @default(autoincrement())
+  nombre                  String            @db.Text
+  codigo                  String            @db.VarChar(255)
+  establecimiento_id      Int
+  fecha_creacion          DateTime          @default(now())
+  fecha_modificacion      DateTime          @updatedAt 
+  establecimiento         Establecimiento   @relation(fields: [establecimiento_id], references: [id])
+  secuencia_factura       SecuenciaFactura?
+  secuencia_nota_credito  SecuenciaNotaCredito?
+  facturas                Factura[]
+  nota_credito            NotaCredito[]
 }
 
 model SecuenciaFactura {
   @@map("secuencia_factura")
+  caja_id            Int       @id
+  valor              Int
+  fecha_creacion     DateTime  @default(now())
+  fecha_modificacion DateTime  @updatedAt
+  caja               Caja      @relation(fields: [caja_id], references: [id])
+}
+
+model NotaCredito {
+  @@map("nota_credito")
+  id                    Int               @id @default(autoincrement())
+  numero_nota_credito   Int
+  factura_id            Int
+  nota_credito_uuid     String            @db.VarChar(255)
+  usuario               Usuario           @relation(fields: [usuario_id], references: [id])
+  usuario_id            Int
+  total_iva             Float
+  total                 Float
+  cdc                   String            @db.VarChar(255)
+  xml                   String?           @db.Text
+  linkqr                String?           @db.Text
+  sifen_estado          String?           @db.Text
+  sifen_estado_mensaje  String?           @db.Text
+  codigo_seguridad      String            @db.VarChar(10)    
+  factura               Factura           @relation(fields: [factura_id], references: [id])
+  nota_credito_detalle  NotaCreditoDetalle[]
+  caja_id               Int
+  caja                  Caja              @relation(fields: [caja_id], references: [id])    
+}
+
+model NotaCreditoDetalle {
+  @@map("nota_credito_detalle")
+  id                  Int           @id @default(autoincrement())
+  nota_credito_id     Int           
+  cantidad            Int
+  precio_unitario     Float
+  tasa                Tasa
+  impuesto            Float
+  total               Float
+  descripcion         String        @db.VarChar(255)
+  fecha_creacion      DateTime      @default(now())
+  fecha_modificacion  DateTime      @updatedAt
+  nota_credito        NotaCredito   @relation(fields: [nota_credito_id], references: [id])
+}
+
+model SecuenciaNotaCredito {
+  @@map("secuencia_nota_credito")
   caja_id            Int       @id
   valor              Int
   fecha_creacion     DateTime  @default(now())

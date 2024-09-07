@@ -1,5 +1,5 @@
 const routes = require('express').Router();
-const { body, query, param } = require('express-validator');
+const { body, param } = require('express-validator');
 const facturaController = require('../controllers/facturaController');
 const { authJwt } = require('../middleware/authJwt');
 
