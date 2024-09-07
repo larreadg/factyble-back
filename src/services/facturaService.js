@@ -14,6 +14,30 @@ const { obtenerPeriodicidad } = require("../utils/date");
 
 const emitirFactura = async (datos, datosUsuario) => {
   try {
+    // Buscar establecimiento
+    const establecimiento = await prisma.establecimiento.findFirst({
+      where: {
+        codigo: datos.establecimiento,
+        empresa_id: datosUsuario.empresaId
+      }
+    })
+
+    if(!establecimiento) {
+      throw new ErrorApp('No se encontró establecimiento', 404)
+    }
+    
+    // Buscar caja para establecimiento
+    const caja = await prisma.caja.findFirst({
+      where: {
+        codigo: datos.caja,
+        establecimiento_id: establecimiento.id
+      }
+    })
+
+    if(!caja) {
+      throw new ErrorApp('No se encontró caja', 404)
+    }
+
     //Buscar datos del usuario
     const usuario = await prisma.usuario.findFirst({
       where: { id: datosUsuario.id },
@@ -120,75 +144,77 @@ const emitirFactura = async (datos, datosUsuario) => {
     //Datos adicionales
     const facturaUuid = uuidv4();
 
-    const { _max: { numero_factura: maxNroFactura } } = await prisma.factura.aggregate({
-      _max: {
-        numero_factura: true,
-      },
-    });
+    // Se usa transacción y FOR UPDATE para bloquear la tabla al crear el número de factura por si hay concurrencia
+    const factura = await prisma.$transaction(async (tx) => {
+      const secuencia = await tx.$queryRaw`SELECT valor FROM secuencia_factura WHERE caja_id = ${caja.id} FOR UPDATE`
 
-    if (maxNroFactura === undefined || maxNroFactura === null) {
-      throw new ErrorApp("Error al obtener número de factura", 500);
-    }
+      if (!secuencia || secuencia.length === 0) {
+        throw new ErrorApp('Secuencia no encontrada', 404);
+      }
 
-    const numeroFactura = Number(maxNroFactura) + 1;
+      const numeroFactura = Number(secuencia[0].valor) + 1;
+      await tx.$executeRaw`UPDATE secuencia_factura SET valor = ${numeroFactura} WHERE caja_id = ${caja.id}`;
+      
+      const codigosSeguridadRaw = await prisma.factura.findMany({
+        select: {
+          codigo_seguridad: true,
+        },
+      });
+  
+      const codigosSeguridad = codigosSeguridadRaw.map((e) => e.codigo_seguridad);
+  
+      let codigoSeguridadAleatorio = generarCodigoSeguridad();
+  
+      while (codigosSeguridad.includes(codigoSeguridadAleatorio)) {
+        codigoSeguridadAleatorio = generarCodigoSeguridad();
+      }
 
-    const codigosSeguridadRaw = await prisma.factura.findMany({
-      select: {
-        codigo_seguridad: true,
-      },
-    });
+      //Llamar a la API de Facturación electrónica
+      const resultado = await apiFacturacionElectronica({
+        ...datos,
+        facturaUuid,
+        codigoSeguridadAleatorio,
+        numeroFactura,
+      });
+  
+      if (!resultado || resultado.status != true) {
+        throw new ErrorApp("Error al generar factura", 500);
+      }
+  
+      //Crear factura
+      const factura = await prisma.factura.create({
+        data: {
+          numero_factura: numeroFactura,
+          factura_uuid: facturaUuid,
+          usuario_id: usuario.id,
+          cliente_empresa_id: clienteEmpresa.id,
+          condicion_venta: datos.condicionVenta,
+          total_iva: datos.totalIva,
+          total: datos.total,
+          cdc: resultado.cdc,
+          xml: resultado.xmlLink,
+          linkqr: resultado.link,
+          codigo_seguridad: codigoSeguridadAleatorio,
+        },
+      });
 
-    const codigosSeguridad = codigosSeguridadRaw.map((e) => e.codigo_seguridad);
+      //Agregar detalles de factura
+      const datosFacturaDetalle = datos.items.map((e) => ({
+        id_factura: factura.id,
+        cantidad: Number(e.cantidad),
+        precio_unitario: e.precioUnitario,
+        tasa: e.tasa == "0%" ? "T0" : e.tasa == "5%" ? "T5" : "T10",
+        impuesto: e.impuesto,
+        total: e.total,
+        descripcion: e.descripcion,
+      }));
+  
+      const facturaDetalle = await prisma.facturaDetalle.createMany({
+        data: datosFacturaDetalle,
+      });
 
-    let codigoSeguridadAleatorio = generarCodigoSeguridad();
-
-    while (codigosSeguridad.includes(codigoSeguridadAleatorio)) {
-      codigoSeguridadAleatorio = generarCodigoSeguridad();
-    }
-
-    //Llamar a la API de Facturación electrónica
-    const resultado = await apiFacturacionElectronica({
-      ...datos,
-      facturaUuid,
-      codigoSeguridadAleatorio,
-      numeroFactura,
-    });
-
-    if (!resultado || resultado.status != true) {
-      throw new ErrorApp("Error al generar factura", 500);
-    }
-
-    //Crear factura
-    const factura = await prisma.factura.create({
-      data: {
-        numero_factura: numeroFactura,
-        factura_uuid: facturaUuid,
-        usuario_id: usuario.id,
-        cliente_empresa_id: clienteEmpresa.id,
-        condicion_venta: datos.condicionVenta,
-        total_iva: datos.totalIva,
-        total: datos.total,
-        cdc: resultado.cdc,
-        xml: resultado.xmlLink,
-        linkqr: resultado.link,
-        codigo_seguridad: codigoSeguridadAleatorio,
-      },
-    });
-
-    //Agregar detalles de factura
-    const datosFacturaDetalle = datos.items.map((e) => ({
-      id_factura: factura.id,
-      cantidad: Number(e.cantidad),
-      precio_unitario: e.precioUnitario,
-      tasa: e.tasa == "0%" ? "T0" : e.tasa == "5%" ? "T5" : "T10",
-      impuesto: e.impuesto,
-      total: e.total,
-      descripcion: e.descripcion,
-    }));
-
-    const facturaDetalle = await prisma.facturaDetalle.createMany({
-      data: datosFacturaDetalle,
-    });
+      return factura
+    })
 
     const itemsPdf = datos.items.map((e) => {
       const exentas = e.tasa == "0%" ? formatNumber(e.impuesto) : "0";
@@ -216,7 +242,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       empresaTelefono: usuario.empresa.telefono,
       empresaCiudad: usuario.empresa.ciudad,
       empresaCorreoElectronico: usuario.empresa.email,
-      facturaId: "001-" + "001-" + formatNumberWithLeadingZeros(numeroFactura),
+      facturaId: `${datos.establecimiento}-` + `${datos.caja}-` + formatNumberWithLeadingZeros(factura.numero_factura),
       condicionVenta: datos.condicionVenta,
       ruc: cliente.ruc,
       razonSocial: cliente.razon_social,
@@ -229,14 +255,14 @@ const emitirFactura = async (datos, datosUsuario) => {
       moneda: "PYG",
       items: itemsPdf,
       facturaUuid: facturaUuid,
-      linkqr: resultado.link,
-      cdc: resultado.cdc,
+      linkqr: factura.linkqr,
+      cdc: factura.cdc,
     });
 
     return factura;
 
   } catch (error) {
-    console.log(error);
+    // console.log(error);
     ErrorApp.handleServiceError(error, "Error al crear factura");
   }
 };
@@ -321,8 +347,8 @@ const apiFacturacionElectronica = async (datos) => {
     documentoAsociado: {
       remision: false,
     },
-    punto: "001",
-    establecimiento: "001",
+    establecimiento: datos.establecimiento,
+    punto: datos.caja,
     numero: String(datos.numeroFactura),
     descripcion: ".",
     tipoDocumento: 1, // 1 (Factura), 5 (Nota de crédito), 7 (Nota de remision)

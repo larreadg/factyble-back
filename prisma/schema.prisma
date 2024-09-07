@@ -194,12 +194,21 @@ model Establecimiento {
 
 model Caja {
   @@map("caja")
-  id                  Int           @id @default(autoincrement())
-  nombre              String        @db.Text
-  codigo              String        @db.VarChar(255)
+  id                  Int               @id @default(autoincrement())
+  nombre              String            @db.Text
+  codigo              String            @db.VarChar(255)
   establecimiento_id  Int
-  fecha_creacion      DateTime      @default(now())
-  fecha_modificacion  DateTime      @updatedAt 
-
+  fecha_creacion      DateTime          @default(now())
+  fecha_modificacion  DateTime          @updatedAt 
   establecimiento     Establecimiento   @relation(fields: [establecimiento_id], references: [id])
+  secuencia_factura   SecuenciaFactura?
+}
+
+model SecuenciaFactura {
+  @@map("secuencia_factura")
+  caja_id            Int       @id
+  valor              Int
+  fecha_creacion     DateTime  @default(now())
+  fecha_modificacion DateTime  @updatedAt
+  caja               Caja      @relation(fields: [caja_id], references: [id])
 }

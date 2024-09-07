@@ -48,6 +48,20 @@ routes.post(
         if(body && body.tipoCredito == 'CUOTA') return true;
         return typeof body.plazoDescripcion == 'string' ;
     }),
+    body('establecimiento').matches(/^\d{3}$/)
+    .withMessage('El parámetro establecimiento debe tener exactamente 3 dígitos entre 001 y 999')
+    .custom(v => {
+        const n = parseInt(v, 10)
+        if(n < 1 || n > 999) return false
+        return true
+    }).withMessage('Parámetro establecimiento inválido'),
+    body('caja').matches(/^\d{3}$/)
+    .withMessage('El parámetro caja debe tener exactamente 3 dígitos entre 001 y 999')
+    .custom(v => {
+        const n = parseInt(v, 10)
+        if(n < 1 || n > 999) return false
+        return true
+    }).withMessage('Parámetro caja inválido'),
     facturaController.emitirFactura
 );
 
