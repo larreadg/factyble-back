@@ -177,6 +177,7 @@ const emitirFactura = async (datos, datosUsuario) => {
         facturaUuid,
         codigoSeguridadAleatorio,
         numeroFactura,
+        empresaRuc: usuario.empresa.ruc
       });
   
       if (!resultado || resultado.status != true) {
@@ -197,6 +198,7 @@ const emitirFactura = async (datos, datosUsuario) => {
           xml: resultado.xmlLink,
           linkqr: resultado.link,
           codigo_seguridad: codigoSeguridadAleatorio,
+          caja_id: caja.id
         },
       });
 
@@ -270,7 +272,7 @@ const emitirFactura = async (datos, datosUsuario) => {
 };
 
 const apiFacturacionElectronica = async (datos) => {
-  return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
+  // return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
 
   const form = new FormData();
 
@@ -345,6 +347,7 @@ const apiFacturacionElectronica = async (datos) => {
 
   //Armar datajson
   let data = {
+    ruc: datos.empresaRuc,
     fecha: dayjs().format("YYYY-MM-DD HH:mm:ss"),
     documentoAsociado: {
       remision: false,
@@ -379,8 +382,8 @@ const apiFacturacionElectronica = async (datos) => {
   form.append("recordID", "123");
   console.log(data);
 
-  const { data: resultado } = await axios({
-    url: `${process.env.URL_API_FACT}/facturacion-api/data.php`,
+  const { data: { data: resultado } = {} } = await axios({
+    url: `${process.env.URL_API_FACT}/data.php`,
     method: "POST",
     data: form,
     headers: {
@@ -597,59 +600,69 @@ const reenviarFactura = async ({ email, facturaId }) => {
   });
 };
 
-const cancelarFactura = async(datos, datosUsuario) => {
+const cancelarFactura = async (datos, datosUsuario) => {
 
-    try {
-        
-        const factura = await prisma.factura.findFirst({
-        where: {
-            AND: [
-            {id: datos.facturaId},
-            {
-                usuario: {
-                    empresa_id: datosUsuario.empresaId
-                }
-            }
-            ]
-        }
-        });
-        
-        if(!factura){
-          throw new ErrorApp('Factura no encontrada', 404)
-        }
-        
-        const resultado = await apiFacturacionElectronicaCancelar({cdc: factura.cdc, motivo: datos.motivo});
-        
-        if(resultado && resultado.status){
-          await prisma.factura.update({
-            where: {
-              id: datos.facturaId
-            },
-            data: {
-              sifen_estado: 'Cancelado',
-              sifen_estado_mensaje: datos.motivo
-            }
-          })
-          return resultado
-        } else {
-          throw new ErrorApp(resultado.code || 'No se pudo cancelar la factura', 400)
-        }
+  try {
 
-    } catch (error) {
-        console.log(error);
-        ErrorApp.handleServiceError(error)
+    const factura = await prisma.factura.findFirst({
+      where: {
+        AND: [
+          { id: datos.facturaId },
+          {
+            usuario: {
+              empresa_id: datosUsuario.empresaId
+            }
+          }
+        ]
+      }
+    });
+
+    if (!factura) {
+      throw new ErrorApp('Factura no encontrada', 404)
     }
+
+    // Se busca datos de la empresa
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: datosUsuario.empresaId }
+    })
+
+    if (!empresa) {
+      throw new ErrorApp('Empresa no encontrada', 404)
+    }
+
+    const resultado = await apiFacturacionElectronicaCancelar({ ruc: empresa.ruc, cdc: factura.cdc, motivo: datos.motivo });
+
+    if (resultado && resultado.status) {
+      await prisma.factura.update({
+        where: {
+          id: datos.facturaId
+        },
+        data: {
+          sifen_estado: 'Cancelado',
+          sifen_estado_mensaje: datos.motivo
+        }
+      })
+      return resultado
+    } else {
+      throw new ErrorApp(resultado.message || 'No se pudo cancelar la factura', 400)
+    }
+
+  } catch (error) {
+    console.log(error);
+    ErrorApp.handleServiceError(error)
+  }
 
 }
 
-const apiFacturacionElectronicaCancelar = async ({cdc, motivo} = {}) => {
+const apiFacturacionElectronicaCancelar = async ({cdc, motivo, ruc} = {}) => {
     const form = new FormData();
 
     //Armar jsondata
     const data = {
         tipoEvento: 2,
         cdc,
-        motivo
+        motivo,
+        ruc
     }
     console.log(data);
 
@@ -658,8 +671,8 @@ const apiFacturacionElectronicaCancelar = async ({cdc, motivo} = {}) => {
     form.append("datajson", datajson);
     form.append("recordID", "123");
 
-    const { data: resultado } = await axios({
-        url: `${process.env.URL_API_FACT}/sifen/v2/eventos.php`,
+    const { data: { data: resultado } = {} } = await axios({
+        url: `${process.env.URL_API_FACT}/eventos.php`,
         method: "POST",
         data: form,
         headers: {

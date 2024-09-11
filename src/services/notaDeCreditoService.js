@@ -44,14 +44,23 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       throw new ErrorApp("Usuario no encontrado", 404);
     }
 
-    // Buscar cdc
-    const cdc = await prisma.factura.findFirst({
+    // Buscar factura y verificar condicion_venta = CONTADO y no este Cancelado
+    const factura = await prisma.factura.findFirst({
       where: {
-        cdc: datos.cdc
+        cdc: datos.cdc,
+        condicion_venta: 'CONTADO',
+        sifen_estado: {not: 'Cancelado'}
+      },
+      include: {
+        cliente_empresa: {
+          include: {
+            cliente: true
+          }
+        }
       }
     })
 
-    if(!cdc) {
+    if(!factura) {
       throw new ErrorApp('No se encontró cdc', 404)
     }
 
@@ -86,6 +95,26 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
 
     if (total != Number(datos.total) || totalIva != Number(datos.totalIva)) {
       throw new ErrorApp("Datos proporcionados incorrectos", 400);
+    }
+
+    // Buscar si ya hay nota de crédito para la factura dada
+    const notasDeCredito = await prisma.notaCredito.findMany({
+      where: {
+        factura_id: factura.id
+      }
+    })
+
+    // Verificar que el total de las notas de crédito anteriores más el de ahora no supere el total de la factura
+    if(notasDeCredito && notasDeCredito.length > 0){
+      let totalNotasDeCredito = total
+      notasDeCredito.forEach(e => {
+        totalNotasDeCredito += Number(e.total)
+      })
+
+      if(totalNotasDeCredito > factura.total){
+        throw new ErrorApp('El total de las notas de crédito supera el valor total de la factura', 400)
+      }
+
     }
 
     // Datos adicionales
@@ -124,7 +153,10 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
         ...datos,
         codigoSeguridadAleatorio,
         notaDeCreditoUuid,
-        numeroNotaDeCredito
+        numeroNotaDeCredito,
+        empresaRuc: usuario.empresa.ruc,
+        clienteRuc: factura.cliente_empresa.cliente.ruc,
+        clienteNombre: factura.cliente_empresa.cliente.nombres
       })
 
       if (!resultado || resultado.status != true) {
@@ -134,7 +166,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       // Crear nota de crédito
       const notaDeCredito = await prisma.notaCredito.create({
         data: {
-          numero_nota_credito: numeroNotaDeCredito,
+          factura_id: factura.id,
           nota_credito_uuid: notaDeCreditoUuid,
           usuario_id: usuario.id,
           total_iva: datos.totalIva,
@@ -143,6 +175,9 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
           xml: resultado.xmlLink,
           linkqr: resultado.link,
           codigo_seguridad: codigoSeguridadAleatorio,
+          numero_nota_credito: numeroNotaDeCredito,
+          usuario_id: usuario.id,
+          caja_id: caja.id
         }
       })
 
@@ -164,7 +199,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       return notaDeCredito
     })
 
-    // PDF
+    // Crear PDF
 
     return notaDeCredito
 
@@ -175,7 +210,85 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
 }
 
 const apiFacturacionElectronicaNotaDeCredito = async (datos) => {
+  // return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
+  
   const form = new FormData();
+
+  let pagos = [{
+    name: "cash",
+    tipoPago: "99", // 1 (efectivo), 3 (TC), 4 (TD), 99 (Otros)
+    monto: Number(datos.total),
+  }]
+
+  const items = datos.items.map((e) => {
+    const baseGravItem = e.tasa == "0%" ? 0 : Number(e.total) - Number(e.impuesto);
+    const ivaTasa = e.tasa == "0%" ? 0 : e.tasa == "5%" ? 5 : 10;
+    const ivaAfecta = e.tasa == "0%" ? 3 : 1;
+
+    return {
+      descripcion: e.descripcion,
+      codigo: "0011",
+      unidadMedida: 77, // 77 (Unidad), 83 (kg)
+      ivaTasa,
+      ivaAfecta,
+      cantidad: Number(e.cantidad),
+      precioUnitario: Number(e.precioUnitario),
+      precioTotal: Number(e.total),
+      liqIvaItem: Number(e.impuesto),
+      baseGravItem,
+    };
+  });
+
+  //Armar datajson
+  let data = {
+    ruc: datos.empresaRuc,
+    fecha: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+    documentoAsociado: {
+      remision: false,
+      tipoDocumento: 1,
+      cdcAsociado: datos.cdc
+    },
+    establecimiento: datos.establecimiento,
+    punto: datos.caja,
+    numero: String(datos.numeroNotaDeCredito),
+    descripcion: ".",
+    tipoDocumento: 5, // 1 (Factura), 5 (Nota de crédito), 7 (Nota de remision)
+    tipoEmision: 1,
+    tipoTransaccion: 1, // 1 (Venta presencial)
+    receiptid: datos.notaDeCreditoUuid,
+    condicionPago: 1, // condicion_venta = CONTADO
+    moneda: "PYG",
+    cambio: 0, // Porque moneda = "PYG"
+    cliente: {
+      ruc: datos.clienteRuc,
+      nombre: datos.clienteNombre,
+      diplomatico: false, //Cuando un cliente es diplomatico (true). Todo tiene que ir como exenta
+    },
+    codigoSeguridadAleatorio: datos.codigoSeguridadAleatorio,
+    items,
+    pagos,
+    totalPago: Number(datos.total),
+    totalRedondeo: 0,
+  };
+
+  const datajson = JSON.stringify(data, null, 2);
+
+  form.append("datajson", datajson);
+  form.append("recordID", "123");
+  console.log(data);
+
+  const { data: { data: resultado } = {} } = await axios({
+    url: `${process.env.URL_API_FACT}/data.php`,
+    method: "POST",
+    data: form,
+    headers: {
+      ...form.getHeaders(),
+    },
+  });
+
+  console.log(resultado);
+
+  return resultado;
 
 }
 
