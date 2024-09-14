@@ -8,7 +8,7 @@ const { conectarDbApiFacturacion } = require("../db/dbApiFacturacion");
 const FormData = require("form-data");
 const axios = require("axios");
 const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
-const { enviarErrorFactura, enviarFactura } = require("./correoService");
+const { enviarErrorFactura, enviarFactura, enviarNotaDeCredito, enviarErrorNotaDeCredito } = require("./correoService");
 const { obtenerPeriodicidad } = require("../utils/date");
 
 const emitirFactura = async (datos, datosUsuario) => {
@@ -332,7 +332,7 @@ const apiFacturacionElectronica = async (datos) => {
     const ivaAfecta = e.tasa == "0%" ? 3 : 1;
 
     return {
-      descripcion: e.descripcion,
+      descripcion: e.descripcion ? e.descripcion.slice(0,119) : '',
       codigo: "0011",
       unidadMedida: 77, // 77 (Unidad), 83 (kg)
       ivaTasa,
@@ -508,69 +508,150 @@ const checkFacturaStatus = async () => {
       usuario: true,
     },
   });
+
+  const notasDeCreditoPendientes = await prisma.notaCredito.findMany({
+    where: {
+      OR: [
+        { sifen_estado: null },
+        { sifen_estado: 'En Proceso' }
+      ]
+    },
+    include: {
+      factura: {
+        include: {
+          cliente_empresa: { include: {cliente: true, empresa: true } }
+        }
+      },
+      usuario: true
+    }
+  })
+
+  console.log(notasDeCreditoPendientes[0].factura);
+  return
   
   const cdcFacturas = facturasPendientes.map((el) => el.cdc);
-
-  if (cdcFacturas.length > 0) {
+  const cdcNotasDeCredito = notasDeCreditoPendientes.map((el) => el.cdc)
+  
+  if(cdcFacturas.length > 0 || cdcNotasDeCredito.length > 0) {
     const dbApiFacturacion = conectarDbApiFacturacion();
     await dbApiFacturacion.connect();
 
-    const { rows: resultApiFacturacion } = await dbApiFacturacion.query({
-      text: `SELECT * FROM datos_factura2 WHERE cdc IN (${Array.from(
-        { length: cdcFacturas.length },
-        (_, index) => `$${index + 1}`
-      ).join(",")})`,
-      values: cdcFacturas,
-    });
-
-    dbApiFacturacion.end();
-
-    for (const item of resultApiFacturacion) {
-
-      const { cdc, sifen_estado: sifenEstado, sifen_mensaje: sifenMensaje } = item;
-
-      if (sifenEstado !== null && sifenEstado !== "") {
-        await prisma.factura.updateMany({
-          where: {
-            cdc,
-          },
-          data: {
-            sifen_estado: sifenEstado == 'N' ? 'En Proceso' : sifenEstado,
-            sifen_estado_mensaje: sifenMensaje,
-          },
-        });
-
-        const factura = facturasPendientes.find((el) => el.cdc === cdc);
-
-        if (typeof factura !== "undefined") {
-          const { cliente, empresa } = factura.cliente_empresa;
-
-          if (sifenEstado === "Aprobado") {
-
-            await enviarFactura({
-              cdc: factura.cdc,
-              cliente: cliente.tipo_identificacion === "RUC" ? cliente.razon_social : `${cliente.nombres} ${cliente.apellidos}`,
-              email: cliente.email,
-              uuid: factura.factura_uuid,
-              nroFactura: factura.numero_factura,
-              empresa: empresa.nombre_empresa,
-              emailEmpresa: empresa.email,
-            });
-
-          } else if (sifenEstado === "Rechazado") {
-
-            await enviarErrorFactura({
-              email: factura.usuario.email,
-              empresa: empresa.nombre_empresa,
-              errorFactura: sifenMensaje,
-              nroFactura: factura.numero_factura,
-            });
-
+    if (cdcFacturas.length > 0) {
+  
+      const { rows: resultApiFacturacion } = await dbApiFacturacion.query({
+        text: `SELECT * FROM datos_factura2 WHERE cdc IN (${Array.from(
+          { length: cdcFacturas.length },
+          (_, index) => `$${index + 1}`
+        ).join(",")})`,
+        values: cdcFacturas,
+      });
+  
+      for (const item of resultApiFacturacion) {
+  
+        const { cdc, sifen_estado: sifenEstado, sifen_mensaje: sifenMensaje } = item;
+  
+        if (sifenEstado !== null && sifenEstado !== "") {
+          await prisma.factura.updateMany({
+            where: {
+              cdc,
+            },
+            data: {
+              sifen_estado: sifenEstado == 'N' ? 'En Proceso' : sifenEstado,
+              sifen_estado_mensaje: sifenMensaje,
+            },
+          });
+  
+          const factura = facturasPendientes.find((el) => el.cdc === cdc);
+  
+          if (typeof factura !== "undefined") {
+            const { cliente, empresa } = factura.cliente_empresa;
+  
+            if (sifenEstado === "Aprobado") {
+  
+              await enviarFactura({
+                cdc: factura.cdc,
+                cliente: cliente.tipo_identificacion === "RUC" ? cliente.razon_social : `${cliente.nombres} ${cliente.apellidos}`,
+                email: cliente.email,
+                uuid: factura.factura_uuid,
+                nroFactura: factura.numero_factura,
+                empresa: empresa.nombre_empresa,
+                emailEmpresa: empresa.email,
+              });
+  
+            } else if (sifenEstado === "Rechazado") {
+  
+              await enviarErrorFactura({
+                email: factura.usuario.email,
+                empresa: empresa.nombre_empresa,
+                errorFactura: sifenMensaje,
+                nroFactura: factura.numero_factura,
+              });
+  
+            }
           }
         }
       }
     }
+  
+    if (notasDeCreditoPendientes.length > 0) {
+      const { rows: resultadoNotasDeCredito } = await dbApiFacturacion.query({
+        text: `SELECT * FROM datos_factura2 WHERE cdc IN (${Array.from(
+          { length: cdcNotasDeCredito.length },
+          (_, index) => `$${index + 1}`
+        ).join(",")})`,
+        values: cdcNotasDeCredito
+      })
+
+      for (const item of resultadoNotasDeCredito) {
+        const { cdc, sifen_estado: sifenEstado, sifen_mensaje: sifenMensaje } = item;
+
+        if (sifenEstado !== null && sifenEstado !== "") {
+          await prisma.notaCredito.update({
+            where: { cdc },
+            data: {
+              sifen_estado: sifenEstado == 'N' ? 'En Proceso' : sifenEstado,
+              sifen_estado_mensaje: sifenMensaje,
+            }
+          })
+
+          const notaDeCredito = notasDeCreditoPendientes.find(e => e.cdc === cdc)
+
+          if(notaDeCredito){
+            const { cliente, empresa } = notaDeCredito.factura.cliente_empresa
+
+            if(sifenEstado === 'Aprobado'){
+
+              await enviarNotaDeCredito({
+                cdc: notaDeCredito.cdc,
+                cliente: cliente.tipo_identificacion === "RUC" ? cliente.razon_social : `${cliente.nombres} ${cliente.apellidos}`,
+                email: cliente.email,
+                uuid: notaDeCredito.nota_credito_uuid,
+                nroNotaDeCredito: notaDeCredito.numero_nota_credito,
+                empresa: empresa.nombre_empresa,
+                emailEmpresa: empresa.email,
+              });
+
+            } else if (sifenEstado === 'Rechazado') {
+
+              await enviarErrorNotaDeCredito({
+                email: notaDeCredito.usuario,
+                empresa: empresa.nombre_empresa,
+                errorNotaDeCredito: sifenMensaje,
+                nroNotaDeCredito: notaDeCredito.numero_nota_credito,
+              });
+
+            }
+          }
+
+        }
+
+      }
+
+    }
+
+    dbApiFacturacion.end();
   }
+
   console.log(`${new Date().toISOString()} checkFacturaStatus Finalizado`);
 };
 
@@ -671,7 +752,7 @@ const apiFacturacionElectronicaCancelar = async ({cdc, motivo, ruc} = {}) => {
     form.append("datajson", datajson);
     form.append("recordID", "123");
 
-    const { data: { data: resultado } = {} } = await axios({
+    const { data: resultado } = await axios({
         url: `${process.env.URL_API_FACT}/eventos.php`,
         method: "POST",
         data: form,

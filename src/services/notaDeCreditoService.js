@@ -48,8 +48,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     const factura = await prisma.factura.findFirst({
       where: {
         cdc: datos.cdc,
-        condicion_venta: 'CONTADO',
-        sifen_estado: {not: 'Cancelado'}
+        condicion_venta: 'CONTADO'
       },
       include: {
         cliente_empresa: {
@@ -62,6 +61,10 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
 
     if(!factura) {
       throw new ErrorApp('No se encontró cdc', 404)
+    }
+
+    if(factura.sifen_estado != 'Aprobado'){
+      throw new ErrorApp('La factura aún no se ha aprobado', 400)
     }
 
     // Verificar cálculos
@@ -226,7 +229,7 @@ const apiFacturacionElectronicaNotaDeCredito = async (datos) => {
     const ivaAfecta = e.tasa == "0%" ? 3 : 1;
 
     return {
-      descripcion: e.descripcion,
+      descripcion: e.descripcion ? e.descripcion.slice(0,119) : '',
       codigo: "0011",
       unidadMedida: 77, // 77 (Unidad), 83 (kg)
       ivaTasa,

@@ -164,7 +164,7 @@ model FacturaDetalle {
   tasa                Tasa
   impuesto            Float
   total               Float
-  descripcion         String      @db.VarChar(255)
+  descripcion         String      @db.Text
   fecha_creacion      DateTime    @default(now())
   fecha_modificacion  DateTime    @updatedAt
 }

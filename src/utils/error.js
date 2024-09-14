@@ -11,7 +11,7 @@ class ErrorApp extends Error {
         if(error instanceof AxiosError){
             const message = error.response && error.response.data && error.response.data.message ? 
             error.response.data.message : error.message;
-            throw new ErrorApp(message, error.response.status);
+            throw new ErrorApp(message, error.response && error.response.status ? error.response.status : 500);
         }
 
         if(error instanceof Prisma.PrismaClientValidationError){
