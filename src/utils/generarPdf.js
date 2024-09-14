@@ -54,6 +54,8 @@ const generarPdf = async (datos) => {
     params.putSync("totalIva10", formatNumber(datos.totalIva10));
     params.putSync("totalExenta", formatNumber(datos.totalExenta)); //?? no faltaría este campo?
     params.putSync("cdc", datos.cdc);
+    params.putSync("tipoDocumento", datos.tipoDocumento);
+    params.putSync("tipoDocumentoTop", datos.tipoDocumentoTop);
 
     const qrFilename = `${datos.facturaUuid}.png`;
     const qrPath = await generarQr(

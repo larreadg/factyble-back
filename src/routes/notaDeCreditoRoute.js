@@ -34,4 +34,10 @@ routes.post(
     notaDeCreditoController.emitirNotaDeCredito
 )
 
+routes.get(
+    '/',
+    authJwt(['ADMIN']),
+    notaDeCreditoController.getNotasDeCredito
+)
+
 module.exports = routes

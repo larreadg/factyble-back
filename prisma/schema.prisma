@@ -144,8 +144,8 @@ model Factura {
   codigo_seguridad      String            @db.VarChar(10)
   detalles              FacturaDetalle[]
   nota_credito          NotaCredito[]
-  caja_id               Int
-  caja                  Caja              @relation(fields: [caja_id], references: [id])
+  caja_id               Int?
+  caja                  Caja?              @relation(fields: [caja_id], references: [id])
 }
 
 enum Tasa {
@@ -235,11 +235,13 @@ model NotaCredito {
   linkqr                String?           @db.Text
   sifen_estado          String?           @db.Text
   sifen_estado_mensaje  String?           @db.Text
-  codigo_seguridad      String            @db.VarChar(10)    
+  codigo_seguridad      String            @db.VarChar(10)
+  fecha_creacion        DateTime          @default(now())
+  fecha_modificacion    DateTime          @updatedAt    
   factura               Factura           @relation(fields: [factura_id], references: [id])
   nota_credito_detalle  NotaCreditoDetalle[]
-  caja_id               Int
-  caja                  Caja              @relation(fields: [caja_id], references: [id])    
+  caja_id               Int?
+  caja                  Caja?              @relation(fields: [caja_id], references: [id])    
 }
 
 model NotaCreditoDetalle {

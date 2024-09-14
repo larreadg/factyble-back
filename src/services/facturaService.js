@@ -261,6 +261,8 @@ const emitirFactura = async (datos, datosUsuario) => {
       facturaUuid: facturaUuid,
       linkqr: factura.linkqr,
       cdc: factura.cdc,
+      tipoDocumento: 'FACTURA ELECTRÓNICA',
+      tipoDocumentoTop: 'KuDE de Factura Electrónica'
     });
 
     return factura;

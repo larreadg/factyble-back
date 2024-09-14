@@ -300,8 +300,99 @@ const generarCodigoSeguridad = (length = 9) => {
     result += characters.charAt(Math.floor(Math.random() * charactersLength));
   }
   return result;
-};
+}
+
+const getNotasDeCredito = async (page = 1, itemsPerPage = 10, filter = null, empresaId) => {
+  try {
+    const skip = (page - 1) * itemsPerPage;
+    const take = itemsPerPage;
+
+    const establecimientos = await prisma.establecimiento.findMany({
+      where: {
+        empresa_id: empresaId
+      },
+      include: {
+        cajas: true
+      }
+    })
+
+    const cajasIds = []
+
+    for(const establecimiento of establecimientos){
+      for(const caja of establecimiento.cajas) {
+        cajasIds.push(caja.id)
+      }
+    }
+
+    let notasCredito = []
+    let totalItems = 0
+
+    if(filter === null) {
+      notasCredito = await prisma.notaCredito.findMany({
+        skip,
+        take,
+        orderBy: {
+          fecha_creacion: "desc",
+        },
+        where: {
+          caja_id: {
+            in: cajasIds
+          },
+        },
+        include: {
+          factura: true
+        }
+      })
+
+      totalItems = await prisma.notaCredito.count({
+        where: {
+          caja_id: {
+            in: cajasIds
+          },
+        },
+      })
+
+    } else {
+      const factura = await prisma.factura.findFirst({
+        skip,
+        take,
+        orderBy: {
+          fecha_creacion: "desc",
+        },
+        where: {
+          cdc: filter
+        },
+      })
+
+      notasCredito = await prisma.notaCredito.findMany({
+        where: {
+          factura_id: factura.id
+        },
+        include: {
+          factura: true
+        }
+      })
+
+      totalItems = await prisma.notaCredito.count({
+        where: {
+          factura_id: factura.id
+        }
+      })
+    } 
+
+    return {
+      items: notasCredito,
+      page,
+      itemsPerPage,
+      totalItems,
+    };
+  } catch (error) {
+    console.log(error)
+    ErrorApp.handleServiceError(error, "Error al obtener notas de crédito");
+  }
+}
 
 module.exports = {
-    emitirNotaDeCredito
+    emitirNotaDeCredito,
+    getNotasDeCredito
 }
