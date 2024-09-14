@@ -21,7 +21,29 @@ const emitirNotaDeCredito = async (req, res) => {
     }
 }
 
+const getNotasDeCredito = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+        const page = parseInt(req.query.page) || 1
+        const itemsPerPage = parseInt(req.query.itemsPerPage) || 10
+        const filter = req.query.filter || null
+
+        const data = await notaDeCreditoService.getNotasDeCredito(page, itemsPerPage, filter, Number(req.usuario.empresaId));
+
+        return res.status(200).send(Response.success(data, 'Notas de crédito obtenidas'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al obtener notas de crédito');
+
+        return res.status(code).send(Response.error(message, code));
+        
+    }
+}
+
 module.exports = {
-    emitirNotaDeCredito
+    emitirNotaDeCredito,
+    getNotasDeCredito
 }
 
