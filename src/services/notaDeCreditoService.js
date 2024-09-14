@@ -5,6 +5,8 @@ const { calcularImpuesto } = require("../utils/facturacion");
 const FormData = require("form-data");
 const axios = require("axios");
 const { v4: uuidv4 } = require("uuid");
+const generarPdf = require("../utils/generarPdf");
+const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
 
 const emitirNotaDeCredito = async (datos, datosUsuario) => {
   try {
@@ -209,8 +211,53 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     });
 
     // Crear PDF
+    const itemsPdf = datos.items.map((e) => {
+      const exentas = e.tasa == "0%" ? formatNumber(e.impuesto) : "0";
+      const iva5 = e.tasa == "5%" ? formatNumber(e.impuesto) : "0";
+      const iva10 = e.tasa == "10%" ? formatNumber(e.impuesto) : "0";
+      return {
+        precioUnitario: formatNumber(e.precioUnitario),
+        iva5,
+        iva10,
+        exentas,
+        descripcion: e.descripcion,
+        cantidad: String(e.cantidad),
+      };
+    });
+
+    const notaDeCreditoPdf = generarPdf({
+      empresaLogo: usuario.empresa.logo,
+      empresaRuc: usuario.empresa.ruc,
+      empresaTimbrado: usuario.empresa.timbrado,
+      empresaVigenteDesde: dayjs(usuario.empresa.vigente_desde).format(
+        "YYYY-MM-DD"
+      ),
+      empresaNombre: usuario.empresa.nombre_empresa,
+      empresaDireccion: usuario.empresa.direccion,
+      empresaTelefono: usuario.empresa.telefono,
+      empresaCiudad: usuario.empresa.ciudad,
+      empresaCorreoElectronico: usuario.empresa.email,
+      facturaId: `${datos.establecimiento}-` + `${datos.caja}-` + formatNumberWithLeadingZeros(notaDeCredito.numero_nota_credito),
+      condicionVenta: 'CONTADO',
+      ruc: factura.cliente_empresa.cliente.ruc,
+      razonSocial: factura.cliente_empresa.cliente.razon_social,
+      correoElectronico: factura.cliente_empresa.cliente.email,
+      total: datos.total,
+      totalIva: datos.totalIva,
+      totalExenta,
+      totalIva5,
+      totalIva10,
+      moneda: "PYG",
+      items: itemsPdf,
+      uuid: notaDeCreditoUuid,
+      linkqr: notaDeCredito.linkqr,
+      cdc: notaDeCredito.cdc,
+      tipoDocumento: 'NOTA DE CRÉDITO ELECTRÓNICA',
+      tipoDocumentoTop: 'KuDE de Nota de crédito Electrónica'
+    });
 
     return notaDeCredito;
+    
   } catch (error) {
     console.log(error);
     ErrorApp.handleServiceError(error);
@@ -411,7 +458,95 @@ const getNotasDeCredito = async (
   }
 };
 
+const cancelarNotaDeCredito = async (datos, datosUsuario) => {
+  try {
+
+    const notaDeCredito = await prisma.notaCredito.findFirst({
+      where: {
+        AND: [
+          { id: datos.notaDeCreditoId },
+          {
+            usuario: {
+              empresa_id: datosUsuario.empresaId
+            }
+          }
+        ]
+      }
+    });
+
+    if (!notaDeCredito) {
+      throw new ErrorApp('Nota de crédito no encontrada', 404)
+    }
+
+    if (notaDeCredito.sifen_estado == 'Cancelado') {
+      throw new ErrorApp('La nota de crédito ya se encuentra con estado Cancelado', 400)
+    }
+
+    // Se busca datos de la empresa
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: datosUsuario.empresaId }
+    })
+
+    if (!empresa) {
+      throw new ErrorApp('Empresa no encontrada', 404)
+    }
+
+    const resultado = await apiFacturacionElectronicaCancelarNotaDeCredito({ ruc: empresa.ruc, cdc: notaDeCredito.cdc, motivo: datos.motivo });
+
+    if (resultado && resultado.status) {
+      await prisma.notaCredito.update({
+        where: {
+          id: datos.notaDeCreditoId
+        },
+        data: {
+          sifen_estado: 'Cancelado',
+          sifen_estado_mensaje: datos.motivo
+        }
+      })
+      return resultado
+    } else {
+      throw new ErrorApp(resultado.message || 'No se pudo cancelar la nota de crédito', 400)
+    }
+
+  } catch (error) {
+    // console.log(error);
+    ErrorApp.handleServiceError(error)
+  }
+}
+
+const apiFacturacionElectronicaCancelarNotaDeCredito = async ({cdc, motivo, ruc} = {}) => {
+  const form = new FormData();
+
+  //Armar jsondata
+  const data = {
+      tipoEvento: 2,
+      cdc,
+      motivo,
+      ruc
+  }
+  console.log(data);
+
+  const datajson = JSON.stringify(data, null, 2);
+
+  form.append("datajson", datajson);
+  form.append("recordID", "123");
+
+  const { data: resultado } = await axios({
+      url: `${process.env.URL_API_FACT}/eventos.php`,
+      method: "POST",
+      data: form,
+      headers: {
+          ...form.getHeaders(),
+      },
+  });
+  
+  console.log(resultado);
+
+  return resultado;
+}
+
 module.exports = {
   emitirNotaDeCredito,
   getNotasDeCredito,
+  cancelarNotaDeCredito
 };

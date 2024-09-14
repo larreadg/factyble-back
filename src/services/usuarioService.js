@@ -173,8 +173,6 @@ const getCajasEstablecimientosByUsuarioId = async ({ usuarioId }) => {
         }
     })
 
-    console.log(cajas)
-
     return cajas
 
 }

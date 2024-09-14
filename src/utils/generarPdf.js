@@ -27,7 +27,7 @@ const generarPdf = async (datos) => {
   try {
     // Configurar el reporte
     const reportPath = path.resolve(__dirname, "..", "resources/Factura.jasper");
-    const outputPath = path.resolve(__dirname, '../../public', `${datos.facturaUuid}.pdf`);
+    const outputPath = path.resolve(__dirname, '../../public', `${datos.uuid}.pdf`);
 
     // Crear un HashMap para los parámetros
     const HashMap = java.import("java.util.HashMap");
@@ -57,7 +57,7 @@ const generarPdf = async (datos) => {
     params.putSync("tipoDocumento", datos.tipoDocumento);
     params.putSync("tipoDocumentoTop", datos.tipoDocumentoTop);
 
-    const qrFilename = `${datos.facturaUuid}.png`;
+    const qrFilename = `${datos.uuid}.png`;
     const qrPath = await generarQr(
       datos.linkqr,
       qrFilename

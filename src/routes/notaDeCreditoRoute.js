@@ -40,4 +40,12 @@ routes.get(
     notaDeCreditoController.getNotasDeCredito
 )
 
+routes.post(
+    '/cancelar',
+    authJwt(['ADMIN']),
+    body('notaDeCreditoId', 'Parámetro notaDeCreditoId requerido').isInt({min: 1}),
+    body('motivo', 'Parámetro motivo requerido').isString().notEmpty(),
+    notaDeCreditoController.cancelarNotaDeCredito
+);
+
 module.exports = routes

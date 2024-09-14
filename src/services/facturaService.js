@@ -258,7 +258,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       totalIva10,
       moneda: "PYG",
       items: itemsPdf,
-      facturaUuid: facturaUuid,
+      uuid: facturaUuid,
       linkqr: factura.linkqr,
       cdc: factura.cdc,
       tipoDocumento: 'FACTURA ELECTRÓNICA',
@@ -268,7 +268,7 @@ const emitirFactura = async (datos, datosUsuario) => {
     return factura;
 
   } catch (error) {
-    // console.log(error);
+    console.log(error);
     ErrorApp.handleServiceError(error, "Error al crear factura");
   }
 };
@@ -527,9 +527,6 @@ const checkFacturaStatus = async () => {
       usuario: true
     }
   })
-
-  console.log(notasDeCreditoPendientes[0].factura);
-  return
   
   const cdcFacturas = facturasPendientes.map((el) => el.cdc);
   const cdcNotasDeCredito = notasDeCreditoPendientes.map((el) => el.cdc)
@@ -608,7 +605,7 @@ const checkFacturaStatus = async () => {
         const { cdc, sifen_estado: sifenEstado, sifen_mensaje: sifenMensaje } = item;
 
         if (sifenEstado !== null && sifenEstado !== "") {
-          await prisma.notaCredito.update({
+          await prisma.notaCredito.updateMany({
             where: { cdc },
             data: {
               sifen_estado: sifenEstado == 'N' ? 'En Proceso' : sifenEstado,
@@ -704,6 +701,26 @@ const cancelarFactura = async (datos, datosUsuario) => {
       throw new ErrorApp('Factura no encontrada', 404)
     }
 
+    if (factura.sifen_estado == 'Cancelado') {
+      throw new ErrorApp('La Factura ya se encuentra con estado Cancelado', 400)
+    }
+
+    // Se busca notas de crédito vinculados a la factura
+    const notaDeCreditos = await prisma.notaCredito.findMany({
+      where: {
+        AND: [
+          { factura_id: datos.facturaId },
+          { sifen_estado: { not: 'Cancelado'} }
+        ]
+      }
+    })
+
+    if(notaDeCreditos && notaDeCreditos.length > 0) {
+      const error = notaDeCreditos.length > 1 ? `La Factura cuenta con ${notaDeCreditos.length} notas de crédito aprobadas` 
+      : 'La Factura cuenta con 1 nota de crédito aprobada'
+      throw new ErrorApp(error, 400)
+    }
+
     // Se busca datos de la empresa
     const empresa = await prisma.empresa.findFirst({
       where: { id: datosUsuario.empresaId }
@@ -731,7 +748,7 @@ const cancelarFactura = async (datos, datosUsuario) => {
     }
 
   } catch (error) {
-    console.log(error);
+    // console.log(error);
     ErrorApp.handleServiceError(error)
   }
 
