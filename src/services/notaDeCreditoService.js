@@ -7,6 +7,7 @@ const axios = require("axios");
 const { v4: uuidv4 } = require("uuid");
 const generarPdf = require("../utils/generarPdf");
 const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
+const { enviarNotaDeCredito } = require("./correoService");
 
 const emitirNotaDeCredito = async (datos, datosUsuario) => {
   try {
@@ -545,7 +546,39 @@ const apiFacturacionElectronicaCancelarNotaDeCredito = async ({cdc, motivo, ruc}
   return resultado;
 }
 
+
+const reenviarNotaDeCredito = async ({ email, notaDeCreditoId }) => {
+  const notaDeCredito = await prisma.notaCredito.findFirst({
+    where: { id: notaDeCreditoId, sifen_estado: "Aprobado" },
+    include: {
+      factura: {
+        include: {
+          cliente_empresa: { include: { cliente: true, empresa: true } },
+        }
+      },
+      usuario: true,
+    },
+  });
+
+  if (!notaDeCredito) {
+    throw new ErrorApp("La nota de crédito no existe", 404);
+  }
+
+  const { cliente, empresa } = notaDeCredito.factura.cliente_empresa;
+
+  await enviarNotaDeCredito({
+    cdc: notaDeCredito.cdc,
+    cliente: cliente.tipo_identificacion === "RUC" ? cliente.razon_social : `${cliente.nombres} ${cliente.apellidos}`,
+    email,
+    uuid: notaDeCredito.nota_credito_uuid,
+    nroNotaDeCredito: notaDeCredito.numero_nota_credito,
+    empresa: empresa.nombre_empresa,
+    emailEmpresa: empresa.email,
+  });
+};
+
 module.exports = {
+  reenviarNotaDeCredito,
   emitirNotaDeCredito,
   getNotasDeCredito,
   cancelarNotaDeCredito

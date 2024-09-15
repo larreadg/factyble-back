@@ -48,4 +48,12 @@ routes.post(
     notaDeCreditoController.cancelarNotaDeCredito
 );
 
+routes.post(
+    '/reenviar',
+    authJwt(['ADMIN']),
+    body('email').isEmail().withMessage('Parámetro email requerito'),
+    body('notaDeCreditoId', 'Parámetro notaDeCreditoId requerido').isInt().notEmpty(),
+    notaDeCreditoController.reenviarNotaDeCredito
+)
+
 module.exports = routes

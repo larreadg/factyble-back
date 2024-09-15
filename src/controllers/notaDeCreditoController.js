@@ -60,9 +60,30 @@ const cancelarNotaDeCredito = async (req, res) => {
     }
 }
 
+const reenviarNotaDeCredito = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const { email, notaDeCreditoId } = req.body;
+        
+        await notaDeCreditoService.reenviarNotaDeCredito({ email, notaDeCreditoId });
+
+        return res.status(200).send(Response.success(null, 'Nota de credito reenviada'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al enviar nota de credito');
+
+        return res.status(code).send(Response.error(message, code));
+        
+    }
+}
+
 module.exports = {
     emitirNotaDeCredito,
     getNotasDeCredito,
-    cancelarNotaDeCredito
+    cancelarNotaDeCredito,
+    reenviarNotaDeCredito
 }
 
