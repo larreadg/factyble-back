@@ -408,7 +408,7 @@ const generarCodigoSeguridad = (length = 9) => {
   return result;
 };
 
-const getFacturas = async (page = 1, itemsPerPage = 10, filter = null) => {
+const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId) => {
   try {
     const skip = (page - 1) * itemsPerPage;
     const take = itemsPerPage;
@@ -427,6 +427,7 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null) => {
             ],
           }),
         },
+        empresa_id: empresaId
       },
       select: {
         id: true,

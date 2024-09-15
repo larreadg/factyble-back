@@ -31,7 +31,7 @@ const getFacturas = async (req, res) => {
         const itemsPerPage = parseInt(req.query.itemsPerPage) || 10
         const filter = req.query.filter || null
 
-        const data = await facturaService.getFacturas(page, itemsPerPage, filter);
+        const data = await facturaService.getFacturas(page, itemsPerPage, filter,  Number(req.usuario.empresaId));
 
         return res.status(200).send(Response.success(data, 'Datos obtenidos'));
 
