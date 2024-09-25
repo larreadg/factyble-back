@@ -51,7 +51,6 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     const factura = await prisma.factura.findFirst({
       where: {
         cdc: datos.cdc,
-        condicion_venta: "CONTADO",
         sifen_estado: { not: "Cancelado" },
       },
       include: {
