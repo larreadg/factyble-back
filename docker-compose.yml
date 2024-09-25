@@ -3,33 +3,33 @@ version: '3.3'
 services:
   app:
     build: .
-    container_name: factyble-back
+    container_name: factyble-back-v2
     environment:
       - DATABASE_URL=${DATABASE_URL}
     ports:
-      - "12100:12100"
+      - "${DOCKER_APP_HOST_PORT}:${DOCKER_APP_CONTAINER_PORT}"
     depends_on:
       - db
     volumes:
       - ./public:/app/public
     networks:
-      - factyble-network
+      - factyble-network-v2
 
   db:
     image: mysql:8
-    container_name: factyble-mysql
+    container_name: factyble-mysql-v2
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
     ports:
-      - "3306:3306"
+      - "${DOCKER_DB_HOST_PORT}:${DOCKER_DB_CONTAINER_PORT}"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql_data_v2:/var/lib/mysql
     networks:
-      - factyble-network
+      - factyble-network-v2
 
 networks:
-  factyble-network:
+  factyble-network-v2:
 
 volumes:
-  mysql_data:
+  mysql_data_v2:
