@@ -43,8 +43,8 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
                     dv: data.dv,
                     situacion_tributaria: situacionTributaria,
                     tipo_identificacion: 'RUC',
-                    nombres: data.razonSocial.split(',')[1].trim(),
-                    apellidos: data.razonSocial.split(',')[0].trim()
+                    nombres: data.razonSocial.includes(',') ? data.razonSocial.split(',')[1].trim() : data.razonSocial,
+                    apellidos: data.razonSocial.includes(',') ? data.razonSocial.split(',')[0].trim() : ''
                 }
             });
             
