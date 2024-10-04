@@ -367,7 +367,7 @@ const apiFacturacionElectronica = async (datos) => {
     cambio: 0, // Porque moneda = "PYG"
     cliente: {
       ruc: datos.ruc,
-      nombre: datos.razonSocial,
+      nombre: datos.razonSocial.replace(/&/g, 'Y'),
       diplomatico: false, //Cuando un cliente es diplomatico (true). Todo tiene que ir como exenta
     },
     codigoSeguridadAleatorio: datos.codigoSeguridadAleatorio,
