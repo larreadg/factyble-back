@@ -334,7 +334,7 @@ const apiFacturacionElectronica = async (datos) => {
     const ivaAfecta = e.tasa == "0%" ? 3 : 1;
 
     return {
-      descripcion: e.descripcion ? e.descripcion.slice(0,119) : '',
+      descripcion: e.descripcion ? e.descripcion.slice(0,119).replace(/&/g, 'Y') : '',
       codigo: "0011",
       unidadMedida: 77, // 77 (Unidad), 83 (kg)
       ivaTasa,
@@ -366,8 +366,8 @@ const apiFacturacionElectronica = async (datos) => {
     moneda: "PYG",
     cambio: 0, // Porque moneda = "PYG"
     cliente: {
-      ruc: datos.ruc,
-      nombre: datos.razonSocial.replace(/&/g, 'Y'),
+      ruc: datos.ruc !== '0' ? datos.ruc : '',
+      nombre: datos.ruc !== '0' ? datos.razonSocial.replace(/&/g, 'Y') : '',
       diplomatico: false, //Cuando un cliente es diplomatico (true). Todo tiene que ir como exenta
     },
     codigoSeguridadAleatorio: datos.codigoSeguridadAleatorio,
