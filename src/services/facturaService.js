@@ -54,17 +54,18 @@ const emitirFactura = async (datos, datosUsuario) => {
       where: { ruc: datos.ruc },
     });
 
+    const nombres = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[1] ? datos.razonSocial.split(",")[1].trim() : datos.razonSocial) : datos.razonSocial;
+    const apellidos = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[0] ? datos.razonSocial.split(",")[0] : "") : "";
+    
     //Crear cliente si no existe
     if (!cliente) {
-      const nombres = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[1] ? datos.razonSocial.split(",")[1].trim() : datos.razonSocial) : datos.razonSocial;
-      const apellidos = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[0] ? datos.razonSocial.split(",")[0] : "") : "";
 
       cliente = await prisma.cliente.create({
         data: {
           ruc: datos.ruc,
           razon_social: datos.razonSocial,
           documento: datos.ruc,
-          tipo_identificacion: datos.situacionTributaria == "CONTRIBUYENTE" ? "RUC" : "CEDULA",
+          tipo_identificacion: datos.situacionTributaria === "CONTRIBUYENTE" ? "RUC" : datos.tipoIdentificacion,
           situacion_tributaria: datos.situacionTributaria,
           dv: datos.ruc.includes("-") ? Number(datos.ruc.split("-")[1]) : null,
           nombres,
@@ -72,16 +73,30 @@ const emitirFactura = async (datos, datosUsuario) => {
           direccion: datos.direccion,
           email: datos.email,
           telefono: datos.telefono,
+          pais: datos.situacionTributaria === "CONTRIBUYENTE" || datos.pais === '' ? "PRY" : datos.pais
         },
       });
     }
 
     //Actualizar datos de cliente
-    if (datos.direccion != cliente.direccion || datos.email != cliente.email) {
+    if (datos.tipoIdentificacion !== cliente.tipo_identificacion
+      || datos.situacionTributaria !== cliente.situacion_tributaria 
+      || nombres !== cliente.nombres 
+      || apellidos !== cliente.nombres 
+      || datos.direccion !== cliente.direccion 
+      || datos.email !== cliente.email
+      || datos.telefono !== cliente.telefono
+      || datos.pais !== cliente.pais) {
       await prisma.cliente.update({
         data: {
+          tipo_identificacion: datos.tipoIdentificacion ? datos.tipoIdentificacion : cliente.tipo_identificacion,
+          situacion_tributaria: datos.situacionTributaria ? datos.situacionTributaria : cliente.situacion_tributaria,
+          nombres: nombres ? nombres : cliente.nombres,
+          apellidos: apellidos ? apellidos : cliente.apellidos,
           direccion: datos.direccion ? datos.direccion : cliente.direccion,
           email: datos.email ? datos.email : cliente.email,
+          telefono: datos.telefono ? datos.telefono : cliente.telefono,
+          pais: datos.pais ? datos.pais : cliente.pais,
         },
         where: { id: cliente.id },
       });
@@ -213,7 +228,7 @@ const emitirFactura = async (datos, datosUsuario) => {
         descripcion: e.descripcion,
       }));
   
-      const facturaDetalle = await prisma.facturaDetalle.createMany({
+      await prisma.facturaDetalle.createMany({
         data: datosFacturaDetalle,
       });
 
@@ -221,9 +236,9 @@ const emitirFactura = async (datos, datosUsuario) => {
     })
 
     const itemsPdf = datos.items.map((e) => {
-      const exentas = e.tasa == "0%" ? formatNumber(e.impuesto) : "0";
-      const iva5 = e.tasa == "5%" ? formatNumber(e.impuesto) : "0";
-      const iva10 = e.tasa == "10%" ? formatNumber(e.impuesto) : "0";
+      const exentas = e.tasa == "0%" ? formatNumber(e.total) : "0";
+      const iva5 = e.tasa == "5%" ? formatNumber(e.total) : "0";
+      const iva10 = e.tasa == "10%" ? formatNumber(e.total) : "0";
       return {
         precioUnitario: formatNumber(e.precioUnitario),
         iva5,
@@ -234,7 +249,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       };
     });
 
-    const facturaPdf = generarPdf({
+    generarPdf({
       empresaLogo: usuario.empresa.logo,
       empresaRuc: usuario.empresa.ruc,
       empresaTimbrado: usuario.empresa.timbrado,
@@ -366,6 +381,11 @@ const apiFacturacionElectronica = async (datos) => {
     moneda: "PYG",
     cambio: 0, // Porque moneda = "PYG"
     cliente: {
+      ... (datos.situacionTributaria === 'NO_DOMICILIADO' ? {
+        cpais: datos.pais || 'PRY',
+        numCasa: 0,
+        direccion: datos.direccion || 'ASUNCIÓN'
+      } : {}),
       ruc: datos.ruc !== '0' ? datos.ruc : '',
       nombre: datos.ruc !== '0' ? datos.razonSocial.replace(/&/g, 'Y') : '',
       diplomatico: false, //Cuando un cliente es diplomatico (true). Todo tiene que ir como exenta
