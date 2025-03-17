@@ -107,6 +107,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     const notasDeCredito = await prisma.notaCredito.findMany({
       where: {
         factura_id: factura.id,
+        sifen_estado: { notIn: ["Cancelado", "Rechazado"] }, // Excluir múltiples valores
       },
     });
 
@@ -203,7 +204,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
         descripcion: e.descripcion,
       }));
 
-      const notaDeCreditoDetalle = await prisma.notaCreditoDetalle.createMany({
+      await prisma.notaCreditoDetalle.createMany({
         data: datosNotaDeCreditoDetalle,
       });
 
@@ -212,9 +213,9 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
 
     // Crear PDF
     const itemsPdf = datos.items.map((e) => {
-      const exentas = e.tasa == "0%" ? formatNumber(e.impuesto) : "0";
-      const iva5 = e.tasa == "5%" ? formatNumber(e.impuesto) : "0";
-      const iva10 = e.tasa == "10%" ? formatNumber(e.impuesto) : "0";
+      const exentas = e.tasa == "0%" ? formatNumber(e.total) : "0";
+      const iva5 = e.tasa == "5%" ? formatNumber(e.total) : "0";
+      const iva10 = e.tasa == "10%" ? formatNumber(e.total) : "0";
       return {
         precioUnitario: formatNumber(e.precioUnitario),
         iva5,
@@ -225,7 +226,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       };
     });
 
-    const notaDeCreditoPdf = generarPdf({
+    generarPdf({
       empresaLogo: usuario.empresa.logo,
       empresaRuc: usuario.empresa.ruc,
       empresaTimbrado: usuario.empresa.timbrado,
