@@ -19,6 +19,7 @@ services:
   db:
     image: mysql:8
     container_name: factyble-mysql-v2
+    restart: always
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}

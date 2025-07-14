@@ -320,7 +320,7 @@ const apiFacturacionElectronicaNotaDeCredito = async (datos) => {
     cambio: 0, // Porque moneda = "PYG"
     cliente: {
       ruc: datos.clienteRuc,
-      nombre: datos.clienteNombre,
+      nombre: datos.clienteNombre.replace(/&/g, 'Y'),
       diplomatico: false, //Cuando un cliente es diplomatico (true). Todo tiene que ir como exenta
     },
     codigoSeguridadAleatorio: datos.codigoSeguridadAleatorio,
@@ -336,7 +336,7 @@ const apiFacturacionElectronicaNotaDeCredito = async (datos) => {
   form.append("recordID", "123");
   console.log(data);
 
-  const { data: { data: resultado } = {} } = await axios({
+  const response = await axios({
     url: `${process.env.URL_API_FACT}/data.php`,
     method: "POST",
     data: form,
@@ -345,7 +345,14 @@ const apiFacturacionElectronicaNotaDeCredito = async (datos) => {
     },
   });
 
-  console.log(resultado);
+  // 2) Muestras el “raw” completo
+  console.log('Respuesta completa:', response);
+
+  // 3) Desestructuras sólo lo que te interesa
+  const { data: { data: resultado } = {} } = response;
+
+  // 4) Y ya puedes usar o loguear tu variable
+  console.log('Campo resultado:', resultado);
 
   return resultado;
 };
