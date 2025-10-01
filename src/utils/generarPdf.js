@@ -23,90 +23,97 @@ const generarQr = async (url, filename) => {
   });
 };
 const generarPdf = async (datos) => {
-  
   try {
-    // Configurar el reporte
-    const reportPath = path.resolve(__dirname, "..", "resources/Factura.jasper");
-    const outputPath = path.resolve(__dirname, '../../public', `${datos.uuid}.pdf`);
+    // Rutas a JRXML y Jasper
+    const jrxmlPath  = path.resolve(__dirname, "..", "resources", "Factura.jrxml");
+    const jasperPath = path.resolve(__dirname, "..", "resources", "Factura.jasper");
+    const outputPath = path.resolve(__dirname, "../../public", `${datos.uuid}.pdf`);
 
-    // Crear un HashMap para los parámetros
+    // 1) Compila el JRXML a Jasper fresco
+    const JasperCompileManager = java.import("net.sf.jasperreports.engine.JasperCompileManager");
+    JasperCompileManager.compileReportToFileSync(jrxmlPath, jasperPath);
+
+    // 2) Crea el HashMap de parámetros
     const HashMap = java.import("java.util.HashMap");
-    const params = new HashMap();
-    if(datos.empresaLogo) params.putSync('empresaLogo', path.resolve(PUBLIC_LOGOS, datos.empresaLogo));
-    params.putSync("empresaRuc", String(datos.empresaRuc));
-    params.putSync("empresaTimbrado", String(datos.empresaTimbrado));
-    params.putSync("empresaVigenteDesde", datos.empresaVigenteDesde);
-    params.putSync("empresaNombre", datos.empresaNombre);
-    params.putSync("empresaDireccion", datos.empresaDireccion);
-    params.putSync("empresaTelefono", String(datos.empresaTelefono));
-    params.putSync("empresaCiudad", datos.empresaCiudad);
+    const params  = new HashMap();
+    if (datos.empresaLogo) {
+      params.putSync("empresaLogo", path.resolve(PUBLIC_LOGOS, datos.empresaLogo));
+    }
+    params.putSync("empresaRuc",             String(datos.empresaRuc));
+    params.putSync("empresaTimbrado",        String(datos.empresaTimbrado));
+    params.putSync("empresaVigenteDesde",    datos.empresaVigenteDesde);
+    params.putSync("empresaNombre",          datos.empresaNombre);
+    params.putSync("empresaDireccion",       datos.empresaDireccion);
+    params.putSync("empresaTelefono",        String(datos.empresaTelefono));
+    params.putSync("empresaCiudad",          datos.empresaCiudad);
     params.putSync("empresaCorreoElectronico", datos.empresaCorreoElectronico);
-    params.putSync("facturaId", datos.facturaId);
-    params.putSync("fechaHora", dayjs().format('YYYY-MM-DD HH:MM:ss'));
-    params.putSync("condicionVenta", datos.condicionVenta);
-    params.putSync("moneda", datos.moneda);
-    params.putSync("ruc", String(datos.ruc));
-    params.putSync("razonSocial", datos.razonSocial);
-    params.putSync("correoElectronico", datos.correoElectronico);
-    params.putSync("total", formatNumber(datos.total));
-    params.putSync("totalIva", formatNumber(datos.totalIva));
-    params.putSync("totalIva5", formatNumber(datos.totalIva5));
-    params.putSync("totalIva10", formatNumber(datos.totalIva10));
-    params.putSync("totalExenta", formatNumber(datos.totalExenta)); //?? no faltaría este campo?
-    params.putSync("cdc", datos.cdc);
-    params.putSync("tipoDocumento", datos.tipoDocumento);
-    params.putSync("tipoDocumentoTop", datos.tipoDocumentoTop);
+    params.putSync("facturaId",              datos.facturaId);
+    params.putSync("fechaHora",              dayjs().format("YYYY-MM-DD HH:mm:ss"));
+    params.putSync("condicionVenta",         datos.condicionVenta);
+    params.putSync("moneda",                 datos.moneda);
+    params.putSync("ruc",                    String(datos.ruc));
+    params.putSync("razonSocial",            datos.razonSocial);
+    params.putSync("correoElectronico",      datos.correoElectronico);
+    params.putSync("total",                  formatNumber(datos.total));
+    params.putSync("totalIva",               formatNumber(datos.totalIva));
+    params.putSync("totalIva5",              formatNumber(datos.totalIva5));
+    params.putSync("totalIva10",             formatNumber(datos.totalIva10));
+    params.putSync("totalExenta",            formatNumber(datos.totalExenta));
+    params.putSync("cdc",                    datos.cdc);
+    params.putSync("tipoDocumento",          datos.tipoDocumento);
+    params.putSync("tipoDocumentoTop",       datos.tipoDocumentoTop);
 
+    // 3) Código de crédito condicional (si lo tienes en datos)
+    if (datos.condicionVenta === "CREDITO") {
+      if (datos.tipoCredito === "CUOTA") {
+        params.putSync("tipoCredito",               "CUOTA");
+        params.putSync("creditoCuotaCantidad",      datos.cantidadCuota);
+        params.putSync("creditoCuotaPeriodicidad",  datos.periodicidad);
+      } else if (datos.tipoCredito === "A_PLAZO") {
+        params.putSync("tipoCredito",               "A PLAZO");
+        params.putSync("creditoAPlazoDescripcion",  datos.plazoDescripcion);
+      }
+    }
+
+    console.log("Mapa de parámetros:", params.toStringSync())
+
+    // 4) Genera y añade el QR
     const qrFilename = `${datos.uuid}.png`;
-    const qrPath = await generarQr(
-      datos.linkqr,
-      qrFilename
-    );
+    const qrPath     = await generarQr(datos.linkqr, qrFilename);
     params.putSync("qr", qrPath);
 
-    // Crear un JRBeanArrayDataSource
+    // 5) Crea el data source (JRBeanArrayDataSource)
     const JRBeanArrayDataSource = java.import("net.sf.jasperreports.engine.data.JRBeanArrayDataSource");
-
-    // Crear los objetos Java para cada item
-    const itemList = datos.items.map((item) => {
+    const itemList = datos.items.map(item => {
       const map = java.newInstanceSync("java.util.HashMap");
-      for (let key in item) {
-        map.putSync(key, item[key]);
-      }
+      Object.entries(item).forEach(([k, v]) => {
+        map.putSync(k, v);
+      });
       return map;
     });
-
-    // Crear un array de objetos Java
     const JavaArray = java.newArray("java.util.Map", itemList);
-
-    // Crear el datasource con el array de objetos Java
     const dataSource = new JRBeanArrayDataSource(JavaArray);
-
-    // Añadir el datasource a los parámetros
     params.putSync("ds", dataSource);
 
-    // Cargar y llenar el reporte
+    // 6) Llena el reporte
     const JasperFillManager = java.import("net.sf.jasperreports.engine.JasperFillManager");
     const jasperPrint = JasperFillManager.fillReportSync(
-      reportPath,
+      jasperPath,
       params,
       new java.import("net.sf.jasperreports.engine.JREmptyDataSource")()
     );
 
-    // Exportar el reporte a PDF
+    // 7) Exporta a PDF
     const JasperExportManager = java.import("net.sf.jasperreports.engine.JasperExportManager");
     JasperExportManager.exportReportToPdfFileSync(jasperPrint, outputPath);
 
     console.log("PDF generado exitosamente en:", outputPath);
-
-    return {
-      outputPath
-    }
-
-  } catch (error) {
-    console.log(error);
+    return { outputPath };
   }
-
+  catch (error) {
+    console.error("Error al generar PDF:", error);
+    throw error;
+  }
 };
 
 module.exports = generarPdf;

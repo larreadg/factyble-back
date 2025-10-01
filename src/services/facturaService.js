@@ -249,6 +249,21 @@ const emitirFactura = async (datos, datosUsuario) => {
       };
     });
 
+    let creditoExtras = {}
+
+    if(datos.condicionVenta === 'CREDITO' && datos.tipoCredito === 'CUOTA') {
+      creditoExtras = {
+        tipoCredito: 'CUOTA',
+        creditoCuotaCantidad: datos.cantidadCuota,
+        creditoCuotaPeriodicidad: datos.periodicidad
+      }
+    } else if(datos.condicionVenta === 'CREDITO' && datos.tipoCredito === 'A_PLAZO') {
+      creditoExtras = {
+        tipoCredito: 'A PLAZO',
+        creditoAPlazoDescripcion: datos.plazoDescripcion
+      }
+    }
+
     generarPdf({
       empresaLogo: usuario.empresa.logo,
       empresaRuc: usuario.empresa.ruc,
@@ -277,7 +292,11 @@ const emitirFactura = async (datos, datosUsuario) => {
       linkqr: factura.linkqr,
       cdc: factura.cdc,
       tipoDocumento: 'FACTURA ELECTRÓNICA',
-      tipoDocumentoTop: 'KuDE de Factura Electrónica'
+      tipoDocumentoTop: 'KuDE de Factura Electrónica',
+      tipoCredito: datos.tipoCredito,
+      cantidadCuota: String(datos.cantidadCuota),
+      periodicidad: datos.periodicidad,
+      plazoDescripcion: datos.plazoDescripcion
     });
 
     return factura;
@@ -289,7 +308,7 @@ const emitirFactura = async (datos, datosUsuario) => {
 };
 
 const apiFacturacionElectronica = async (datos) => {
-  // return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
+  return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
 
   const form = new FormData();
 
