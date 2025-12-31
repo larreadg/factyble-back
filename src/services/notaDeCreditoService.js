@@ -266,7 +266,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
 };
 
 const apiFacturacionElectronicaNotaDeCredito = async (datos) => {
-  return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
+  // return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
 
   const form = new FormData();
 

@@ -21,10 +21,10 @@ const emitirFactura = async (datos, datosUsuario) => {
       }
     })
 
-    if(!establecimiento) {
+    if (!establecimiento) {
       throw new ErrorApp('No se encontró establecimiento', 404)
     }
-    
+
     // Buscar caja para establecimiento
     const caja = await prisma.caja.findFirst({
       where: {
@@ -33,7 +33,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       }
     })
 
-    if(!caja) {
+    if (!caja) {
       throw new ErrorApp('No se encontró caja', 404)
     }
 
@@ -56,7 +56,7 @@ const emitirFactura = async (datos, datosUsuario) => {
 
     const nombres = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[1] ? datos.razonSocial.split(",")[1].trim() : datos.razonSocial) : datos.razonSocial;
     const apellidos = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[0] ? datos.razonSocial.split(",")[0] : "") : "";
-    
+
     //Crear cliente si no existe
     if (!cliente) {
 
@@ -80,10 +80,10 @@ const emitirFactura = async (datos, datosUsuario) => {
 
     //Actualizar datos de cliente
     if (datos.tipoIdentificacion !== cliente.tipo_identificacion
-      || datos.situacionTributaria !== cliente.situacion_tributaria 
-      || nombres !== cliente.nombres 
-      || apellidos !== cliente.nombres 
-      || datos.direccion !== cliente.direccion 
+      || datos.situacionTributaria !== cliente.situacion_tributaria
+      || nombres !== cliente.nombres
+      || apellidos !== cliente.nombres
+      || datos.direccion !== cliente.direccion
       || datos.email !== cliente.email
       || datos.telefono !== cliente.telefono
       || datos.pais !== cliente.pais) {
@@ -168,7 +168,7 @@ const emitirFactura = async (datos, datosUsuario) => {
 
       const numeroFactura = Number(secuencia[0].valor) + 1;
       await tx.$executeRaw`UPDATE secuencia_factura SET valor = ${numeroFactura} WHERE caja_id = ${caja.id}`;
-      
+
       const codigosSeguridadRaw = await prisma.factura.findMany({
         select: {
           codigo_seguridad: true,
@@ -177,11 +177,11 @@ const emitirFactura = async (datos, datosUsuario) => {
           caja_id: caja.id
         }
       });
-  
+
       const codigosSeguridad = codigosSeguridadRaw.map((e) => e.codigo_seguridad);
-  
+
       let codigoSeguridadAleatorio = generarCodigoSeguridad();
-  
+
       while (codigosSeguridad.includes(codigoSeguridadAleatorio)) {
         codigoSeguridadAleatorio = generarCodigoSeguridad();
       }
@@ -194,11 +194,11 @@ const emitirFactura = async (datos, datosUsuario) => {
         numeroFactura,
         empresaRuc: usuario.empresa.ruc
       });
-  
+
       if (!resultado || resultado.status != true) {
         throw new ErrorApp("Error al generar factura", 500);
       }
-  
+
       //Crear factura
       const factura = await prisma.factura.create({
         data: {
@@ -227,7 +227,7 @@ const emitirFactura = async (datos, datosUsuario) => {
         total: e.total,
         descripcion: e.descripcion,
       }));
-  
+
       await prisma.facturaDetalle.createMany({
         data: datosFacturaDetalle,
       });
@@ -251,13 +251,13 @@ const emitirFactura = async (datos, datosUsuario) => {
 
     let creditoExtras = {}
 
-    if(datos.condicionVenta === 'CREDITO' && datos.tipoCredito === 'CUOTA') {
+    if (datos.condicionVenta === 'CREDITO' && datos.tipoCredito === 'CUOTA') {
       creditoExtras = {
         tipoCredito: 'CUOTA',
         creditoCuotaCantidad: datos.cantidadCuota,
         creditoCuotaPeriodicidad: datos.periodicidad
       }
-    } else if(datos.condicionVenta === 'CREDITO' && datos.tipoCredito === 'A_PLAZO') {
+    } else if (datos.condicionVenta === 'CREDITO' && datos.tipoCredito === 'A_PLAZO') {
       creditoExtras = {
         tipoCredito: 'A PLAZO',
         creditoAPlazoDescripcion: datos.plazoDescripcion
@@ -308,7 +308,7 @@ const emitirFactura = async (datos, datosUsuario) => {
 };
 
 const apiFacturacionElectronica = async (datos) => {
-  return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
+  // return { status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test' }
 
   const form = new FormData();
 
@@ -317,7 +317,7 @@ const apiFacturacionElectronica = async (datos) => {
   let pagos = [{}];
   let credito = null;
 
-  if(datos.condicionVenta == 'CONTADO'){
+  if (datos.condicionVenta == 'CONTADO') {
     pagos = [
       {
         name: "EFECTIVO",
@@ -327,7 +327,7 @@ const apiFacturacionElectronica = async (datos) => {
     ]
   } else {
 
-    if(datos.tipoCredito == 'CUOTA'){
+    if (datos.tipoCredito == 'CUOTA') {
       let cuotas = [];
       const monto = Number(datos.total) / Number(datos.cantidadCuota);
       let fechaVencimiento = dayjs();
@@ -341,7 +341,7 @@ const apiFacturacionElectronica = async (datos) => {
           monto,
           fechaVencimiento: fechaVencimiento.format('YYYY-MM-DD')
         }
-        
+
         cuotas.push(cuota);
       }
 
@@ -352,7 +352,7 @@ const apiFacturacionElectronica = async (datos) => {
         cuotas
       }
 
-    }else { // A plazo
+    } else { // A plazo
 
       credito = {
         condicionCredito: 1,
@@ -368,7 +368,7 @@ const apiFacturacionElectronica = async (datos) => {
     const ivaAfecta = e.tasa == "0%" ? 3 : 1;
 
     return {
-      descripcion: e.descripcion ? e.descripcion.slice(0,119).replace(/&/g, 'Y') : '',
+      descripcion: e.descripcion ? e.descripcion.slice(0, 119).replace(/&/g, 'Y') : '',
       codigo: "0011",
       unidadMedida: 77, // 77 (Unidad), 83 (kg)
       ivaTasa,
@@ -475,17 +475,50 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
 
     const clienteEmpresaIds = clienteEmpresas.map((ce) => ce.id);
 
+    // --- Construcción segura del where ---
+    const whereFacturas = (() => {
+      // Siempre restringir por empresa (recomendado, evita “fugas”)
+      const base = { cliente_empresa: { empresa_id: empresaId } };
+
+      if (!filter) {
+        // Sin filtro: todas las facturas de la empresa (vía relación)
+        return base;
+      }
+
+      const or = [];
+
+      // 1) Match por cliente (si hay ids)
+      if (clienteEmpresaIds.length > 0) {
+        or.push({ cliente_empresa_id: { in: clienteEmpresaIds } });
+      }
+
+      // 2) Match por CDC (string)
+      or.push({ cdc: { contains: filter } });
+
+      // 3) Match por número de factura (solo si filter es entero “normal”)
+      // Acepta únicamente dígitos y además limita tamaño para que entre en Int64
+      const isIntegerString = /^[0-9]+$/.test(filter);
+      if (isIntegerString) {
+        // 19 dígitos puede exceder int64; int64 max = 9223372036854775807 (19 dígitos pero límite)
+        // Para evitar edge cases, limitamos a 18 dígitos o validamos contra MAX_SAFE_INTEGER y/o BigInt.
+        if (filter.length <= 18) {
+          const n = Number(filter);
+          if (Number.isSafeInteger(n)) {
+            or.push({ numero_factura: { equals: n } });
+          }
+        }
+      }
+
+      return { ...base, OR: or };
+    })();
+
     const facturas = await prisma.factura.findMany({
       skip,
       take,
       orderBy: {
         fecha_creacion: "desc",
       },
-      where: {
-        cliente_empresa_id: {
-          in: clienteEmpresaIds,
-        },
-      },
+      where: whereFacturas,
       include: {
         detalles: true,
         cliente_empresa: {
@@ -511,6 +544,7 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
       totalItems,
     };
   } catch (error) {
+    console.log(error)
     ErrorApp.handleServiceError(error, "Error al obtener facturas");
   }
 };
@@ -561,22 +595,22 @@ const checkFacturaStatus = async () => {
     include: {
       factura: {
         include: {
-          cliente_empresa: { include: {cliente: true, empresa: true } }
+          cliente_empresa: { include: { cliente: true, empresa: true } }
         }
       },
       usuario: true
     }
   })
-  
+
   const cdcFacturas = facturasPendientes.map((el) => el.cdc);
   const cdcNotasDeCredito = notasDeCreditoPendientes.map((el) => el.cdc)
-  
-  if(cdcFacturas.length > 0 || cdcNotasDeCredito.length > 0) {
+
+  if (cdcFacturas.length > 0 || cdcNotasDeCredito.length > 0) {
     const dbApiFacturacion = conectarDbApiFacturacion();
     await dbApiFacturacion.connect();
 
     if (cdcFacturas.length > 0) {
-  
+
       const { rows: resultApiFacturacion } = await dbApiFacturacion.query({
         text: `SELECT * FROM datos_factura2 WHERE cdc IN (${Array.from(
           { length: cdcFacturas.length },
@@ -584,11 +618,11 @@ const checkFacturaStatus = async () => {
         ).join(",")})`,
         values: cdcFacturas,
       });
-  
+
       for (const item of resultApiFacturacion) {
-  
+
         const { cdc, sifen_estado: sifenEstado, sifen_mensaje: sifenMensaje } = item;
-  
+
         if (sifenEstado !== null && sifenEstado !== "") {
           await prisma.factura.updateMany({
             where: {
@@ -599,14 +633,14 @@ const checkFacturaStatus = async () => {
               sifen_estado_mensaje: sifenMensaje,
             },
           });
-  
+
           const factura = facturasPendientes.find((el) => el.cdc === cdc);
-  
+
           if (typeof factura !== "undefined") {
             const { cliente, empresa } = factura.cliente_empresa;
-  
+
             if (sifenEstado === "Aprobado") {
-  
+
               await enviarFactura({
                 cdc: factura.cdc,
                 cliente: cliente.tipo_identificacion === "RUC" ? cliente.razon_social : `${cliente.nombres} ${cliente.apellidos}`,
@@ -616,22 +650,22 @@ const checkFacturaStatus = async () => {
                 empresa: empresa.nombre_empresa,
                 emailEmpresa: empresa.email,
               });
-  
+
             } else if (sifenEstado === "Rechazado") {
-  
+
               await enviarErrorFactura({
                 email: factura.usuario.email,
                 empresa: empresa.nombre_empresa,
                 errorFactura: sifenMensaje,
                 nroFactura: factura.numero_factura,
               });
-  
+
             }
           }
         }
       }
     }
-  
+
     if (notasDeCreditoPendientes.length > 0) {
       const { rows: resultadoNotasDeCredito } = await dbApiFacturacion.query({
         text: `SELECT * FROM datos_factura2 WHERE cdc IN (${Array.from(
@@ -655,10 +689,10 @@ const checkFacturaStatus = async () => {
 
           const notaDeCredito = notasDeCreditoPendientes.find(e => e.cdc === cdc)
 
-          if(notaDeCredito){
+          if (notaDeCredito) {
             const { cliente, empresa } = notaDeCredito.factura.cliente_empresa
 
-            if(sifenEstado === 'Aprobado'){
+            if (sifenEstado === 'Aprobado') {
 
               await enviarNotaDeCredito({
                 cdc: notaDeCredito.cdc,
@@ -750,14 +784,14 @@ const cancelarFactura = async (datos, datosUsuario) => {
       where: {
         AND: [
           { factura_id: datos.facturaId },
-          { sifen_estado: { not: 'Cancelado'} }
+          { sifen_estado: { not: 'Cancelado' } }
         ]
       }
     })
 
-    if(notaDeCreditos && notaDeCreditos.length > 0) {
-      const error = notaDeCreditos.length > 1 ? `La Factura cuenta con ${notaDeCreditos.length} notas de crédito aprobadas` 
-      : 'La Factura cuenta con 1 nota de crédito aprobada'
+    if (notaDeCreditos && notaDeCreditos.length > 0) {
+      const error = notaDeCreditos.length > 1 ? `La Factura cuenta con ${notaDeCreditos.length} notas de crédito aprobadas`
+        : 'La Factura cuenta con 1 nota de crédito aprobada'
       throw new ErrorApp(error, 400)
     }
 
@@ -794,35 +828,35 @@ const cancelarFactura = async (datos, datosUsuario) => {
 
 }
 
-const apiFacturacionElectronicaCancelar = async ({cdc, motivo, ruc} = {}) => {
-    const form = new FormData();
+const apiFacturacionElectronicaCancelar = async ({ cdc, motivo, ruc } = {}) => {
+  const form = new FormData();
 
-    //Armar jsondata
-    const data = {
-        tipoEvento: 2,
-        cdc,
-        motivo,
-        ruc
-    }
-    console.log(data);
+  //Armar jsondata
+  const data = {
+    tipoEvento: 2,
+    cdc,
+    motivo,
+    ruc
+  }
+  console.log(data);
 
-    const datajson = JSON.stringify(data, null, 2);
+  const datajson = JSON.stringify(data, null, 2);
 
-    form.append("datajson", datajson);
-    form.append("recordID", "123");
+  form.append("datajson", datajson);
+  form.append("recordID", "123");
 
-    const { data: resultado } = await axios({
-        url: `${process.env.URL_API_FACT}/eventos.php`,
-        method: "POST",
-        data: form,
-        headers: {
-            ...form.getHeaders(),
-        },
-    });
-    
-    console.log(resultado);
+  const { data: resultado } = await axios({
+    url: `${process.env.URL_API_FACT}/eventos.php`,
+    method: "POST",
+    data: form,
+    headers: {
+      ...form.getHeaders(),
+    },
+  });
 
-    return resultado;
+  console.log(resultado);
+
+  return resultado;
 }
 
 module.exports = {

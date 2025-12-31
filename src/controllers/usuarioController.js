@@ -10,6 +10,9 @@ const authenticateUsuario = async (req, res) => {
         const errors = validationResult(req);
         if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
 
+        const sourceHeader = req.headers['x-client-type'];
+        req.body.source = sourceHeader === 'api' ? 'api' : null
+
         const token = await usuarioService.authenticateUsuario(req.body);
 
         return res.status(200).send(Response.success({token}, 'Autenticación exitosa'));

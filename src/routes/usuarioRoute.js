@@ -7,7 +7,20 @@ routes.post(
     '/authenticate',
     body('usuario').notEmpty().withMessage('El email o usuario es obligatorio'),
     body('password').notEmpty().withMessage('La contraseña es obligatoria'),
-    body('captcha').notEmpty().withMessage('La captcha es obligatoria'),
+    body('captcha').custom((value, { req }) => {
+        const source = req.headers['x-client-type'];
+    
+        if (source === 'api') {
+            // Si viene de API, se ignora la captcha
+            return true;
+        }
+    
+        if (!value) {
+            throw new Error('La captcha es obligatoria');
+        }
+    
+        return true;
+    }),
     usuarioController.authenticateUsuario
 )
 
