@@ -169,6 +169,11 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
         empresaRuc: usuario.empresa.ruc,
         clienteRuc: factura.cliente_empresa.cliente.ruc,
         clienteNombre: factura.cliente_empresa.cliente.nombres,
+        ruc: factura.cliente_empresa.cliente.ruc,
+        razonSocial: factura.cliente_empresa.cliente.razon_social,
+        pais: factura.cliente_empresa.cliente.pais,
+        direccion: factura.cliente_empresa.cliente.direccion,
+        situacionTributaria: factura.cliente_empresa.cliente.situacion_tributaria,
       });
 
       if (!resultado || resultado.status != true) {
@@ -319,8 +324,13 @@ const apiFacturacionElectronicaNotaDeCredito = async (datos) => {
     moneda: "PYG",
     cambio: 0, // Porque moneda = "PYG"
     cliente: {
-      ruc: datos.clienteRuc,
-      nombre: datos.clienteNombre.replace(/&/g, 'Y'),
+      ... (datos.situacionTributaria === 'NO_DOMICILIADO' ? {
+        cpais: datos.pais || 'PRY',
+        numCasa: 0,
+        direccion: datos.direccion || 'ASUNCIÓN'
+      } : {}),
+      ruc: datos.ruc !== '0' ? datos.ruc : '',
+      nombre: datos.ruc !== '0' ? datos.razonSocial.replace(/&/g, 'Y') : '',
       diplomatico: false, //Cuando un cliente es diplomatico (true). Todo tiene que ir como exenta
     },
     codigoSeguridadAleatorio: datos.codigoSeguridadAleatorio,
