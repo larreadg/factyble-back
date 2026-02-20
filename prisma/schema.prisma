@@ -30,6 +30,7 @@ model Usuario {
   facturas            Factura[]
   roles               UsuarioRol[]
   nota_credito        NotaCredito[]
+  recibos             Recibo[]
 }
 
 model Rol {
@@ -115,6 +116,7 @@ model ClienteEmpresa {
   fecha_creacion      DateTime   @default(now())
   fecha_modificacion  DateTime   @updatedAt
   facturas            Factura[]
+  recibos             Recibo[]
 }
 
 enum CondicionVenta {
@@ -144,6 +146,7 @@ model Factura {
   codigo_seguridad      String            @db.VarChar(10)
   detalles              FacturaDetalle[]
   nota_credito          NotaCredito[]
+  recibo_facturas       ReciboFactura[]
   caja_id               Int?
   caja                  Caja?              @relation(fields: [caja_id], references: [id])
 }
@@ -207,12 +210,23 @@ model Caja {
   establecimiento         Establecimiento   @relation(fields: [establecimiento_id], references: [id])
   secuencia_factura       SecuenciaFactura?
   secuencia_nota_credito  SecuenciaNotaCredito?
+  secuencia_recibo        SecuenciaRecibo?
   facturas                Factura[]
   nota_credito            NotaCredito[]
+  recibos                 Recibo[]
 }
 
 model SecuenciaFactura {
   @@map("secuencia_factura")
+  caja_id            Int       @id
+  valor              Int
+  fecha_creacion     DateTime  @default(now())
+  fecha_modificacion DateTime  @updatedAt
+  caja               Caja      @relation(fields: [caja_id], references: [id])
+}
+
+model SecuenciaRecibo {
+  @@map("secuencia_recibo")
   caja_id            Int       @id
   valor              Int
   fecha_creacion     DateTime  @default(now())
@@ -257,6 +271,60 @@ model NotaCreditoDetalle {
   fecha_creacion      DateTime      @default(now())
   fecha_modificacion  DateTime      @updatedAt
   nota_credito        NotaCredito   @relation(fields: [nota_credito_id], references: [id])
+}
+
+model Recibo {
+  @@map("recibo")
+  id                  Int              @id @default(autoincrement())
+  numero_recibo       Int
+  recibo_uuid         String           @db.VarChar(255)
+  cliente_empresa_id  Int
+  cliente_empresa     ClienteEmpresa   @relation(fields: [cliente_empresa_id], references: [id])
+  usuario_id          Int
+  usuario             Usuario          @relation(fields: [usuario_id], references: [id])
+  total_efectivo      Decimal          @default(0) @db.Decimal(15, 2)
+  total_cheques       Decimal          @default(0) @db.Decimal(15, 2)
+  total               Decimal          @db.Decimal(15, 2)
+  total_letras        String           @db.VarChar(255)
+  concepto            String?          @db.Text
+  fecha_emision       DateTime         @default(now())
+  fecha_creacion      DateTime         @default(now())
+  fecha_modificacion  DateTime         @updatedAt
+  caja_id             Int?
+  caja                Caja?            @relation(fields: [caja_id], references: [id])
+  facturas            ReciboFactura[]
+  cheques             ReciboCheque[]
+
+  @@unique([caja_id, numero_recibo], map: "uk_recibo_caja_numero")
+}
+
+model ReciboFactura {
+  @@map("recibo_factura")
+  id                  Int       @id @default(autoincrement())
+  recibo_id           Int
+  factura_id          Int
+  monto_aplicado      Decimal   @db.Decimal(15, 2)
+  fecha_creacion      DateTime  @default(now())
+  fecha_modificacion  DateTime  @updatedAt
+  recibo              Recibo    @relation(fields: [recibo_id], references: [id])
+  factura             Factura   @relation(fields: [factura_id], references: [id])
+
+  @@unique([recibo_id, factura_id], map: "uk_recibo_factura")
+  @@index([factura_id])
+}
+
+model ReciboCheque {
+  @@map("recibo_cheque")
+  id                  Int       @id @default(autoincrement())
+  recibo_id           Int
+  banco               String    @db.VarChar(120)
+  numero_cheque       String    @db.VarChar(50)
+  monto               Decimal   @db.Decimal(15, 2)
+  fecha_creacion      DateTime  @default(now())
+  fecha_modificacion  DateTime  @updatedAt
+  recibo              Recibo    @relation(fields: [recibo_id], references: [id])
+
+  @@index([recibo_id])
 }
 
 model SecuenciaNotaCredito {

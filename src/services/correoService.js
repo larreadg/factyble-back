@@ -130,6 +130,46 @@ const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito
 
 }
 
+const enviarRecibo = async ({ email, cliente, uuid, reciboId, nroRecibo, empresa, emailEmpresa }) => {
+
+    let filePath = path.join(__dirname, '..', 'resources', 'reciboTemplate.html')
+    let html = fs.readFileSync(filePath, {encoding:'utf-8'})
+    let pdfPath = path.join(__dirname, '..', '..', 'public', `${uuid}.pdf`)
+
+    html = html.replace(/\$cliente/g, cliente)
+    html = html.replace(/\$reciboId/g, reciboId)
+    html = html.replace(/\$emailEmpresa/g, emailEmpresa)
+
+    let transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST,
+        port: Number(process.env.EMAIL_PORT),
+        secure: Number(process.env.EMAIL_SECURE) === 1, // true for 465, false for other ports
+        auth: {
+            user: process.env.EMAIL,
+            pass: process.env.EMAIL_PW,
+        },
+    })
+
+    let mailObj = {
+        from: process.env.EMAIL_FROM, // sender address
+        to: email, // list of receivers
+        subject: `Recibo Nro. ${nroRecibo} | ${empresa}`,
+        html,
+        attachments: [
+            {
+                filename: `${uuid}.pdf`,
+                path: pdfPath,
+                contentType: 'application/pdf'
+            }
+        ]
+    }
+
+    let info = await transporter.sendMail(mailObj)
+
+    console.log("Message sent: %s", info.messageId)
+
+}
+
 const enviarErrorNotaDeCredito = async ({ email, nroNotaDeCredito, errorNotaDeCredito, empresa }) => {
 
     let filePath = path.join(__dirname, '..', 'resources', 'notaDeCreditoErrorTemplate.html')
@@ -165,5 +205,6 @@ module.exports = {
     enviarFactura,
     enviarErrorFactura,
     enviarNotaDeCredito,
+    enviarRecibo,
     enviarErrorNotaDeCredito
 }
