@@ -70,7 +70,7 @@ const generarPdfRecibo = async (datos) => {
     params.putSync("tipoDocumento", toStringValue(datos.tipoDocumento));
     params.putSync("tipoDocumentoTop", toStringValue(datos.tipoDocumentoTop));
     params.putSync("totalEfectivo", formatAmount(datos.totalEfectivo) + '-');
-    params.putSync("totalLetras", toStringValue(datos.totalLetras).toUpperCase() + ' GUARANIES-');
+    params.putSync("totalLetras", toStringValue(datos.totalLetras).toUpperCase() + '-');
     params.putSync("concepto", toStringValue(datos.concepto));
 
     const facturas = Array.isArray(datos.ds) && datos.ds.length > 0
