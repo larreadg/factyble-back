@@ -13,17 +13,42 @@ const isEmailValido = (email) => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim());
 };
 
+const normalizarTipo = (tipo) =>
+  String(tipo ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+
+const normalizarTipoDocumento = (tipo) => {
+  const valor = normalizarTipo(tipo);
+  if (valor === "FACTURA") return "FACTURA";
+  if (valor === "NOTA DE CREDITO") return "NOTA_CREDITO";
+  return null;
+};
+
+const normalizarTipoMedioPago = (tipo) => {
+  const valor = normalizarTipo(tipo);
+  if (valor === "CHEQUE") return "CHEQUE";
+  if (valor === "TRANSFERENCIA") return "TRANSFERENCIA";
+  return null;
+};
+
 /**
  * @typedef {Object} ReciboChequeInput
  * @property {string} banco - Nombre del banco del cheque.
  * @property {string} numero - Numero de cheque.
  * @property {string|number} monto - Monto del cheque en formato entero (sin decimales).
+ * @property {string} tipo - Tipo de medio bancario (CHEQUE o TRANSFERENCIA).
  */
 
 /**
  * @typedef {Object} ReciboFacturaInput
  * @property {string} numeroFactura - Numero de factura recibido desde frontend.
  * @property {string|number} montoAplicado - Monto aplicado a esa factura en formato entero.
+ * @property {string} tipo - Tipo de documento (FACTURA o NOTA DE CREDITO).
  */
 
 /**
@@ -53,9 +78,9 @@ const isEmailValido = (email) => {
  * - Resolver usuario desde JWT (datosUsuario).
  * - Buscar o crear cliente para construir cliente_empresa.
  * - Buscar establecimiento y caja por codigo.
- * - Buscar y validar facturas por numeroFactura.
- * - Calcular totales (efectivo, cheques, total y total_letras).
- * - Persistir Recibo, ReciboFactura y ReciboCheque.
+ * - Buscar y validar documentos por numero (factura / nota de credito).
+ * - Calcular totales (efectivo, cheques, transferencias, total y total_letras).
+ * - Persistir Recibo y sus detalles de documentos/medios de pago.
  *
  * @param {EmitirReciboInput} datos - Payload de entrada del recibo.
  * @param {UsuarioJwtData} datosUsuario - Datos del usuario autenticado desde JWT.
@@ -175,43 +200,59 @@ const emitirRecibo = async (datos, datosUsuario) => {
       });
     }
 
-    // Validar facturas de entrada
+    // Validar documentos de entrada (factura / nota de credito)
     if (!Array.isArray(datos.facturas) || datos.facturas.length === 0) {
-      throw new ErrorApp("Debe proporcionar al menos una factura", 400);
+      throw new ErrorApp("Debe proporcionar al menos una factura o nota de credito", 400);
     }
 
-    const facturasNormalizadas = datos.facturas.map((f) => ({
-      numeroFactura: String(f.numeroFactura).trim(),
-      numeroFacturaNumerico: Number(String(f.numeroFactura).replace(/^0+/, "") || "0"),
-      montoAplicado: parseEntero(f.montoAplicado, "montoAplicado", { min: 1 }),
+    const documentosNormalizados = datos.facturas.map((d) => ({
+      tipoDocumento: normalizarTipoDocumento(d.tipo),
+      numeroDocumento: String(d.numeroFactura || "").trim(),
+      numeroDocumentoNumerico: Number(String(d.numeroFactura || "").replace(/^0+/, "") || "0"),
+      montoAplicado: parseEntero(d.montoAplicado, "facturas.montoAplicado", { min: 1 }),
     }));
 
-    if (facturasNormalizadas.some((f) => !f.numeroFactura || Number.isNaN(f.numeroFacturaNumerico) || f.numeroFacturaNumerico <= 0)) {
-      throw new ErrorApp("Numero de factura invalido", 400);
+    if (
+      documentosNormalizados.some(
+        (d) =>
+          !d.tipoDocumento ||
+          !d.numeroDocumento ||
+          Number.isNaN(d.numeroDocumentoNumerico) ||
+          d.numeroDocumentoNumerico <= 0
+      )
+    ) {
+      throw new ErrorApp("Documentos del recibo invalidos", 400);
     }
 
-    const numerosDuplicados = new Set();
-    for (const f of facturasNormalizadas) {
-      const key = String(f.numeroFacturaNumerico);
-      if (numerosDuplicados.has(key)) {
-        throw new ErrorApp("No se permiten facturas duplicadas en el recibo", 400);
+    const documentosDuplicados = new Set();
+    for (const d of documentosNormalizados) {
+      const key = `${d.tipoDocumento}:${d.numeroDocumentoNumerico}`;
+      if (documentosDuplicados.has(key)) {
+        throw new ErrorApp("No se permiten documentos duplicados en el recibo", 400);
       }
-      numerosDuplicados.add(key);
+      documentosDuplicados.add(key);
     }
 
-    const facturasDb = await prisma.factura.findMany({
-      where: {
-        numero_factura: {
-          in: facturasNormalizadas.map((f) => f.numeroFacturaNumerico),
-        },
-        cliente_empresa: {
-          empresa_id: usuario.empresa_id,
-        },
-      },
-      include: {
-        cliente_empresa: true,
-      },
-    });
+    const facturasNormalizadas = documentosNormalizados.filter(
+      (d) => d.tipoDocumento === "FACTURA"
+    );
+    const notasCreditoNormalizadas = documentosNormalizados.filter(
+      (d) => d.tipoDocumento === "NOTA_CREDITO"
+    );
+
+    const facturasDb =
+      facturasNormalizadas.length > 0
+        ? await prisma.factura.findMany({
+            where: {
+              numero_factura: {
+                in: facturasNormalizadas.map((f) => f.numeroDocumentoNumerico),
+              },
+              cliente_empresa: {
+                empresa_id: usuario.empresa_id,
+              },
+            },
+          })
+        : [];
 
     if (facturasDb.length !== facturasNormalizadas.length) {
       throw new ErrorApp("Una o mas facturas no fueron encontradas", 404);
@@ -226,34 +267,88 @@ const emitirRecibo = async (datos, datosUsuario) => {
       }
     }
 
-    // Validar cheques y totales
-    const cheques = Array.isArray(datos.cheques) ? datos.cheques : [];
+    const notasCreditoDb =
+      notasCreditoNormalizadas.length > 0
+        ? await prisma.notaCredito.findMany({
+            where: {
+              numero_nota_credito: {
+                in: notasCreditoNormalizadas.map((n) => n.numeroDocumentoNumerico),
+              },
+              factura: {
+                cliente_empresa: {
+                  empresa_id: usuario.empresa_id,
+                },
+              },
+            },
+          })
+        : [];
+
+    if (notasCreditoDb.length !== notasCreditoNormalizadas.length) {
+      throw new ErrorApp("Una o mas notas de credito no fueron encontradas", 404);
+    }
+
+    for (const nota of notasCreditoDb) {
+      if (["Cancelado", "Rechazado"].includes(nota.sifen_estado)) {
+        throw new ErrorApp(
+          `La nota de credito ${nota.numero_nota_credito} no puede aplicarse por su estado`,
+          400
+        );
+      }
+    }
+
+    // Validar medios de pago (cheques / transferencias) y totales
+    const mediosBancarios = Array.isArray(datos.cheques) ? datos.cheques : [];
     const totalEfectivo = parseEntero(datos.totalEfectivo || 0, "totalEfectivo");
 
-    const chequesNormalizados = cheques.map((c) => ({
-      banco: String(c.banco || "").trim(),
-      numeroCheque: String(c.numero || "").trim(),
-      monto: parseEntero(c.monto, "cheques.monto"),
+    const mediosNormalizados = mediosBancarios.map((m) => ({
+      tipoMedio: normalizarTipoMedioPago(m.tipo),
+      banco: String(m.banco || "").trim(),
+      numeroReferencia: String(m.numero || "").trim(),
+      monto: parseEntero(m.monto, "cheques.monto"),
     }));
 
     if (
-      chequesNormalizados.some(
-        (c) => !c.banco || !c.numeroCheque
+      mediosNormalizados.some(
+        (m) => !m.tipoMedio || !m.banco || !m.numeroReferencia
       )
     ) {
-      throw new ErrorApp("Datos de cheques invalidos", 400);
+      throw new ErrorApp("Datos de medios bancarios invalidos", 400);
     }
 
+    const chequesNormalizados = mediosNormalizados.filter(
+      (m) => m.tipoMedio === "CHEQUE"
+    );
+    const transferenciasNormalizadas = mediosNormalizados.filter(
+      (m) => m.tipoMedio === "TRANSFERENCIA"
+    );
+
     const totalCheques = chequesNormalizados.reduce((acc, c) => acc + c.monto, 0);
+    const totalTransferencias = transferenciasNormalizadas.reduce(
+      (acc, t) => acc + t.monto,
+      0
+    );
     const totalFacturas = facturasNormalizadas.reduce(
       (acc, f) => acc + f.montoAplicado,
       0
     );
-    const totalRecibo = totalEfectivo + totalCheques;
+    const totalNotasCredito = notasCreditoNormalizadas.reduce(
+      (acc, n) => acc + n.montoAplicado,
+      0
+    );
+    const totalAplicado = totalFacturas - totalNotasCredito;
 
-    if (totalRecibo !== totalFacturas) {
+    if (totalAplicado <= 0) {
       throw new ErrorApp(
-        "El total recibido (efectivo + cheques) no coincide con el monto aplicado en facturas",
+        "El total aplicado (facturas - notas de credito) debe ser mayor a cero",
+        400
+      );
+    }
+
+    const totalRecibo = totalEfectivo + totalCheques + totalTransferencias;
+
+    if (totalRecibo !== totalAplicado) {
+      throw new ErrorApp(
+        "El total recibido (efectivo + cheques + transferencias) no coincide con el monto aplicado (facturas - notas de credito)",
         400
       );
     }
@@ -262,6 +357,7 @@ const emitirRecibo = async (datos, datosUsuario) => {
     const totalReciboString = `${totalRecibo}.00`;
     const totalEfectivoString = `${totalEfectivo}.00`;
     const totalChequesString = `${totalCheques}.00`;
+    const totalTransferenciasString = `${totalTransferencias}.00`;
     const totalLetras = NumerosALetras(totalRecibo)
       .replace(/\s*Pesos\s*\d{2}\/100\s*M\.N\.\s*$/i, " Guaranies")
       .trim();
@@ -285,6 +381,7 @@ const emitirRecibo = async (datos, datosUsuario) => {
           usuario_id: usuario.id,
           total_efectivo: totalEfectivoString,
           total_cheques: totalChequesString,
+          total_transferencias: totalTransferenciasString,
           total: totalReciboString,
           total_letras: totalLetras,
           concepto: datos.concepto,
@@ -296,21 +393,48 @@ const emitirRecibo = async (datos, datosUsuario) => {
         facturasDb.map((f) => [f.numero_factura, f.id])
       );
 
-      await tx.reciboFactura.createMany({
-        data: facturasNormalizadas.map((f) => ({
-          recibo_id: reciboCreado.id,
-          factura_id: mapaFacturaPorNumero.get(f.numeroFacturaNumerico),
-          monto_aplicado: `${f.montoAplicado}.00`,
-        })),
-      });
+      if (facturasNormalizadas.length > 0) {
+        await tx.reciboFactura.createMany({
+          data: facturasNormalizadas.map((f) => ({
+            recibo_id: reciboCreado.id,
+            factura_id: mapaFacturaPorNumero.get(f.numeroDocumentoNumerico),
+            monto_aplicado: `${f.montoAplicado}.00`,
+          })),
+        });
+      }
+
+      const mapaNotaCreditoPorNumero = new Map(
+        notasCreditoDb.map((n) => [n.numero_nota_credito, n.id])
+      );
+
+      if (notasCreditoNormalizadas.length > 0) {
+        await tx.reciboNotaCredito.createMany({
+          data: notasCreditoNormalizadas.map((n) => ({
+            recibo_id: reciboCreado.id,
+            nota_credito_id: mapaNotaCreditoPorNumero.get(n.numeroDocumentoNumerico),
+            monto_aplicado: `${n.montoAplicado}.00`,
+          })),
+        });
+      }
 
       if (chequesNormalizados.length > 0) {
         await tx.reciboCheque.createMany({
           data: chequesNormalizados.map((c) => ({
             recibo_id: reciboCreado.id,
             banco: c.banco,
-            numero_cheque: c.numeroCheque,
+            numero_cheque: c.numeroReferencia,
             monto: `${c.monto}.00`,
+          })),
+        });
+      }
+
+      if (transferenciasNormalizadas.length > 0) {
+        await tx.reciboTransferencia.createMany({
+          data: transferenciasNormalizadas.map((t) => ({
+            recibo_id: reciboCreado.id,
+            banco: t.banco,
+            numero_referencia: t.numeroReferencia,
+            monto: `${t.monto}.00`,
           })),
         });
       }
@@ -324,15 +448,25 @@ const emitirRecibo = async (datos, datosUsuario) => {
       empresaLogo: usuario.empresa.logo,
       reciboUuid,
       reciboId,
-      ds: facturasNormalizadas.map((f) => ({
-        facturaNumero: f.numeroFactura,
-        importe: f.montoAplicado,
+      ds: documentosNormalizados.map((d) => ({
+        facturaNumero:
+          d.tipoDocumento === "FACTURA"
+            ? `FACTURA ${d.numeroDocumento}`
+            : `NOTA DE CREDITO ${d.numeroDocumento} (DESCUENTO)`,
+        importe: d.montoAplicado,
       })),
-      dsCheque: chequesNormalizados.map((c) => ({
-        banco: c.banco,
-        chequeNumero: c.numeroCheque,
-        total: c.monto,
-      })),
+      dsCheque: [
+        ...chequesNormalizados.map((c) => ({
+          banco: c.banco,
+          chequeNumero: `CHEQUE ${c.numeroReferencia}`,
+          total: c.monto,
+        })),
+        ...transferenciasNormalizadas.map((t) => ({
+          banco: t.banco,
+          chequeNumero: `TRANSFERENCIA ${t.numeroReferencia}`,
+          total: t.monto,
+        })),
+      ],
       fechaHora: dayjs().format("YYYY-MM-DD HH:mm:ss"),
       ruc: rucTexto,
       razonSocial: datos.razonSocial,
@@ -456,7 +590,21 @@ const getRecibos = async (page = 1, itemsPerPage = 10, filter = null, empresaId)
             },
           },
         },
+        notas_credito: {
+          include: {
+            nota_credito: {
+              select: {
+                id: true,
+                numero_nota_credito: true,
+                total: true,
+                cdc: true,
+                sifen_estado: true,
+              },
+            },
+          },
+        },
         cheques: true,
+        transferencias: true,
         caja: {
           include: {
             establecimiento: true,

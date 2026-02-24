@@ -254,6 +254,7 @@ model NotaCredito {
   fecha_modificacion    DateTime          @updatedAt
   factura               Factura           @relation(fields: [factura_id], references: [id])
   nota_credito_detalle  NotaCreditoDetalle[]
+  recibo_notas_credito  ReciboNotaCredito[]
   caja_id               Int?
   caja                  Caja?              @relation(fields: [caja_id], references: [id])    
 }
@@ -284,6 +285,7 @@ model Recibo {
   usuario             Usuario          @relation(fields: [usuario_id], references: [id])
   total_efectivo      Decimal          @default(0) @db.Decimal(15, 2)
   total_cheques       Decimal          @default(0) @db.Decimal(15, 2)
+  total_transferencias Decimal         @default(0) @db.Decimal(15, 2)
   total               Decimal          @db.Decimal(15, 2)
   total_letras        String           @db.VarChar(255)
   concepto            String?          @db.Text
@@ -293,7 +295,9 @@ model Recibo {
   caja_id             Int?
   caja                Caja?            @relation(fields: [caja_id], references: [id])
   facturas            ReciboFactura[]
+  notas_credito       ReciboNotaCredito[]
   cheques             ReciboCheque[]
+  transferencias      ReciboTransferencia[]
 
   @@unique([caja_id, numero_recibo], map: "uk_recibo_caja_numero")
 }
@@ -313,12 +317,41 @@ model ReciboFactura {
   @@index([factura_id])
 }
 
+model ReciboNotaCredito {
+  @@map("recibo_nota_credito")
+  id                  Int         @id @default(autoincrement())
+  recibo_id           Int
+  nota_credito_id     Int
+  monto_aplicado      Decimal     @db.Decimal(15, 2)
+  fecha_creacion      DateTime    @default(now())
+  fecha_modificacion  DateTime    @updatedAt
+  recibo              Recibo      @relation(fields: [recibo_id], references: [id])
+  nota_credito        NotaCredito @relation(fields: [nota_credito_id], references: [id])
+
+  @@unique([recibo_id, nota_credito_id], map: "uk_recibo_nota_credito")
+  @@index([nota_credito_id])
+}
+
 model ReciboCheque {
   @@map("recibo_cheque")
   id                  Int       @id @default(autoincrement())
   recibo_id           Int
   banco               String    @db.VarChar(120)
   numero_cheque       String    @db.VarChar(50)
+  monto               Decimal   @db.Decimal(15, 2)
+  fecha_creacion      DateTime  @default(now())
+  fecha_modificacion  DateTime  @updatedAt
+  recibo              Recibo    @relation(fields: [recibo_id], references: [id])
+
+  @@index([recibo_id])
+}
+
+model ReciboTransferencia {
+  @@map("recibo_transferencia")
+  id                  Int       @id @default(autoincrement())
+  recibo_id           Int
+  banco               String    @db.VarChar(120)
+  numero_referencia   String    @db.VarChar(50)
   monto               Decimal   @db.Decimal(15, 2)
   fecha_creacion      DateTime  @default(now())
   fecha_modificacion  DateTime  @updatedAt
