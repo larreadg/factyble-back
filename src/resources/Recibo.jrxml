@@ -307,7 +307,7 @@
 									<font size="8" isBold="true"/>
 									<paragraph leftIndent="2"/>
 								</textElement>
-								<text><![CDATA[FACTURA]]></text>
+								<text><![CDATA[FACTURA / NOTA DE CRÉDITO]]></text>
 							</staticText>
 						</jr:columnHeader>
 						<jr:detailCell style="Table_TD" height="30">
@@ -346,7 +346,7 @@
 									<font size="8" isBold="true"/>
 									<paragraph leftIndent="2"/>
 								</textElement>
-								<text><![CDATA[IMPORTE]]></text>
+								<text><![CDATA[MONTO]]></text>
 							</staticText>
 						</jr:columnHeader>
 						<jr:detailCell style="Table_TD" height="30">
@@ -373,13 +373,13 @@
 				</jr:table>
 			</componentElement>
 			<staticText>
-				<reportElement x="0" y="0" width="80" height="20" uuid="3008403a-a5ed-4dfe-956e-b6063d75aeea">
+				<reportElement x="0" y="0" width="180" height="20" uuid="3008403a-a5ed-4dfe-956e-b6063d75aeea">
 					<property name="com.jaspersoft.studio.unit.width" value="px"/>
 				</reportElement>
 				<textElement verticalAlignment="Middle">
 					<font size="8" isBold="true"/>
 				</textElement>
-				<text><![CDATA[FACTURAS]]></text>
+				<text><![CDATA[FACTURAS / NOTAS DE CRÉDITO]]></text>
 			</staticText>
 		</band>
 		<band height="80">
@@ -448,7 +448,7 @@
 									<font size="8" isBold="true"/>
 									<paragraph leftIndent="2"/>
 								</textElement>
-								<text><![CDATA[NRO. CHEQUE]]></text>
+								<text><![CDATA[NRO. CHEQUE / TRANSFERENCIA]]></text>
 							</staticText>
 						</jr:columnHeader>
 						<jr:detailCell style="Table_TD" height="30">
@@ -515,13 +515,13 @@
 				</jr:table>
 			</componentElement>
 			<staticText>
-				<reportElement x="0" y="0" width="80" height="20" uuid="cc462bc0-2106-46c9-8cd1-5fc6ff06cd4a">
+				<reportElement x="0" y="0" width="180" height="20" uuid="cc462bc0-2106-46c9-8cd1-5fc6ff06cd4a">
 					<property name="com.jaspersoft.studio.unit.width" value="px"/>
 				</reportElement>
 				<textElement verticalAlignment="Middle">
 					<font size="8" isBold="true"/>
 				</textElement>
-				<text><![CDATA[CHEQUES]]></text>
+				<text><![CDATA[CHEQUES / TRANSFERENCIA]]></text>
 			</staticText>
 		</band>
 		<band height="110">
