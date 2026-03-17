@@ -446,6 +446,7 @@ const emitirRecibo = async (datos, datosUsuario) => {
 
     await generarPdfRecibo({
       empresaLogo: usuario.empresa.logo,
+      empresaFirma: `${usuario.empresa.ruc}.png`,
       reciboUuid,
       reciboId,
       ds: documentosNormalizados.map((d) => ({

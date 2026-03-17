@@ -66,6 +66,7 @@
 	<parameter name="totalEfectivo" class="java.lang.String"/>
 	<parameter name="totalLetras" class="java.lang.String"/>
 	<parameter name="concepto" class="java.lang.String"/>
+	<parameter name="empresaFirma" class="java.lang.String"/>
 	<queryString>
 		<![CDATA[]]>
 	</queryString>
@@ -573,18 +574,34 @@
 				<reportElement x="0" y="60" width="80" height="20" uuid="ea86f7a8-6e19-4320-b204-cd33ecba1e6c">
 					<property name="com.jaspersoft.studio.unit.width" value="px"/>
 				</reportElement>
-				<textElement verticalAlignment="Middle">
+				<textElement verticalAlignment="Top">
 					<font size="8" isBold="true"/>
 				</textElement>
 				<text><![CDATA[EN CONCEPTO DE:]]></text>
 			</staticText>
 			<textField>
 				<reportElement x="80" y="60" width="474" height="20" uuid="29050505-6b15-4a30-a7bf-5c567f991ffa"/>
-				<textElement verticalAlignment="Middle">
+				<textElement verticalAlignment="Top">
 					<font size="8" isBold="false"/>
 				</textElement>
 				<textFieldExpression><![CDATA[$P{concepto}]]></textFieldExpression>
 			</textField>
+		</band>
+		<band height="90">
+			<image onErrorType="Blank">
+				<reportElement x="400" y="0" width="90" height="60" uuid="547844c2-c726-46a1-852c-d3c13c83d5f8">
+					<property name="com.jaspersoft.studio.unit.height" value="px"/>
+				</reportElement>
+				<imageExpression><![CDATA[$P{empresaFirma}]]></imageExpression>
+			</image>
+			<line>
+				<reportElement x="380" y="61" width="130" height="1" uuid="0568c408-aca3-44d9-8a8a-c0d32c0df896"/>
+			</line>
+			<staticText>
+				<reportElement x="425" y="70" width="41" height="13" uuid="7bf0742a-3dad-453f-9341-14044c53ecff"/>
+				<textElement textAlignment="Center"/>
+				<text><![CDATA[FIRMA]]></text>
+			</staticText>
 		</band>
 	</detail>
 </jasperReport>
