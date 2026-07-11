@@ -1,0 +1,3 @@
+interface:
+  display_name: "Factyble SIFEN Static Auditor"
+  short_description: "Audita estáticamente código y riesgos de la migración SIFEN"
