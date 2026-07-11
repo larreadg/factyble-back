@@ -10,6 +10,7 @@ const trazabilidadService = require("./trazabilidadService");
 const correoService = require("../correoService");
 const { interpretarCodigo, CATEGORIA } = require("../../utils/sifen/codigosRespuesta");
 const { extraerCodigoYMensaje, extraerProtocoloLote, extraerResultadosPorDocumento, extraerCdc } = require("../../utils/sifen/respuestaSoap");
+const { decryptTolerante } = require("../../utils/crypto");
 
 /**
  * Único camino de emisión de Factura/NotaCredito (MIGRATION_PLAN.md §3.1/§3.2, Decisión cerrada) —
@@ -150,9 +151,13 @@ const firmarYPersistirDocumento = async (tipoDoc, documento, client = prisma) =>
       certificadoPath: certificado.archivo,
       certificadoPassword: certificado.clave,
     });
-    // Empresa.csc todavía se persiste en texto plano (cifrado pendiente de implementar, ver desvío #3
-    // de MIGRATION_PLAN.md) — se pasa tal cual, sin `decrypt()`.
-    const resultadoQr = await qrService.generarQr({ xmlFirmado, idCSC: empresa.csc_id, csc: empresa.csc });
+    // Empresa.csc: lectura tolerante (AUD-006, STATIC_AUDIT_FINDINGS.json) — hoy no existe ningún
+    // endpoint/CRUD que escriba este campo (confirmado: no hay `empresaRoute`/`certificadoRoute` en
+    // `src/routes/`, el alta es manual/ad-hoc, igual que el resto de la carga de datos fiscales), así
+    // que las filas existentes están en texto plano. `decryptTolerante` descifra si el valor fue
+    // cifrado con `utils/crypto.js#encrypt` (formato esperado), y si no, lo devuelve tal cual — sin
+    // esto, forzar `decrypt()` habría roto el único camino real por el que se carga `Empresa.csc` hoy.
+    const resultadoQr = await qrService.generarQr({ xmlFirmado, idCSC: empresa.csc_id, csc: decryptTolerante(empresa.csc) });
     xmlConQr = resultadoQr.xmlConQr;
 
     // `linkqr` sigue siendo la misma columna que ya alimentaba `generarPdf.js`/el mail — no es un
@@ -263,14 +268,34 @@ const firmarPendientes = async () => {
     const config = TIPOS_DOCUMENTO[tipoDoc];
     const pendientes = await config.modelo().findMany({
       where: { lote_id: null, estado_sifen: "GENERADO" },
-      include: config.include,
+      select: { id: true },
     });
 
-    for (const documento of pendientes) {
+    for (const { id } of pendientes) {
+      // Claim atómico (AUD-009, STATIC_AUDIT_FINDINGS.json): si otra ejecución (cron solapado por una
+      // corrida anterior más lenta que el intervalo, u otra instancia del proceso) ya reclamó este
+      // documento entre el findMany de arriba y este punto, `count` da 0 y se descarta sin firmarlo de
+      // nuevo — evita firmar/generar QR dos veces para el mismo documento.
+      const claim = await config.modelo().updateMany({
+        where: { id, estado_sifen: "GENERADO" },
+        data: { estado_sifen: "FIRMANDO" },
+      });
+      if (claim.count === 0) {
+        continue;
+      }
+
       try {
+        const documento = await config.modelo().findFirst({ where: { id }, include: config.include });
         await firmarYPersistirDocumento(tipoDoc, documento);
       } catch (error) {
-        console.error(`[loteService] Error al firmar ${tipoDoc} id=${documento.id}:`, error.message);
+        console.error(`[loteService] Error al firmar ${tipoDoc} id=${id}:`, error.message);
+        // Libera el claim (FIRMANDO -> GENERADO) para que la próxima pasada del cron reintente —
+        // reintentar el armado es seguro (cómputo local, no una llamada a SIFEN), mismo criterio ya
+        // documentado en este módulo para el resto del pipeline.
+        await config.modelo().updateMany({
+          where: { id, estado_sifen: "FIRMANDO" },
+          data: { estado_sifen: "GENERADO" },
+        });
       }
     }
   }
@@ -328,11 +353,22 @@ const crearLoteConDocumentos = async (tipoDoc, empresaId, documentos) => {
       },
     });
 
+    // `lote_id: null` en el where (AUD-009, STATIC_AUDIT_FINDINGS.json): sin esto, un documento que
+    // otra ejecución concurrente ya asignó a otro lote entre el findMany de `armarLotes()` y esta
+    // transacción quedaba "robado" en silencio (este updateMany lo reasignaba igual, sin chequear que
+    // siguiera libre). Con el filtro, el documento ya tomado por otro lote no matchea y se descarta
+    // solo — el `count` resultante puede terminar siendo menor a `idsDocumentos.length` si eso pasó.
     const modeloTx = tipoDoc === "FACTURA" ? tx.factura : tx.notaCredito;
-    await modeloTx.updateMany({
-      where: { id: { in: idsDocumentos } },
+    const asignados = await modeloTx.updateMany({
+      where: { id: { in: idsDocumentos }, lote_id: null },
       data: { lote_id: lote.id, estado_sifen: "ENCOLADO" },
     });
+
+    if (asignados.count !== idsDocumentos.length) {
+      console.warn(
+        `[loteService] crearLoteConDocumentos: lote ${lote.id} esperaba ${idsDocumentos.length} documentos disponibles, solo se reclamaron ${asignados.count} — posible solapamiento de cron/otra instancia.`
+      );
+    }
 
     return lote;
   });
@@ -375,8 +411,12 @@ const armarLotes = async () => {
 /**
  * Marca un lote como agotado (excedió el máximo de reintentos, o SIFEN rechazó el sobre de forma
  * definitiva): sus documentos pasan a `ERROR` — requieren intervención manual, ya no se van a
- * reintentar automáticamente (`Lote` no tiene un estado terminal propio para esto en el schema, ver
- * §2.2 — la señal vive en `estado_sifen` de los documentos, que sí está pensado para esto).
+ * reintentar automáticamente. El propio `Lote` pasa a `estado: AGOTADO` (estado terminal explícito,
+ * agregado junto con `ENVIANDO` para cerrar AUD-003 en STATIC_AUDIT_FINDINGS.json) — antes de esto,
+ * `Lote.estado` nunca salía de `CONSTRUIDO` tras un rechazo/agotamiento, y como `proximo_intento_en`
+ * quedaba en `null`, el lote volvía a matchear el `where` de `enviarLotesConstruidos()` en la
+ * siguiente pasada del cron y se reenviaba a SIFEN indefinidamente — bug real encontrado al
+ * implementar el claim atómico, no solo el escenario de solapamiento originalmente reportado.
  * @param {Object} lote
  * @param {string} mensajeError
  */
@@ -388,7 +428,7 @@ const marcarLoteAgotado = async (lote, mensajeError) => {
   });
   await prisma.lote.update({
     where: { id: lote.id },
-    data: { ultimo_error: mensajeError, proximo_intento_en: null },
+    data: { estado: "AGOTADO", ultimo_error: mensajeError, proximo_intento_en: null },
   });
 };
 
@@ -396,6 +436,13 @@ const marcarLoteAgotado = async (lote, mensajeError) => {
  * Envía a SIFEN los lotes ya construidos (`estado: CONSTRUIDO`) cuyo `proximo_intento_en` ya se
  * cumplió (o nunca se fijó, primer intento). Aislado por lote — el fallo de un lote (de cualquier
  * empresa) no bloquea el envío de los demás (antipatrón Q).
+ *
+ * Antes de llamar a SIFEN, reclama el lote de forma atómica (`CONSTRUIDO` -> `ENVIANDO`) y descarta
+ * silenciosamente cualquier lote cuyo `updateMany` afecte 0 filas — significa que otra ejecución
+ * (cron solapado por una corrida anterior más lenta que el intervalo de 5 min, u otra instancia del
+ * proceso) ya lo tomó primero. Sin este claim, dos ejecuciones podían enviar el mismo lote a SIFEN
+ * dos veces antes de que la primera alcanzara a persistir su resultado (AUD-003,
+ * STATIC_AUDIT_FINDINGS.json).
  * @returns {Promise<void>}
  */
 const enviarLotesConstruidos = async () => {
@@ -409,6 +456,16 @@ const enviarLotesConstruidos = async () => {
   });
 
   for (const lote of lotes) {
+    const claim = await prisma.lote.updateMany({
+      where: { id: lote.id, estado: "CONSTRUIDO" },
+      data: { estado: "ENVIANDO" },
+    });
+    if (claim.count === 0) {
+      // Otra ejecución ya reclamó este lote entre el findMany de arriba y este punto — se descarta,
+      // esa otra ejecución es la que lo va a enviar/reintentar.
+      continue;
+    }
+
     const config = TIPOS_DOCUMENTO[lote.tipo_doc];
     const documentos = lote.tipo_doc === "FACTURA" ? lote.facturas : lote.notas_credito;
     const xmls = documentos.map((d) => d.xml_firmado);
@@ -423,7 +480,10 @@ const enviarLotesConstruidos = async () => {
         certificadoPassword: certificado.clave,
       });
 
-      const { codigo, mensaje } = extraerCodigoYMensaje(respuesta);
+      // Código a nivel de sobre/lote (0300/0301, ver codigosRespuesta.js) — se excluye explícitamente
+      // el subárbol gResProcLoteDe (breakdown por documento, si llegara a venir en esta respuesta) para
+      // que nunca se confunda con el código de un documento individual (AUD-008, STATIC_AUDIT_FINDINGS.json).
+      const { codigo, mensaje } = extraerCodigoYMensaje(respuesta, { excluirSufijos: ["gResProcLoteDe"] });
       const protocolo = extraerProtocoloLote(respuesta);
       const interpretacion = interpretarCodigo(codigo);
 
@@ -479,9 +539,12 @@ const enviarLotesConstruidos = async () => {
         continue;
       }
 
+      // Libera el claim (ENVIANDO -> CONSTRUIDO) para que la próxima pasada del cron, una vez cumplido
+      // el backoff, pueda volver a tomar y reintentar este lote.
       await prisma.lote.update({
         where: { id: lote.id },
         data: {
+          estado: "CONSTRUIDO",
           intentos_envio: { increment: 1 },
           proximo_intento_en: new Date(Date.now() + calcularBackoffSegundos(intentos) * 1000),
           ultimo_error: error.message,
@@ -552,7 +615,10 @@ const consultarLotes = async () => {
         certificadoPassword: certificado.clave,
       });
 
-      const { codigo, mensaje } = extraerCodigoYMensaje(respuesta);
+      // Código a nivel de sobre/lote — se excluye explícitamente el subárbol gResProcLoteDe (donde sí
+      // vive el código de cada documento individual) para que la interpretación de nivel-lote nunca
+      // termine leyendo por error el código de un documento anidado (AUD-008, STATIC_AUDIT_FINDINGS.json).
+      const { codigo, mensaje } = extraerCodigoYMensaje(respuesta, { excluirSufijos: ["gResProcLoteDe"] });
       const resultadosPorDocumento = extraerResultadosPorDocumento(respuesta);
       const interpretacionLote = interpretarCodigo(codigo);
 

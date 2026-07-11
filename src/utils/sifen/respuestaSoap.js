@@ -20,29 +20,45 @@
 
 /**
  * Busca el primer valor cuya clave (sin prefijo de namespace) termine en `sufijo`, recorriendo el
- * objeto en profundidad (primero el nivel actual, después recursivo).
+ * objeto en profundidad (primero el nivel actual completo, recién después desciende a los hijos —
+ * por eso, si `sufijo` existe como clave directa de un nivel, nunca se sigue bajando a explorar los
+ * hijos de ese mismo nivel en busca de otra coincidencia más profunda).
+ *
+ * `excluirSufijos` (AUD-008, STATIC_AUDIT_FINDINGS.json) permite no descender a un subárbol puntual
+ * — pensado para que, al extraer el código a nivel de sobre/lote de una respuesta de `consultaLote`,
+ * la búsqueda nunca pueda terminar devolviendo el código de un documento individual anidado dentro de
+ * `gResProcLoteDe`, sin importar el namespace/anidamiento real (todavía no confirmado contra una
+ * respuesta real de SIFEN, ver spike #3 en MIGRATION_PLAN.md). No cambia el comportamiento para
+ * llamadas que no pasan esta opción.
  * @param {*} obj - Objeto (o valor) donde buscar
  * @param {string} sufijo - Sufijo de nombre de tag a buscar (case-insensitive), p. ej. "dCodRes"
- * @param {Set} [visitados] - Uso interno, evita ciclos
+ * @param {Object} [opciones]
+ * @param {string[]} [opciones.excluirSufijos] - Sufijos de clave (mismo criterio que `sufijo`) cuyo
+ *   subárbol no se debe explorar, ni siquiera si `sufijo` no aparece en ningún otro lado
+ * @param {Set} [opciones.visitados] - Uso interno, evita ciclos
  * @returns {*} - Valor encontrado, o `undefined`
  */
-const buscarValorPorSufijo = (obj, sufijo, visitados = new Set()) => {
+const buscarValorPorSufijo = (obj, sufijo, { excluirSufijos = [], visitados = new Set() } = {}) => {
   if (obj === null || typeof obj !== "object" || visitados.has(obj)) {
     return undefined;
   }
   visitados.add(obj);
 
   const sufijoNormalizado = sufijo.toLowerCase();
+  const excluidosNormalizados = excluirSufijos.map((s) => s.toLowerCase());
+  const nombreSinPrefijo = (clave) => (clave.includes(":") ? clave.split(":").pop() : clave).toLowerCase();
 
   for (const [clave, valor] of Object.entries(obj)) {
-    const nombreSinPrefijo = clave.includes(":") ? clave.split(":").pop() : clave;
-    if (nombreSinPrefijo.toLowerCase().endsWith(sufijoNormalizado)) {
+    if (nombreSinPrefijo(clave).endsWith(sufijoNormalizado)) {
       return valor;
     }
   }
-  for (const valor of Object.values(obj)) {
+  for (const [clave, valor] of Object.entries(obj)) {
+    if (excluidosNormalizados.some((ex) => nombreSinPrefijo(clave).endsWith(ex))) {
+      continue;
+    }
     if (valor && typeof valor === "object") {
-      const encontrado = buscarValorPorSufijo(valor, sufijo, visitados);
+      const encontrado = buscarValorPorSufijo(valor, sufijo, { excluirSufijos, visitados });
       if (encontrado !== undefined) {
         return encontrado;
       }
@@ -54,11 +70,15 @@ const buscarValorPorSufijo = (obj, sufijo, visitados = new Set()) => {
 /**
  * Extrae {codigo, mensaje} de un nivel puntual (lote o documento) de una respuesta SOAP ya parseada.
  * @param {Object} respuestaSoap - Objeto (respuesta completa, o un sub-nodo puntual como una entrada de `gResProcLoteDe`)
+ * @param {Object} [opciones]
+ * @param {string[]} [opciones.excluirSufijos] - Ver `buscarValorPorSufijo` — p. ej. pasar
+ *   `["gResProcLoteDe"]` al extraer el código a nivel de sobre de una respuesta de `consultaLote`, para
+ *   no confundirlo nunca con el código de un documento individual anidado adentro.
  * @returns {{codigo: string|undefined, mensaje: string|undefined}}
  */
-const extraerCodigoYMensaje = (respuestaSoap) => ({
-  codigo: buscarValorPorSufijo(respuestaSoap, "dCodRes"),
-  mensaje: buscarValorPorSufijo(respuestaSoap, "dMsgRes"),
+const extraerCodigoYMensaje = (respuestaSoap, { excluirSufijos } = {}) => ({
+  codigo: buscarValorPorSufijo(respuestaSoap, "dCodRes", { excluirSufijos }),
+  mensaje: buscarValorPorSufijo(respuestaSoap, "dMsgRes", { excluirSufijos }),
 });
 
 /**

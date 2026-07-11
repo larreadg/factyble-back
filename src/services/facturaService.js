@@ -9,6 +9,7 @@ const { enviarFactura } = require("./correoService");
 const { construirCdc } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
+const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
 
 // tipoDocumento SIFEN para el CDC (MIGRATION_PLAN.md §1.3) — 1=Factura, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_FACTURA = 1;
@@ -453,15 +454,18 @@ const getFacturaById = async (id) => {
 };
 
 const reenviarFactura = async ({ email, facturaId }) => {
+  // No se filtra por estado_sifen en la query: para una Factura histórica (emitida antes del corte a
+  // este pipeline) ese campo es siempre NULL, y el dato real de aprobación vive en `sifen_estado`
+  // (texto legacy) — el chequeo dual lo hace `esAprobado` (AUD-001, STATIC_AUDIT_FINDINGS.json).
   const factura = await prisma.factura.findFirst({
-    where: { id: facturaId, estado_sifen: "APROBADO" },
+    where: { id: facturaId },
     include: {
       cliente_empresa: { include: { cliente: true, empresa: true } },
       usuario: true,
     },
   });
 
-  if (!factura) {
+  if (!factura || !esAprobado(factura)) {
     throw new ErrorApp("La factura no existe", 404);
   }
 
@@ -500,19 +504,21 @@ const cancelarFactura = async (datos, datosUsuario) => {
       throw new ErrorApp('Factura no encontrada', 404)
     }
 
-    if (factura.estado_sifen == 'CANCELADO') {
+    // esCancelado cubre también el caso histórico (estado_sifen NULL + sifen_estado='Cancelado' legacy)
+    // — AUD-001, STATIC_AUDIT_FINDINGS.json.
+    if (esCancelado(factura)) {
       throw new ErrorApp('La Factura ya se encuentra con estado Cancelado', 400)
     }
 
-    // Se busca notas de crédito vinculados a la factura
-    const notaDeCreditos = await prisma.notaCredito.findMany({
-      where: {
-        AND: [
-          { factura_id: datos.facturaId },
-          { estado_sifen: { not: 'CANCELADO' } }
-        ]
-      }
+    // Se busca notas de crédito vinculadas a la factura que sigan vigentes (no canceladas). No se
+    // filtra por estado_sifen en la query: para una NotaCredito histórica ese campo es siempre NULL, y
+    // el comportamiento de Prisma `not`/`notIn` sobre un campo nullable ante NULL no está confirmado
+    // (AUD-007, STATIC_AUDIT_FINDINGS.json) — se trae todo y se filtra explícito con esCancelado, que
+    // sí resuelve el caso histórico.
+    const notaDeCreditosDeFactura = await prisma.notaCredito.findMany({
+      where: { factura_id: datos.facturaId }
     })
+    const notaDeCreditos = notaDeCreditosDeFactura.filter((nc) => !esCancelado(nc))
 
     if (notaDeCreditos && notaDeCreditos.length > 0) {
       const error = notaDeCreditos.length > 1 ? `La Factura cuenta con ${notaDeCreditos.length} notas de crédito aprobadas`

@@ -4,7 +4,57 @@
 
 ## Estado de implementación (para retomar en otra sesión)
 
-> Última actualización: 2026-07-11 (sesión 4, Fase 5 — wiring completo, corte de código hecho).
+> Última actualización: 2026-07-11 (sesión 5 — correcciones de la auditoría estática, ver debajo).
+
+### Fase 5.1 — Correcciones de la auditoría estática (sesión 5, 2026-07-11)
+
+> `.claude/skills/factyble-sifen-auditor` corrió una auditoría estática completa sobre el estado de
+> Fase 5 (ver `STATIC_AUDIT_REPORT.md`/`STATIC_AUDIT_FINDINGS.json`/`STATIC_AUDIT_MATRIX.md` en la raíz
+> del repo). De los hallazgos (0 P0, 3 P1, 8 P2, 3 P3, 2 P4), se corrigieron AUD-001 a AUD-009 en esta
+> sesión — cada uno con su `remediacion` documentada dentro de `STATIC_AUDIT_FINDINGS.json`. Resumen:
+
+| Hallazgo | Qué cambió | Archivos |
+|---|---|---|
+| AUD-001 (P1) — históricos rotos | Reenvío, cancelación y emisión de NC ya funcionan sobre Factura/NotaCredito con `estado_sifen=NULL` (histórico pre-corte), vía lectura dual contra `sifen_estado` legacy (`esAprobado`/`esCancelado`/`esRechazado`, nuevo `utils/sifen/estadoHistorico.js`) | `facturaService.js`, `notaDeCreditoService.js`, `eventoService.js`, `correoService.js` (adjunto XML ahora condicional, ya no crashea con `xml_firmado` nulo) |
+| AUD-002 (P1) — timezone del CDC | `formatearFechaEmision`/`formatearFechaHoraISO`/`formatearFechaISO` ahora convierten explícitamente a `America/Asuncion` vía `dayjs.tz()` en vez de getters locales de `Date` — ya no depende de que el contenedor tenga `TZ` configurada | `utils/sifen/cdc.js`, `services/sifen/xmlBuilderService.js` |
+| AUD-003 (P1) — doble envío de lote | Claim atómico (`updateMany` condicional `CONSTRUIDO -> ENVIANDO`) antes de llamar a SIFEN en `enviarLotesConstruidos`. Nuevos estados `EstadoLote.ENVIANDO`/`AGOTADO` (migración aditiva `20260711121316_lote_estado_enviando_agotado`). **Bug adicional encontrado y corregido al implementar**: `marcarLoteAgotado` nunca sacaba `Lote.estado` de `CONSTRUIDO`, así que un lote rechazado/agotado se reenviaba a SIFEN indefinidamente — ahora transiciona a `AGOTADO` (terminal) | `services/sifen/loteService.js`, `prisma/schema.prisma` |
+| AUD-004 (P2) — certificado revocado no rechazado | `obtenerCertificadoActivo` ahora rechaza `REVOCADO` además de `VENCIDO` | `services/sifen/certificadoService.js` |
+| AUD-005 (P2) — carrera de activación de certificado | `crearCertificado`/`activarCertificado` toman `SELECT ... FOR UPDATE` sobre la fila de `Empresa` dentro de la transacción (mismo patrón que la secuencia de numeración) — serializa altas/activaciones concurrentes para la misma empresa | `services/sifen/certificadoService.js` |
+| AUD-006 (P2) — CSC en texto plano | `utils/crypto.js#decryptTolerante` (descifra si el valor fue cifrado, si no lo devuelve tal cual) usado al leer `Empresa.csc` en `loteService`. **No se tocó el lado de escritura**: no existe hoy ningún endpoint/CRUD de `Empresa`/`Certificado` en `src/routes/` — el alta de `csc` sigue siendo manual/ad-hoc (Prisma Studio o SQL directo), fuera del alcance de este fix | `utils/crypto.js`, `services/sifen/loteService.js` |
+| AUD-007 (P2) — filtros Prisma `not`/`notIn` ante NULL | Las 2 queries restantes con esta ambigüedad (guard de NC vigentes antes de cancelar una Factura, suma de NC previas antes de emitir una nueva) ya no filtran `estado_sifen` en el `where` — traen todo y filtran explícito en JS con `esCancelado`/`esRechazado`, sin depender de cómo Prisma trate NULL | `facturaService.js`, `notaDeCreditoService.js` |
+| AUD-008 (P2) — parseo SOAP ambiguo | `buscarValorPorSufijo`/`extraerCodigoYMensaje` aceptan `excluirSufijos` — usado en `consultarLotes`/`enviarLotesConstruidos` para que la extracción del código a nivel de sobre/lote nunca pueda descender a leer por error el código de un documento individual dentro de `gResProcLoteDe`. Sigue siendo una mitigación, no una confirmación — el spike #3 (respuesta real de SIFEN) sigue descartado | `utils/sifen/respuestaSoap.js`, `services/sifen/loteService.js` |
+| AUD-009 (P2) — firma/armado sin claim atómico | `firmarPendientes` reclama cada documento (`GENERADO -> FIRMANDO`, nuevo valor transitorio en `EstadoSifen`, migración aditiva `20260711124525_estado_sifen_firmando`) antes de firmarlo; libera el claim si falla. `crearLoteConDocumentos` agrega `lote_id: null` al `updateMany` de asignación (antes podía "robar" en silencio un documento ya tomado por otro lote concurrente) | `services/sifen/loteService.js`, `prisma/schema.prisma` |
+| AUD-010 (P2) — PII en trazabilidad sin control de acceso | **No modificado.** Verificado al investigar el fix: no existe ningún controller/route que exponga `trazabilidadService`/`certificadoService` hoy (`src/routes/` no tiene `certificadoRoute`/`trazabilidadRoute`/`empresaRoute`) — sin superficie HTTP, el hallazgo queda acotado a exposición por acceso directo a BD, no por API. Retención (90 días) y minimización de payload siguen siendo una decisión de producto/cumplimiento pendiente, no un bug de código | — |
+| AUD-011 (P2) — cron sin mutex distribuido | **No es un fix de código** — ver nota operativa abajo | — |
+
+**Verificación**: todos los cambios de código pasan `node --check`; el schema pasa `npx prisma
+validate`; las 2 migraciones nuevas se generaron con `npx prisma migrate dev` y se aplicaron limpio
+contra la BD MySQL local de desarrollo (mismo patrón sin test runner que el resto del proyecto). Los
+claims atómicos (certificado activo, `Lote.estado`, `Factura/NotaCredito.estado_sifen`) y la lectura
+dual de históricos se verificaron con scripts ad-hoc contra esa BD (no persistidos, mismo patrón que el
+resto de Fases 2-5) — incluyendo una prueba adversarial que reprodujo el bug real de AUD-008 antes del
+fix (mezcla de código de sobre y de documento) y confirmó que la exclusión lo corrige. Nada de esto se
+probó contra SIFEN real (fuera de alcance, igual que el resto del pipeline).
+
+**Nota operativa (AUD-011, no bloqueante)**: los jobs de `cronJobs.js` no tienen mutex distribuido —
+dependen de que el despliegue sea de **una sola instancia** del proceso Node (confirmado hoy en
+`docker-compose.yml`, sin `deploy.replicas`). Los claims atómicos agregados en AUD-003/AUD-009 ya
+evitan el peor escenario (doble envío a SIFEN) incluso si esto cambiara a futuro, pero **antes de
+escalar a múltiples instancias/réplicas, agregar un lock distribuido** (advisory lock de MySQL, o
+equivalente) a los 5 jobs de `cronJobsSifen()` — hoy ninguno lo tiene.
+
+### Fase 5.1 — Tercera tanda: AUD-012 a AUD-016 (misma sesión, 2026-07-11)
+
+| Hallazgo | Resultado | Detalle |
+|---|---|---|
+| AUD-013 (P3) — `Lote` sin estado terminal | ✅ Ya resuelto | Efecto colateral del fix de AUD-003 (agregó `EstadoLote.AGOTADO`) — no requirió cambio nuevo, solo se confirmó y cerró en el registro de auditoría |
+| AUD-014 (P3) — alerta de certificados solo por consola | ✅ Corregido | Nueva `correoService.js#enviarAlertaCertificadosPorVencer` (tabla HTML con empresa/estado/vencimiento, sin template de archivo — es un mail técnico, no de marca). `cronJobs.js` la invoca si `SIFEN_ALERTA_EMAIL` está configurada (nueva variable en `.env.example`), en su propio try/catch. El `console.warn` original se mantiene siempre como respaldo |
+| AUD-012 (P3) — código muerto `dbApiFacturacion.js`/`pg` | ✅ Corregido (segunda vuelta) | El primer intento fue denegado por el clasificador de auto-mode del harness (archivo preexistente, borrado no nombrado explícitamente) — el usuario confirmó explícitamente y se completó: `src/db/dbApiFacturacion.js` eliminado, `pg` retirada de `package.json`, `package-lock.json` regenerado (`npm install`, -13 paquetes), y el bloque `HOST_API_FACT`/`URL_API_FACT`/`PORT_DB_API_FACT`/`DB_API_FACT`/`USER_DB_API_FACT`/`PW_DB_API_FACT` de `.env.example` retirado por quedar huérfano |
+| AUD-015 (P4) — defaults fiscales aproximados | ➖ Sin cambio (justificado) | Cerrarlo de verdad requiere columnas nuevas (`Cliente.tipo_contribuyente`, plazo de crédito real, `NotaCredito.motivo`) **y** una forma real de que esos datos lleguen desde el frontend, que no vive en este repo — agregar solo las columnas sin el resto sería cosmético. Queda como decisión de producto coordinada backend+frontend |
+| AUD-016 (P4) — bridge Java sensible a versión de Node | ➖ Sin cambio (limitación de entorno) | `docker` no está disponible en este entorno — no se pudo correr el smoke test de build real recomendado. Se reconfirmó la parte estática (Node de este entorno espera `NODE_MODULE_VERSION 137`, el binding de `node_modules/java` sigue sin cargar) — mismo síntoma ya documentado, sin cambios. Por instrucción explícita de este mismo `CLAUDE.md`, no se trata como algo a "arreglar" desde una sesión no relacionada |
+
+**Pendiente real** (no bloqueado por falta de información, sino por falta de herramienta en esta
+sesión): AUD-016 espera un entorno con Docker para el smoke test de build real.
 
 ### Fase 1 — Fundamentos: EN PROGRESO
 

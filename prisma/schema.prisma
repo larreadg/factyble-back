@@ -435,6 +435,7 @@ model SecuenciaNotaCredito {
 
 enum EstadoSifen {
   GENERADO
+  FIRMANDO
   FIRMADO
   ENCOLADO
   ENVIADO
@@ -490,8 +491,10 @@ enum TipoDocumentoSifen {
 
 enum EstadoLote {
   CONSTRUIDO
+  ENVIANDO
   ENVIADO
   CONSULTADO
+  AGOTADO
 }
 
 model Lote {

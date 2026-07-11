@@ -68,7 +68,27 @@ const decrypt = (textoCifrado) => {
   return descifrado.toString("utf8");
 };
 
+/**
+ * Descifra un valor que puede o no estar cifrado con `encrypt` — pensado para campos que antes se
+ * guardaban en texto plano y todavía pueden tener filas viejas sin cifrar mientras no se corra un
+ * backfill (p. ej. `Empresa.csc`, ver AUD-006 en STATIC_AUDIT_FINDINGS.json: hoy no existe ningún
+ * endpoint/CRUD que escriba `Empresa.csc`, así que forzar `decrypt()` sin este fallback rompería el
+ * único camino real por el que ese campo se carga hoy — directo en BD, en texto plano). Si `valor` no
+ * fue cifrado con `encrypt()` (no es base64 válido con el formato esperado, o falla la verificación
+ * del auth tag de GCM), se asume que es texto plano heredado y se devuelve tal cual, sin lanzar.
+ * @param {string} valor
+ * @returns {string} - Valor descifrado, o el valor original si no estaba cifrado
+ */
+const decryptTolerante = (valor) => {
+  try {
+    return decrypt(valor);
+  } catch (_error) {
+    return valor;
+  }
+};
+
 module.exports = {
   encrypt,
   decrypt,
+  decryptTolerante,
 };

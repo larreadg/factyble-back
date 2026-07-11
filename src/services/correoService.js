@@ -12,10 +12,6 @@ const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, e
     html = html.replace(/\$cliente/g, cliente)
     html = html.replace(/\$emailEmpresa/g, emailEmpresa)
 
-    // El XML firmado vive en la BD (`xml_firmado`), no en un archivo servido por la API PHP legacy
-    // (antipatrón F, MIGRATION_PLAN.md §2.2) — se recibe ya como contenido, sin fetch por HTTP.
-    const xmlBuffer = Buffer.from(xmlFirmado, 'utf-8');
-
     let transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST,
         port: Number(process.env.EMAIL_PORT),
@@ -26,23 +22,33 @@ const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, e
         },
     })
 
+    const attachments = [
+        {
+            filename: `${uuid}.pdf`,
+            path: pdfPath,
+            contentType: 'application/pdf'
+        }
+    ]
+
+    // El XML firmado vive en la BD (`xml_firmado`), no en un archivo servido por la API PHP legacy
+    // (antipatrón F, MIGRATION_PLAN.md §2.2) — se recibe ya como contenido, sin fetch por HTTP.
+    // Puede venir vacío para una Factura histórica (emitida antes del corte, sin xml_firmado propio —
+    // AUD-001, STATIC_AUDIT_FINDINGS.json): en ese caso se manda el mail sin adjuntar el XML en vez de
+    // fallar el envío completo (antes, `Buffer.from(undefined)` tiraba directo).
+    if (xmlFirmado) {
+        attachments.push({
+            filename: `${cdc}.xml`, // nombre del archivo XML
+            content: Buffer.from(xmlFirmado, 'utf-8'), // contenido del archivo XML
+            contentType: 'application/xml'
+        })
+    }
+
     let mailObj = {
         from: process.env.EMAIL_FROM, // sender address
         to: email, // list of receivers
         subject: `Factura electrónica Nro. ${nroFactura} | ${empresa}`,
         html,
-        attachments: [
-            {
-                filename: `${uuid}.pdf`, 
-                path: pdfPath,
-                contentType: 'application/pdf'
-            },
-            {
-                filename: `${cdc}.xml`, // nombre del archivo XML
-                content: xmlBuffer, // contenido del archivo XML
-                contentType: 'application/xml'
-            }
-        ]
+        attachments
     }
 
     let info = await transporter.sendMail(mailObj)
@@ -92,10 +98,6 @@ const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito
     html = html.replace(/\$cliente/g, cliente)
     html = html.replace(/\$emailEmpresa/g, emailEmpresa)
 
-    // El XML firmado vive en la BD (`xml_firmado`), no en un archivo servido por la API PHP legacy
-    // (antipatrón F, MIGRATION_PLAN.md §2.2) — se recibe ya como contenido, sin fetch por HTTP.
-    const xmlBuffer = Buffer.from(xmlFirmado, 'utf-8');
-
     let transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST,
         port: Number(process.env.EMAIL_PORT),
@@ -106,23 +108,32 @@ const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito
         },
     })
 
+    const attachments = [
+        {
+            filename: `${uuid}.pdf`,
+            path: pdfPath,
+            contentType: 'application/pdf'
+        }
+    ]
+
+    // El XML firmado vive en la BD (`xml_firmado`), no en un archivo servido por la API PHP legacy
+    // (antipatrón F, MIGRATION_PLAN.md §2.2) — se recibe ya como contenido, sin fetch por HTTP.
+    // Puede venir vacío para una Nota de Crédito histórica (AUD-001, STATIC_AUDIT_FINDINGS.json): en
+    // ese caso se manda el mail sin adjuntar el XML en vez de fallar el envío completo.
+    if (xmlFirmado) {
+        attachments.push({
+            filename: `${cdc}.xml`, // nombre del archivo XML
+            content: Buffer.from(xmlFirmado, 'utf-8'), // contenido del archivo XML
+            contentType: 'application/xml'
+        })
+    }
+
     let mailObj = {
         from: process.env.EMAIL_FROM, // sender address
         to: email, // list of receivers
         subject: `Nota de crédito electrónica Nro. ${nroNotaDeCredito} | ${empresa}`,
         html,
-        attachments: [
-            {
-                filename: `${uuid}.pdf`, 
-                path: pdfPath,
-                contentType: 'application/pdf'
-            },
-            {
-                filename: `${cdc}.xml`, // nombre del archivo XML
-                content: xmlBuffer, // contenido del archivo XML
-                contentType: 'application/xml'
-            }
-        ]
+        attachments
     }
 
     let info = await transporter.sendMail(mailObj)
@@ -202,10 +213,65 @@ const enviarErrorNotaDeCredito = async ({ email, nroNotaDeCredito, errorNotaDeCr
 
 }
 
+/**
+ * Alerta interna (no es un mail a un cliente) para el job `alertaCertificadosPorVencer`
+ * (`cronJobs.js`, MIGRATION_PLAN.md §3.4) — antes solo quedaba en `console.warn` (AUD-014,
+ * STATIC_AUDIT_FINDINGS.json). Envía a `destinatario` (configurable vía `SIFEN_ALERTA_EMAIL`, ver
+ * `.env.example`) el listado de certificados en estado `POR_VENCER`/`VENCIDO`. No usa un template
+ * HTML de archivo (a diferencia de `enviarFactura`/etc.) porque es un mail técnico/operativo, no
+ * uno con la identidad de marca del cliente final.
+ * @param {Object} datos
+ * @param {string} datos.destinatario - Email del administrador a notificar
+ * @param {Object[]} datos.certificados - Certificados por vencer/vencidos (con `empresa_id`, `estado`, `fecha_vencimiento`)
+ */
+const enviarAlertaCertificadosPorVencer = async ({ destinatario, certificados }) => {
+
+    const filas = certificados.map((c) => `
+        <tr>
+            <td>${c.empresa_id}</td>
+            <td>${c.estado}</td>
+            <td>${new Date(c.fecha_vencimiento).toISOString().slice(0, 10)}</td>
+        </tr>
+    `).join('')
+
+    const html = `
+        <p>Los siguientes certificados SIFEN requieren atención (por vencer o ya vencidos):</p>
+        <table border="1" cellpadding="6" cellspacing="0">
+            <thead>
+                <tr><th>Empresa (id)</th><th>Estado</th><th>Vencimiento</th></tr>
+            </thead>
+            <tbody>${filas}</tbody>
+        </table>
+    `
+
+    let transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST,
+        port: Number(process.env.EMAIL_PORT),
+        secure: Number(process.env.EMAIL_SECURE) === 1, // true for 465, false for other ports
+        auth: {
+            user: process.env.EMAIL,
+            pass: process.env.EMAIL_PW,
+        },
+    })
+
+    let mailObj = {
+        from: process.env.EMAIL_FROM,
+        to: destinatario,
+        subject: `[Factyble] Certificados SIFEN por vencer o vencidos (${certificados.length})`,
+        html
+    }
+
+    let info = await transporter.sendMail(mailObj)
+
+    console.log("Message sent: %s", info.messageId)
+
+}
+
 module.exports = {
     enviarFactura,
     enviarErrorFactura,
     enviarNotaDeCredito,
     enviarRecibo,
-    enviarErrorNotaDeCredito
+    enviarErrorNotaDeCredito,
+    enviarAlertaCertificadosPorVencer
 }

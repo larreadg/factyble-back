@@ -9,6 +9,7 @@ const { enviarNotaDeCredito } = require("./correoService");
 const { construirCdc } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
+const { esAprobado, esCancelado, esRechazado } = require("../utils/sifen/estadoHistorico");
 
 // tipoDocumento SIFEN para el CDC (MIGRATION_PLAN.md §1.3) — 5=Nota de Credito, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_NOTA_CREDITO = 5;
@@ -53,11 +54,13 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       throw new ErrorApp("Usuario no encontrado", 404);
     }
 
-    // Buscar factura y verificar condicion_venta = CONTADO y no este Cancelado
+    // Buscar factura y verificar condicion_venta = CONTADO y no este Cancelado. No se filtra por
+    // estado_sifen en la query (para una Factura histórica ese campo es siempre NULL, ver AUD-001 y
+    // AUD-007 en STATIC_AUDIT_FINDINGS.json) — los chequeos de cancelado/aprobado se hacen explícitos
+    // debajo con esCancelado/esAprobado, que sí cubren el caso histórico.
     const factura = await prisma.factura.findFirst({
       where: {
         cdc: datos.cdc,
-        estado_sifen: { not: "CANCELADO" },
       },
       include: {
         cliente_empresa: {
@@ -72,7 +75,11 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       throw new ErrorApp('No se encontró cdc', 404)
     }
 
-    if(factura.estado_sifen !== 'APROBADO'){
+    if (esCancelado(factura)) {
+      throw new ErrorApp('La factura se encuentra cancelada', 400)
+    }
+
+    if(!esAprobado(factura)){
       throw new ErrorApp('La factura aún no se ha aprobado', 400)
     }
 
@@ -109,13 +116,16 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       throw new ErrorApp("Datos proporcionados incorrectos", 400);
     }
 
-    // Buscar si ya hay nota de crédito para la factura dada
-    const notasDeCredito = await prisma.notaCredito.findMany({
-      where: {
-        factura_id: factura.id,
-        estado_sifen: { notIn: ["CANCELADO", "RECHAZADO"] }, // Excluir múltiples valores
-      },
+    // Buscar si ya hay nota de crédito vigente (no cancelada/rechazada) para la factura dada. No se
+    // filtra por estado_sifen en la query (mismo motivo que el guard de arriba: para una NotaCredito
+    // histórica ese campo es siempre NULL, y la semántica de `notIn` de Prisma ante NULL no está
+    // confirmada — AUD-007, STATIC_AUDIT_FINDINGS.json) — se trae todo y se filtra explícito, así el
+    // cálculo de crédito ya emitido incluye también las notas de crédito históricas, sin lo cual se
+    // podría sobre-acreditar una Factura histórica con notas de crédito legacy ya aplicadas.
+    const notasDeCreditoDeFactura = await prisma.notaCredito.findMany({
+      where: { factura_id: factura.id },
     });
+    const notasDeCredito = notasDeCreditoDeFactura.filter((nc) => !esCancelado(nc) && !esRechazado(nc));
 
     // Verificar que el total de las notas de crédito anteriores más el de ahora no supere el total de la factura
     if (notasDeCredito && notasDeCredito.length > 0) {
@@ -405,7 +415,9 @@ const cancelarNotaDeCredito = async (datos, datosUsuario) => {
       throw new ErrorApp('Nota de crédito no encontrada', 404)
     }
 
-    if (notaDeCredito.estado_sifen == 'CANCELADO') {
+    // esCancelado cubre también el caso histórico (estado_sifen NULL + sifen_estado='Cancelado' legacy)
+    // — AUD-001, STATIC_AUDIT_FINDINGS.json.
+    if (esCancelado(notaDeCredito)) {
       throw new ErrorApp('La nota de crédito ya se encuentra con estado Cancelado', 400)
     }
 
@@ -420,8 +432,10 @@ const cancelarNotaDeCredito = async (datos, datosUsuario) => {
 }
 
 const reenviarNotaDeCredito = async ({ email, notaDeCreditoId }) => {
+  // No se filtra por estado_sifen en la query — ver mismo criterio que facturaService.reenviarFactura
+  // (AUD-001, STATIC_AUDIT_FINDINGS.json). El chequeo dual lo hace esAprobado.
   const notaDeCredito = await prisma.notaCredito.findFirst({
-    where: { id: notaDeCreditoId, estado_sifen: "APROBADO" },
+    where: { id: notaDeCreditoId },
     include: {
       factura: {
         include: {
@@ -432,7 +446,7 @@ const reenviarNotaDeCredito = async ({ email, notaDeCreditoId }) => {
     },
   });
 
-  if (!notaDeCredito) {
+  if (!notaDeCredito || !esAprobado(notaDeCredito)) {
     throw new ErrorApp("La nota de crédito no existe", 404);
   }
 

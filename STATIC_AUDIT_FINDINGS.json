@@ -1,0 +1,543 @@
+{
+  "auditoria": "Migración SIFEN factyble-back — auditoría estática",
+  "fecha": "2026-07-11",
+  "commit": "9be741909b885654794a5f44ba04ea90bd7242f2",
+  "rama": "prisma-claude",
+  "veredicto": "APTO PARA PRUEBAS CONTROLADAS CON CONDICIONES",
+  "resumen_conteo": { "P0": 0, "P1": 3, "P2": 8, "P3": 3, "P4": 2 },
+  "remediaciones": [
+    {
+      "fecha": "2026-07-11",
+      "hallazgos": ["AUD-001", "AUD-002", "AUD-003", "AUD-004"],
+      "resumen": "Los 4 hallazgos fueron corregidos en código y verificados con scripts ad-hoc contra la BD MySQL local (sin red ni SIFEN real, mismo patrón que el resto del proyecto). Ver el campo `remediacion` dentro de cada hallazgo para el detalle. La severidad/tipo original de cada hallazgo se deja intacta como registro histórico de lo encontrado — el estado actual post-fix está en `remediacion.estado`.",
+      "hallazgo_adicional_descubierto_al_implementar": "Al implementar el claim atómico de AUD-003 se encontró un bug adicional, no reportado en la pasada de auditoría original: `marcarLoteAgotado` nunca transicionaba `Lote.estado` fuera de `CONSTRUIDO` tras un rechazo definitivo o agotamiento de reintentos, y dejaba `proximo_intento_en: null` — como consecuencia, un lote rechazado/agotado volvía a matchear la query de `enviarLotesConstruidos()` en la siguiente pasada del cron (5 min) y se reenviaba a SIFEN indefinidamente. Corregido como parte del mismo cambio (nuevo estado terminal `AGOTADO`). Esto también explica por qué AUD-013 (severidad P3 en la auditoría original) estaba subestimado — no era solo un gap de observabilidad, era la causa raíz de un reenvío infinito determinista."
+    },
+    {
+      "fecha": "2026-07-11",
+      "hallazgos": ["AUD-005", "AUD-006", "AUD-007", "AUD-008", "AUD-009"],
+      "resumen": "5 hallazgos adicionales corregidos en la misma sesión (segunda tanda). AUD-010 y AUD-011 se investigaron pero no requirieron cambio de código — ver su campo `remediacion`/`nota_operativa` respectivo. Todos los cambios de código pasan `node --check` y `npx prisma validate`; las 2 migraciones nuevas (Lote.estado ENVIANDO/AGOTADO, EstadoSifen FIRMANDO) se aplicaron limpio contra la BD MySQL local. Ver MIGRATION_PLAN.md, sección 'Fase 5.1 — Correcciones de la auditoría estática' para el resumen consolidado."
+    },
+    {
+      "fecha": "2026-07-11",
+      "hallazgos": ["AUD-012", "AUD-013", "AUD-014", "AUD-015", "AUD-016"],
+      "resumen": "Tercera tanda (P3/P4). AUD-013 ya estaba resuelto como efecto colateral de AUD-003. AUD-014 se corrigió (alerta por correo). AUD-012 requirió una segunda vuelta: el primer intento fue denegado por el clasificador del harness (borrado de un archivo preexistente sin pedido explícito), el usuario confirmó explícitamente y se completó (archivo borrado, dependencia `pg` retirada, lockfile regenerado, env vars huérfanas limpiadas). AUD-015 y AUD-016 se investigaron y se documentó por qué no tienen un fix de código puntual posible en este repo/entorno — ver el campo `remediacion` de cada uno."
+    }
+  ],
+  "hallazgos": [
+    {
+      "id": "AUD-001",
+      "severidad": "P1",
+      "titulo": "Reenvío, cancelación y emisión de NC quedan inoperables para Facturas/Notas de Crédito históricas",
+      "tipo": "BUG CONFIRMADO",
+      "fase_componente": "Fase 5 — wiring de corte / compatibilidad histórica (§L)",
+      "confianza": "alta",
+      "evidencia": [
+        "src/services/facturaService.js:455-457 (reenviarFactura: where estado_sifen:'APROBADO')",
+        "src/services/notaDeCreditoService.js:422-424 (reenviarNotaDeCredito: where estado_sifen:'APROBADO')",
+        "src/services/notaDeCreditoService.js:75-77 (emitirNotaDeCredito: if(factura.estado_sifen !== 'APROBADO') throw 400)",
+        "src/services/sifen/eventoService.js:65-70 (cancelarDocumento: if(documento.estado_sifen !== 'APROBADO') throw 400)",
+        "prisma/schema.prisma:436-445 (estado_sifen EstadoSifen? — nullable, null en todo registro pre-migración)",
+        "MIGRATION_PLAN.md desvío #1 ('sifen_estado NO se convirtió a enum'; estado_sifen es un campo nuevo en paralelo)"
+      ],
+      "camino_de_ejecucion": "Cualquier Factura/NotaCredito emitida antes de la migración (o por el flujo legacy mientras convivió) tiene estado_sifen = NULL y sifen_estado = 'Aprobado' (texto libre legacy). Los 4 call sites citados comparan/filtran exclusivamente por estado_sifen === 'APROBADO' (comparación estricta o where de igualdad Prisma), que nunca es verdadero para NULL.",
+      "escenario_de_fallo_derivado": "reenviarFactura/reenviarNotaDeCredito sobre un documento histórico devuelven 404 'La factura/nota de crédito no existe' aunque el documento exista y esté aprobado por SIFEN. emitirNotaDeCredito sobre una Factura histórica aprobada devuelve 400 'La factura aún no se ha aprobado'. cancelarFactura/cancelarNotaCredito sobre un documento histórico devuelven 400 'Solo se puede cancelar un documento en estado APROBADO (estado actual: sin definir)'.",
+      "comportamiento_esperado": "Los documentos históricos aprobados por SIFEN bajo el pipeline legacy deben seguir siendo reenviables, cancelables, y deben poder recibir una Nota de Crédito nueva — son documentos fiscales reales y vigentes, no basura.",
+      "comportamiento_que_impone_o_permite_el_codigo": "El código trata todo documento con estado_sifen NULL como si nunca hubiera sido emitido/aprobado, sin ningún fallback de lectura dual contra sifen_estado (texto legacy).",
+      "impacto": "Regresión funcional dura para el 100% del histórico de Facturas/Notas de Crédito emitidas antes del corte (volumen de producción real, no un caso de borde). Un usuario no puede reenviar el mail de una factura vieja, no puede cancelarla, y no puede emitir una nota de crédito contra ella — sin ningún mensaje que explique que es un problema de compatibilidad, no del documento en sí.",
+      "causa_raiz": "El desvío #1 documentado en MIGRATION_PLAN.md (no convertir sifen_estado a enum, agregar estado_sifen en paralelo) resolvió el problema de escritura (no romper el flujo legacy en curso) pero nunca se implementó el lado de lectura dual (dual-read) que el propio plan anticipa como necesario en la sección 'Compatibilidad histórica obligatoria' — el código de Fase 5 fue escrito asumiendo que estado_sifen es la única fuente de verdad.",
+      "correccion_minima": "En los 4 call sites, aceptar también el estado histórico equivalente: reemplazar la comparación estricta por una que trate `estado_sifen IS NULL AND sifen_estado = 'Aprobado'` como equivalente a APROBADO (y `sifen_estado` conteniendo variantes de 'Cancelado' como equivalente a CANCELADO para el guard de doble-cancelación). Documentar explícitamente que esta lectura dual es temporal, hasta que se decida si se hace backfill de estado_sifen para el histórico.",
+      "prueba_dinamica_futura_recomendada": "Test con BD local: sembrar una Factura con estado_sifen=NULL y sifen_estado='Aprobado' + xml/linkqr legacy poblados, xml_firmado=NULL. Ejercitar reenviarFactura, cancelarFactura y emitirNotaDeCredito (con esa factura como base) y confirmar que no devuelven 404/400 por causa de estado_sifen NULL. Requiere BD local, no requiere red ni SIFEN.",
+      "riesgos_del_fix": "Bajo — es una relajación de un filtro de lectura, no toca el pipeline de escritura nuevo. Riesgo principal: decidir mal qué valores de sifen_estado (texto libre legacy, con variantes de wording) se consideran equivalentes a APROBADO/CANCELADO — requiere revisar los valores reales que escribió la API PHP legacy en producción antes de fijar el mapeo.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "src/utils/sifen/estadoHistorico.js (nuevo) — esAprobado/esCancelado con lectura dual estado_sifen/sifen_estado; literales 'Aprobado'/'Cancelado' tomados de src/services/reciboService.js:262,291, que ya los usa contra el mismo campo legacy",
+          "src/services/facturaService.js — reenviarFactura (query sin filtro de estado_sifen + esAprobado), cancelarFactura (guard con esCancelado)",
+          "src/services/notaDeCreditoService.js — emitirNotaDeCredito (lookup de factura sin filtro de estado_sifen + esCancelado/esAprobado explícitos), cancelarNotaDeCredito (guard con esCancelado), reenviarNotaDeCredito (query sin filtro + esAprobado)",
+          "src/services/sifen/eventoService.js — cancelarDocumento (guard con esAprobado en vez de comparación estricta)",
+          "src/services/correoService.js — enviarFactura/enviarNotaDeCredito: el adjunto XML ahora es condicional a que xmlFirmado exista (antes Buffer.from(null,...) hubiera lanzado TypeError para un documento histórico sin xml_firmado)"
+        ],
+        "verificacion": "Script ad-hoc contra la BD MySQL local (no persistido): Factura sintética con estado_sifen=NULL, sifen_estado='Aprobado', xml_firmado=NULL. Confirmado: esAprobado()=true, esCancelado()=false, la query de reenviarFactura la encuentra, y eventoService.cancelarFactura ya no lanza 'Solo se puede cancelar un documento en estado APROBADO' (falla más adelante por falta de caja/certificado en los datos sintéticos del test, no por el guard de estado). No se probó contra SIFEN real ni se envió un correo real.",
+        "pendiente": "AUD-007 (semántica de los filtros Prisma not/notIn ante NULL en el resto de queries — suma de NC previas y guard secundario de NC vigentes antes de cancelar una Factura) queda fuera de este cambio, sigue abierto."
+      }
+    },
+    {
+      "id": "AUD-002",
+      "severidad": "P1",
+      "titulo": "CDC y XML calculan la fecha de emisión con getters locales de Date sin timezone configurado; el contenedor por defecto usa UTC",
+      "tipo": "RIESGO",
+      "fase_componente": "Fase 2 — CDC / XML (§C)",
+      "confianza": "alta",
+      "evidencia": [
+        "src/utils/sifen/cdc.js:26-41 (formatearFechaEmision usa getFullYear/getMonth/getDate locales, con comentario explícito advirtiendo del riesgo)",
+        "src/services/sifen/xmlBuilderService.js:80-100 (formatearFechaHoraISO/formatearFechaISO, mismos getters locales)",
+        "src/services/facturaService.js:206 y src/services/notaDeCreditoService.js:182 (fechaEmision: new Date(), sin ajuste de timezone)",
+        "Dockerfile (FROM node:20-alpine; sin `apk add tzdata`; sin `ENV TZ=...`)",
+        "docker-compose.yml (sin variable TZ en el servicio app)",
+        ".env.example (sin variable TZ)",
+        "grep global de TZ/process.env.TZ en el repo: sin resultados"
+      ],
+      "camino_de_ejecucion": "emitirFactura/emitirNotaDeCredito construyen el CDC y el XML con `new Date()` pasado directo a funciones que leen los campos de fecha con los getters locales del proceso Node. Node resuelve 'local' según la zona horaria del sistema operativo/contenedor. Alpine Linux sin `tzdata` instalado y sin `TZ` seteada expone UTC como 'zona local' del proceso.",
+      "escenario_de_fallo_derivado": "Paraguay está en UTC-4 todo el año (sin horario de verano vigente). Si el proceso Node corre con timezone efectiva UTC, toda Factura/NotaCrédito emitida entre las 20:00 y las 23:59 hora de Paraguay calcula su CDC y su fecha de XML con el día calendario SIGUIENTE (porque en UTC ya es el día siguiente en ese rango horario) — el CDC llevaría una fecha de emisión distinta a la real, y de forma sistemática, no aislada (~4 horas de cada día operativo).",
+      "comportamiento_esperado": "El CDC y el XML deben reflejar el día calendario real de Paraguay en el momento de emisión, independientemente de la timezone del servidor donde corre el proceso Node.",
+      "comportamiento_que_impone_o_permite_el_codigo": "El código delega enteramente en que el proceso Node ya tenga la timezone de Paraguay como zona 'local' — no hay ninguna conversión explícita a America/Asuncion en ningún punto del pipeline, y no hay ninguna variable de entorno TZ configurada en ningún artefacto de despliegue del repo.",
+      "impacto": "Documentos fiscales con fecha de emisión incorrecta en el CDC — dato que forma parte del identificador único del documento ante SIFEN. Puede causar rechazo de SIFEN, inconsistencia entre la fecha real de la operación comercial y la fecha fiscal registrada, y problemas de auditoría/DNIT.",
+      "causa_raiz": "Ausencia de configuración explícita de timezone en el entorno de ejecución (Dockerfile/docker-compose/.env), combinada con el uso deliberado (y ya documentado en el propio código) de getters locales de Date en vez de UTC + conversión explícita a America/Asuncion.",
+      "correccion_minima": "Fijar `ENV TZ=America/Asuncion` en el Dockerfile (y `apk add tzdata` en Alpine, que no trae la base de datos de zonas horarias por defecto) o, más robusto y portable, convertir explícitamente a America/Asuncion dentro de cdc.js/xmlBuilderService.js con una librería de timezone (dayjs ya está en las dependencias, con el plugin `timezone`) en vez de depender de la configuración del SO.",
+      "prueba_dinamica_futura_recomendada": "Test unitario puro: forzar `process.env.TZ='UTC'` en el proceso de test, construir un CDC/XML con una fecha de emisión de las 21:30 (hora Paraguay, equivalente 01:30 UTC del día siguiente) y confirmar que el día calendario resultante en el CDC es el real de Paraguay, no el de UTC. No requiere BD ni red.",
+      "riesgos_del_fix": "Bajo si se fija vía TZ del contenedor (cambio de infraestructura, no de código) — medio si se hace vía librería, porque toca funciones ya usadas en producción y requiere revalidar contra el XSD que el formato de fecha siga siendo aceptado.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "src/utils/sifen/cdc.js#formatearFechaEmision — ahora usa dayjs(fecha).tz('America/Asuncion').format('YYYYMMDD') en vez de getters locales de Date",
+          "src/services/sifen/xmlBuilderService.js#formatearFechaHoraISO/formatearFechaISO — mismo cambio, misma zona horaria"
+        ],
+        "enfoque_elegido": "Conversión explícita vía dayjs + plugins utc/timezone (ya dependencia del proyecto) en vez de fijar `TZ`/`apk add tzdata` en el Dockerfile — más robusto porque no depende de que la infraestructura de despliegue recuerde configurar la variable, y `dayjs.tz()` usa el `Intl`/ICU ya incluido en el binario de Node (no requiere `tzdata` del SO). No se tocó el Dockerfile.",
+        "verificacion": "Con `TZ=UTC` forzado en el proceso (reproduce el peor caso del hallazgo): construirCdc() con fechaEmision = 21:00 hora Paraguay del 11/07/2026 ahora embebe correctamente '20260711' en el CDC (antes del fix, con getters locales bajo TZ=UTC, habría embebido '20260712' — un día adelantado). formatearFechaHoraISO/formatearFechaISO verificados de la misma forma. No se validó contra el XSD oficial (no persistido en el repo, ver Fase 2 del informe original).",
+        "nota": "El offset real de America/Asuncion (UTC-3 vs UTC-4 según la fecha) puede variar según la versión de la base de datos de husos horarios (IANA tzdata) empaquetada con el binario de Node en uso — se comprobó en este entorno (Node v24.13.1) que resuelve a GMT-03:00 tanto en enero como en julio de 2026. El texto original del hallazgo asumía 'UTC-4 fijo sin horario de verano', que puede no ser exacto; no afecta la corrección del fix (usa el nombre de zona IANA, no un offset hardcodeado, así que sigue siendo correcto ante cualquier cambio de regla futuro)."
+      }
+    },
+    {
+      "id": "AUD-003",
+      "severidad": "P1",
+      "titulo": "enviarLotesConstruidos no reclama el lote de forma atómica antes de enviarlo — ejecuciones de cron solapadas pueden enviar el mismo lote a SIFEN dos veces",
+      "tipo": "RIESGO",
+      "fase_componente": "Fase 4 — loteService / concurrencia (§H)",
+      "confianza": "media",
+      "evidencia": [
+        "src/services/sifen/loteService.js:401-492 (enviarLotesConstruidos: findMany({estado:'CONSTRUIDO', ...}) seguido de un `for` que llama a SIFEN; la transición a estado:'ENVIADO' ocurre recién DESPUÉS de la respuesta de SIFEN, dentro del mismo `for`, sin ningún UPDATE condicional previo)",
+        "src/services/cronJobs.js:16-23 (cron.schedule('*/5 * * * *', ...) sin ningún mutex/lock; node-cron no previene solapamiento si la ejecución anterior no terminó)",
+        "docker-compose.yml (confirma un único contenedor `app` en este entorno — reduce pero no elimina el riesgo, que sigue siendo alcanzable dentro de un mismo proceso si la corrida anterior no terminó)"
+      ],
+      "camino_de_ejecucion": "armarYEnviarLotes corre cada 5 minutos. Si una corrida tarda más de 5 minutos (plausible: llamada SOAP real a SIFEN sin timeout explícito configurado, ver AUD-019), la siguiente invocación del cron arranca mientras la anterior sigue en curso (node-cron no serializa). Ambas ejecuciones de `enviarLotesConstruidos` hacen su propio `findMany({estado:'CONSTRUIDO'})` antes de que la primera alcance a marcar el lote como 'ENVIADO'.",
+      "escenario_de_fallo_derivado": "El mismo Lote (con el mismo conjunto de XML firmados) se pasa dos veces a `sifenClientService.recibeLote` en dos llamadas SOAP independientes, antes de que la primera respuesta se persista. Best case: SIFEN rechaza el segundo envío por CDC duplicado (comportamiento de SIFEN, no verificable estáticamente). Worst case no descartable estáticamente: dos números de transacción/protocolo distintos quedan asociados al mismo lote, y solo el último `prisma.lote.update` en completar gana la escritura final (last-write-wins), pudiendo perder el protocolo del primer envío.",
+      "comportamiento_esperado": "Un lote solo debería poder ser tomado y enviado por una única ejecución en curso a la vez — se necesita un claim atómico (p. ej. `UPDATE lote SET estado='ENVIANDO' WHERE id=? AND estado='CONSTRUIDO'` con chequeo de filas afectadas, o un estado intermedio de 'en vuelo') antes de la llamada SOAP.",
+      "comportamiento_que_impone_o_permite_el_codigo": "El código permite que dos ejecuciones concurrentes del mismo proceso lean el mismo lote en estado CONSTRUIDO y ambas inicien el envío a SIFEN, porque el único punto de exclusión (la transición de estado) ocurre después de la llamada de red, no antes.",
+      "impacto": "Envío duplicado de un lote de hasta 50 documentos fiscales reales a la infraestructura de SIFEN; en el caso más severo, pérdida del número de protocolo de una de las dos respuestas, dejando el lote sin forma de ser consultado correctamente por `consultarLotes`.",
+      "causa_raiz": "No hay primitiva de exclusión mutua (claim atómico, lock, o transición compare-and-set) entre la selección del lote y el envío — la lectura de findMany() no reserva las filas.",
+      "correccion_minima": "Antes de llamar a `sifenClientService.recibeLote`, ejecutar un `UPDATE lote SET estado='ENVIANDO', proximo_intento_en=NULL WHERE id=? AND estado='CONSTRUIDO'` (vía `prisma.lote.updateMany` con el mismo where) y verificar `count === 1` antes de proceder; si `count === 0`, otra ejecución ya lo tomó, se descarta silenciosamente. Requiere agregar (o reusar) un estado intermedio en el enum `EstadoLote`.",
+      "prueba_dinamica_futura_recomendada": "Test de concurrencia con BD local: dos invocaciones de `enviarLotesConstruidos()` disparadas en paralelo (Promise.all) sobre el mismo Lote CONSTRUIDO con un mock de `sifenClientService.recibeLote` que tarda artificialmente varios segundos; confirmar con un spy que `recibeLote` se invoca una sola vez para ese lote. No requiere red real a SIFEN.",
+      "riesgos_del_fix": "Bajo-medio — agregar un estado intermedio a `EstadoLote` es un cambio de schema aditivo (nueva entrada de enum), pero exige revisar todos los lugares que hacen `where: { estado: 'CONSTRUIDO' }` o listan/filtran lotes por estado para no romper dashboards/reportes existentes.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "prisma/schema.prisma — enum EstadoLote: agregados ENVIANDO (claim en curso) y AGOTADO (terminal), ambos aditivos. Migración prisma/migrations/20260711121316_lote_estado_enviando_agotado/ (ALTER TABLE ... MODIFY estado ENUM(...) — amplía el enum, no elimina ni renombra ningún valor existente ni cambia el default; aplicada contra la BD MySQL local de desarrollo)",
+          "src/services/sifen/loteService.js#enviarLotesConstruidos — antes de llamar a sifenClientService.recibeLote, reclama el lote con `prisma.lote.updateMany({where:{id, estado:'CONSTRUIDO'}, data:{estado:'ENVIANDO'}})`; si `count === 0` (otra ejecución ya lo tomó) se descarta con `continue`, sin tocar SIFEN",
+          "src/services/sifen/loteService.js#marcarLoteAgotado — ahora también setea `estado:'AGOTADO'` (antes no tocaba `Lote.estado` en absoluto)",
+          "src/services/sifen/loteService.js#enviarLotesConstruidos (rama de reintento transitorio) — libera el claim de vuelta a `estado:'CONSTRUIDO'` junto con el resto de la bitácora de backoff, para que la próxima pasada del cron pueda re-tomarlo"
+        ],
+        "bug_adicional_encontrado_y_corregido": "marcarLoteAgotado nunca cambiaba Lote.estado (quedaba en CONSTRUIDO) y sí ponía proximo_intento_en=null — un lote rechazado definitivamente por SIFEN o que agotaba sus reintentos volvía a matchear la selección de enviarLotesConstruidos() en la siguiente pasada del cron (5 min) y se reenviaba indefinidamente. El nuevo estado terminal AGOTADO lo cierra: un lote agotado deja de matchear `where:{estado:'CONSTRUIDO'}` para siempre.",
+        "verificacion": "Migración aplicada limpio contra la BD MySQL local (`npx prisma migrate dev`, `npx prisma validate` OK). Script ad-hoc (no persistido): dos `updateMany({where:{id, estado:'CONSTRUIDO'}, data:{estado:'ENVIANDO'}})` consecutivos sobre el mismo Lote confirmaron `count=1` en el primero y `count=0` en el segundo — la exclusión mutua funciona. No se probó contra SIFEN real (fuera de alcance, ya cubierto por el piloto de producción del propio proyecto).",
+        "pendiente": "AUD-009 (mismo patrón de falta de claim en firmarPendientes/armarLotes, para el armado en vez del envío) y AUD-011 (mutex distribuido multi-instancia) quedan fuera de este cambio, siguen abiertos."
+      }
+    },
+    {
+      "id": "AUD-004",
+      "severidad": "P2",
+      "titulo": "obtenerCertificadoActivo no rechaza un certificado en estado REVOCADO",
+      "tipo": "BUG CONFIRMADO",
+      "fase_componente": "Fase 3 — certificadoService (§G)",
+      "confianza": "alta (en el código); reachability práctica hoy: baja — ver nota",
+      "evidencia": [
+        "src/services/sifen/certificadoService.js:105-129 (obtenerCertificadoActivo: solo `if (certificado.estado === 'VENCIDO') throw ...`, sin chequeo de 'REVOCADO')",
+        "prisma/schema.prisma:460-465 (enum EstadoCertificado incluye REVOCADO)",
+        "grep 'REVOCADO' en src/: solo aparece en el filtro de exclusión de actualizarEstadosPorVencimiento (línea 159) y en un comentario — ninguna función del código actual transiciona un certificado a REVOCADO"
+      ],
+      "camino_de_ejecucion": "Si un certificado llega a estado REVOCADO (hoy solo alcanzable por una escritura manual directa en la BD, ya que no existe endpoint/función de revocación en el código), `obtenerCertificadoActivo` lo sigue devolviendo con la contraseña descifrada, listo para firmar/enviar, porque el único guard de rechazo compara contra 'VENCIDO'.",
+      "escenario_de_fallo_derivado": "Un operador revoca manualmente un certificado comprometido (vía UPDATE directo en BD, la única vía disponible hoy) esperando que el sistema deje de usarlo de inmediato — pero `loteService`/`eventoService` lo siguen usando para firmar y enviar documentos hasta que alguien lo desactive (`activo=false`) también.",
+      "comportamiento_esperado": "Un certificado marcado REVOCADO nunca debería poder firmar ni enviar, independientemente del flag `activo` — es precisamente el propósito de tener ese estado separado del booleano `activo`.",
+      "comportamiento_que_impone_o_permite_el_codigo": "El guard de `obtenerCertificadoActivo` solo contempla el caso VENCIDO (el que motivó originalmente el proyecto, error 0142), y no fue extendido cuando se agregó el enum REVOCADO al schema.",
+      "impacto": "Bajo hoy (no hay código vivo que fije REVOCADO), pero es una trampa de seguridad latente: en cuanto se implemente cualquier vía de revocación (endpoint admin, script operativo), el guard existente no la va a respetar salvo que también se ponga `activo=false` en el mismo momento — dos operaciones que deberían ser una sola.",
+      "causa_raiz": "El guard de `obtenerCertificadoActivo` fue escrito antes (o sin considerar) el caso REVOCADO explícito del enum `EstadoCertificado`.",
+      "correccion_minima": "Cambiar el guard a rechazar cualquier estado que no sea VIGENTE/POR_VENCER (o explícitamente `estado === 'VENCIDO' || estado === 'REVOCADO'`), en vez de solo VENCIDO.",
+      "prueba_dinamica_futura_recomendada": "Test con BD local: crear un certificado activo, forzar `estado='REVOCADO'` vía update directo, llamar `obtenerCertificadoActivo` y confirmar que lanza `ErrorApp` 400 en vez de devolver la contraseña descifrada. No requiere red.",
+      "riesgos_del_fix": "Ninguno — es un endurecimiento de un guard existente, no cambia ningún camino feliz.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "src/services/sifen/certificadoService.js#obtenerCertificadoActivo — el guard ahora rechaza tanto 'VENCIDO' como 'REVOCADO' (antes solo 'VENCIDO')"
+        ],
+        "verificacion": "node --check sobre el archivo modificado. No se agregó un test con BD local para este caso puntual en esta sesión (el guard es una condición de una línea sin efectos colaterales) — sigue pendiente como prueba dinámica futura si se quiere evidencia persistida."
+      }
+    },
+    {
+      "id": "AUD-005",
+      "severidad": "P2",
+      "titulo": "La exclusividad de 'un certificado activo por empresa' depende de un patrón updateMany+create/update sin constraint de BD — carrera posible bajo transacciones concurrentes",
+      "tipo": "RIESGO",
+      "fase_componente": "Fase 3 — certificadoService / concurrencia (§G, hipótesis #3)",
+      "confianza": "media",
+      "evidencia": [
+        "src/services/sifen/certificadoService.js:33-65 (crearCertificado: updateMany({activo:false}) + create({activo:true}) dentro de la misma prisma.$transaction)",
+        "src/services/sifen/certificadoService.js:74-95 (activarCertificado: mismo patrón con update en vez de create)",
+        "prisma/schema.prisma:467-484 (Certificado: sin índice único parcial/condicional sobre (empresa_id) WHERE activo=true — MySQL no soporta índices únicos parciales, ya reconocido explícitamente en MIGRATION_PLAN.md §2.2)"
+      ],
+      "camino_de_ejecucion": "Dos llamadas concurrentes a crearCertificado (o crearCertificado + activarCertificado) para la misma empresa, cada una en su propia transacción Prisma: si el `updateMany` de una transacción se ejecuta cuando la otra transacción todavía no insertó su nueva fila activa (p. ej. en el caso borde de la primera activación, donde no hay fila previa que bloquear/esperar), ambas pueden completar su `create`/`update` con `activo:true` sin haberse visto mutuamente.",
+      "escenario_de_fallo_derivado": "Dos certificados quedan simultáneamente `activo=true` para la misma empresa. `obtenerCertificadoActivo` usa `findFirst` (sin `orderBy` explícito), por lo que cuál de los dos se use para firmar pasa a depender del orden de retorno no garantizado de la BD — comportamiento no determinístico para decidir con qué certificado se firma un documento.",
+      "comportamiento_esperado": "En todo momento, a lo sumo un certificado por empresa debe tener `activo=true` — la propia documentación del código así lo declara como invariante de negocio.",
+      "comportamiento_que_impone_o_permite_el_codigo": "El código confía en que el `updateMany` dentro de la transacción vea y bloquee cualquier fila activa concurrente, pero eso solo es cierto si dicha fila ya existe y está commiteada en el momento en que el `updateMany` se ejecuta — no hay una primitiva que impida que dos transacciones concurrentes inserten cada una su propia fila activa cuando ninguna ve todavía la del otro.",
+      "impacto": "Ambigüedad sobre qué certificado firma los documentos de una empresa; no hay pérdida de datos, pero sí riesgo de firmar con un certificado no deseado (p. ej. uno que se creía reemplazado).",
+      "causa_raiz": "Ausencia de una constraint de BD que garantice la invariante (reconocida explícitamente como imposible en MySQL por el propio MIGRATION_PLAN.md) y ausencia de un mecanismo alternativo (advisory lock, columna de versión, o un registro único 'certificado_activo_empresa' con UNIQUE(empresa_id) referenciando al certificado vigente) que cierre la ventana.",
+      "correccion_minima": "Introducir una tabla/columna auxiliar `empresa_id UNIQUE` que apunte al certificado activo actual (un solo INSERT/UPDATE atómico sobre esa fila reemplaza el patrón updateMany+create), o usar un advisory lock de MySQL (`GET_LOCK('certificado_activo_empresa_<id>', ...)`) que envuelva todo crearCertificado/activarCertificado.",
+      "prueba_dinamica_futura_recomendada": "Test de concurrencia con BD local: disparar `Promise.all([crearCertificado(...), crearCertificado(...)])` para la misma empresa sin certificado previo, y confirmar que al finalizar ambas promesas solo hay un certificado con `activo=true` en la tabla.",
+      "riesgos_del_fix": "Medio — cualquier mecanismo de lock explícito debe probarse contra el pool de conexiones de Prisma (los advisory locks de MySQL son por conexión, no por transacción lógica de Prisma, lo que requiere cuidado adicional).",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "src/services/sifen/certificadoService.js#crearCertificado/activarCertificado — ambas funciones ahora ejecutan `tx.$queryRaw`SELECT id FROM empresa WHERE id = ${empresaId} FOR UPDATE`` como primer paso dentro de la transacción, antes de leer/actualizar certificados — mismo patrón ya usado en el proyecto para la secuencia de numeración de Factura/NotaCredito (bloqueo de fila, no una tabla auxiliar nueva ni un advisory lock)"
+        ],
+        "verificacion": "Script ad-hoc contra la BD MySQL local: dos `crearCertificado()` concurrentes (`Promise.all`) para una empresa sin certificado previo (el caso más propenso a la carrera) — confirmado que al finalizar ambas promesas queda exactamente 1 certificado con `activo=true`, nunca 2. `firmadorService.obtenerVencimientoCertificado` se mockeó para no depender de un P12 real.",
+        "pendiente": "Ninguno — se optó por el lock de fila (más simple, reusa un patrón ya validado en el proyecto) en vez de la tabla auxiliar/advisory lock sugeridos como alternativa en la corrección mínima original."
+      }
+    },
+    {
+      "id": "AUD-006",
+      "severidad": "P2",
+      "titulo": "Empresa.csc se persiste y se usa en texto plano pese a que el modelo de amenaza del proyecto exige cifrar secretos a nivel aplicación",
+      "tipo": "BUG CONFIRMADO",
+      "fase_componente": "Fase 2/3 — QR / secretos (§G, hipótesis #11)",
+      "confianza": "alta",
+      "evidencia": [
+        "prisma/schema.prisma:81 (csc String? @db.VarChar(255) — sin ningún marcador de cifrado, a diferencia de Certificado.clave)",
+        "src/services/sifen/loteService.js:153-155 ('Empresa.csc todavía se persiste en texto plano ... se pasa tal cual, sin decrypt()')",
+        "src/services/sifen/qrService.js:27-39 (generarQr recibe `csc` y lo usa directo para calcular cHashQR)",
+        "src/utils/crypto.js (utilidad de cifrado ya existe y está en uso para Certificado.clave, pero no se aplicó a Empresa.csc)"
+      ],
+      "camino_de_ejecucion": "Cualquier lectura de la tabla `empresa` (dump de BD, backup, acceso de un desarrollador con permisos de lectura, un futuro endpoint de administración de empresas que devuelva el registro completo) expone el CSC en claro.",
+      "escenario_de_fallo_derivado": "El CSC (Código de Seguridad del Contribuyente) es el secreto que, junto al CDC y otros campos públicos del documento, permite calcular el hash del QR de consulta pública — no es la credencial de transporte mTLS (esa es el P12), pero sigue siendo un secreto de negocio que MIGRATION_PLAN.md ya identifica como algo a cifrar ('mismo comentario pendiente ya documentado en el schema').",
+      "comportamiento_esperado": "Mismo tratamiento que `Certificado.clave`: cifrado a nivel aplicación con `utils/crypto.js`, nunca en texto plano en la BD.",
+      "comportamiento_que_impone_o_permite_el_codigo": "El campo se declara y se usa como texto plano en el 100% del código actual — no hay ningún punto de cifrado ni descifrado para `Empresa.csc`.",
+      "impacto": "Exposición de un secreto de negocio en caso de acceso no autorizado a la BD (backup filtrado, acceso de un tercero con credenciales de solo-lectura, etc.) — impacto acotado (no permite enviar documentos a SIFEN por sí solo, requiere además el P12), pero es una brecha real frente al estándar ya aplicado al resto de secretos del proyecto.",
+      "causa_raiz": "Gap de implementación ya reconocido por el propio equipo (comentario explícito en el código y en el schema) pero nunca cerrado.",
+      "correccion_minima": "Cifrar `Empresa.csc` con `utils/crypto.js` al escribir (alta de empresa / actualización de datos fiscales) y descifrar en el único punto de lectura (`loteService.firmarYPersistirDocumento`, antes de pasarlo a `qrService.generarQr`) — mismo patrón ya usado para `Certificado.clave`.",
+      "prueba_dinamica_futura_recomendada": "Test con BD local: dar de alta/actualizar el CSC de una empresa vía el flujo corregido, leer la columna cruda de BD y confirmar que no coincide con el valor en texto plano original; luego confirmar que `generarQr` sigue produciendo el mismo `cHashQR` que antes del cambio (round-trip).",
+      "riesgos_del_fix": "Bajo — cambio aislado a un campo y a dos puntos de uso; requiere backfill (cifrar los CSC ya cargados en texto plano) al desplegar el fix.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "src/utils/crypto.js#decryptTolerante (nuevo) — intenta decrypt(), y si falla (valor no cifrado con encrypt(), formato inválido o auth tag GCM no verifica) devuelve el valor tal cual en vez de lanzar",
+          "src/services/sifen/loteService.js#firmarYPersistirDocumento — csc: decryptTolerante(empresa.csc) en vez de empresa.csc crudo"
+        ],
+        "alcance_real_encontrado_al_investigar": "No existe hoy ningún endpoint/CRUD de Empresa o Certificado en src/routes/ (confirmado por grep — no hay empresaRoute.js/certificadoRoute.js) — el alta de Empresa.csc es manual/ad-hoc (Prisma Studio o SQL directo), igual que el resto de los datos fiscales según ya documenta MIGRATION_PLAN.md. Por eso el fix se acotó al lado de LECTURA (tolerante, no rompe los valores en texto plano que son la única forma real de carga hoy) — cifrar en escritura requeriría antes construir un endpoint que hoy no existe, fuera del alcance de esta corrección.",
+        "verificacion": "Con `dotenv` cargado (CERT_ENCRYPTION_KEY real del .env): decryptTolerante('CSC12345PLANO') devuelve el mismo texto (no lanza); decryptTolerante(encrypt('CSC12345SECRETO')) devuelve 'CSC12345SECRETO'. Ambos casos confirmados con un script ad-hoc.",
+        "pendiente": "Cifrado en escritura (requiere primero un endpoint real de alta/edición de Empresa que hoy no existe) + backfill de los valores ya cargados en texto plano — ambos fuera de alcance de este fix, tal como ya anticipaba la corrección mínima original."
+      }
+    },
+    {
+      "id": "AUD-007",
+      "severidad": "P2",
+      "titulo": "Uso de filtros Prisma not/notIn sobre estado_sifen (nullable) para excluir/incluir documentos — comportamiento ante NULL no confirmado estáticamente, afecta el guard de cancelación y el cálculo de notas de crédito previas",
+      "tipo": "LIMITACIÓN",
+      "fase_componente": "Fase 5 — facturaService/notaDeCreditoService, compatibilidad histórica (§L, §B)",
+      "confianza": "media",
+      "evidencia": [
+        "src/services/facturaService.js:508-514 (notaDeCreditos = findMany({factura_id, estado_sifen: {not:'CANCELADO'}}) — guard contra cancelar una Factura con NC vigentes)",
+        "src/services/notaDeCreditoService.js:57-61 (factura = findFirst({cdc, estado_sifen: {not:'CANCELADO'}}))",
+        "src/services/notaDeCreditoService.js:113-118 (notasDeCredito = findMany({factura_id, estado_sifen: {notIn:['CANCELADO','RECHAZADO']}}) — usado para sumar el total ya acreditado y evitar sobre-acreditar)"
+      ],
+      "camino_de_ejecucion": "Para Notas de Crédito históricas (estado_sifen=NULL), el resultado de estos filtros depende de si el motor SQL generado por Prisma para `not`/`notIn` sobre una columna nullable incluye o excluye las filas NULL — comportamiento que no se puede determinar sin ejecutar la query real contra MySQL (versión de Prisma 5.16.1) o revisar el SQL generado en tiempo de ejecución.",
+      "escenario_de_fallo_derivado": "Si el filtro EXCLUYE las filas NULL (semántica SQL estándar de tres valores: `NULL <> 'CANCELADO'` no es TRUE), entonces `notaDeCreditoService.js:113-118` no contabiliza las Notas de Crédito históricas ya emitidas contra una Factura histórica al calcular cuánto se puede seguir acreditando — permitiendo emitir una NC nueva que, sumada a las históricas, supere el total de la Factura (sobre-acreditación fiscal). Si el filtro SÍ incluye NULL, el comportamiento es el correcto.",
+      "comportamiento_esperado": "El cálculo de crédito disponible debe considerar todas las Notas de Crédito no canceladas/rechazadas, históricas o nativas, sin importar qué pipeline las emitió.",
+      "comportamiento_que_impone_o_permite_el_codigo": "El código asume implícitamente un comportamiento de `not`/`notIn` sobre NULL sin documentarlo ni verificarlo — no hay ningún comentario ni test que confirme cuál de las dos semánticas aplica en este proyecto/versión de Prisma.",
+      "impacto": "Potencial sobre-acreditación fiscal si la semántica resulta ser la que excluye NULL — no confirmable sin ejecutar la query.",
+      "causa_raiz": "Dependencia implícita de un detalle de comportamiento de Prisma no verificado, agravada por la coexistencia de datos históricos con `estado_sifen=NULL`.",
+      "correccion_minima": "Hacer explícito el include de NULL en las 3 queries citadas, p. ej. `OR: [{estado_sifen: null}, {estado_sifen: {notIn: [...]}}]` en vez de confiar en el comportamiento implícito — así el código es correcto independientemente de qué haga Prisma con NULL por default.",
+      "prueba_dinamica_futura_recomendada": "Test con BD local: sembrar una Factura histórica (estado_sifen=NULL) con una NotaCredito histórica ya asociada (estado_sifen=NULL, total conocido), intentar emitir una NC nueva cuyo total sumado a la histórica exceda el total de la Factura, y confirmar que el sistema la rechaza (no permite sobre-acreditar). Requiere BD local, no requiere red.",
+      "riesgos_del_fix": "Bajo — es un endurecimiento explícito de un filtro existente.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "src/utils/sifen/estadoHistorico.js — agregado esRechazado (mismo patrón que esAprobado/esCancelado, literal 'Rechazado' ya usado en reciboService.js:291 contra el mismo campo legacy)",
+          "src/services/facturaService.js#cancelarFactura — la query de NC vinculadas ya no filtra por estado_sifen; trae todas las NC de la factura y filtra en JS con `!esCancelado(nc)`",
+          "src/services/notaDeCreditoService.js#emitirNotaDeCredito — la query de NC previas para el cálculo de crédito ya no filtra por estado_sifen; trae todas y filtra en JS con `!esCancelado(nc) && !esRechazado(nc)`"
+        ],
+        "verificacion": "node --check sobre ambos archivos. No se armó un script ad-hoc adicional para este caso puntual (la lógica es la misma ya verificada para AUD-001 — esCancelado/esAprobado/esRechazado operan sobre el objeto documento, sin depender de Prisma) — sigue como prueba dinámica futura si se quiere evidencia de extremo a extremo con una Factura+NC históricas reales.",
+        "pendiente": "Ninguno de los 2 call sites originalmente identificados queda con el filtro ambiguo. La query de facturaService.reenviarFactura/notaDeCreditoService ya se habían corregido como parte de AUD-001."
+      }
+    },
+    {
+      "id": "AUD-008",
+      "severidad": "P2",
+      "titulo": "El parseo de la respuesta SOAP por sufijo de tag no está confirmado contra una respuesta real de SIFEN — riesgo de ambigüedad con namespaces y nodos repetidos",
+      "tipo": "LIMITACIÓN",
+      "fase_componente": "Fase 4 — respuestaSoap.js / cliente SOAP (§F, hipótesis #8, #9)",
+      "confianza": "alta (limitación reconocida y ya documentada por el propio proyecto)",
+      "evidencia": [
+        "src/utils/sifen/respuestaSoap.js:1-52 (buscarValorPorSufijo: primer match por sufijo de nombre de tag, recorrido en profundidad, sin distinguir namespace real)",
+        "src/services/sifen/loteService.js:426 (extraerCodigoYMensaje(respuesta) sobre la respuesta completa de recibeLote — no distingue explícitamente un dCodRes de nivel-sobre de uno de nivel-documento si ambos existieran en la misma respuesta)",
+        "MIGRATION_PLAN.md 'Spike #3 — DESCARTADO': confirma que nunca se validó contra una respuesta SOAP real de SIFEN (ni test ni producción) al momento de este commit"
+      ],
+      "camino_de_ejecucion": "`recibeLote`/`consultaLote`/`consulta` devuelven el body SOAP ya parseado por xml2js (explicitArray:false); `respuestaSoap.js` busca el primer nodo cuyo nombre (sin importar el namespace) termine en 'dCodRes'/'dMsgRes'/etc., recorriendo el objeto en profundidad.",
+      "escenario_de_fallo_derivado": "Si una respuesta real de SIFEN incluye un `dCodRes` a nivel de sobre/lote Y otro(s) a nivel de cada documento dentro de `gResProcLoteDe` (estructura anidada plausible para un lote con varios documentos), `extraerCodigoYMensaje` sobre la respuesta completa devolvería el primero que encuentre según el orden de propiedades del objeto parseado — no necesariamente el de nivel-sobre que se espera semánticamente. `extraerResultadosPorDocumento`/`actualizarDocumentoPorResultado` sí operan correctamente por documento (reciben el sub-nodo puntual), así que el riesgo se concentra en el uso de `extraerCodigoYMensaje` sobre la respuesta completa en `enviarLotesConstruidos` y `consultarLotes` (nivel lote).",
+      "comportamiento_esperado": "El código de respuesta interpretado a nivel de lote debe ser inequívocamente el del sobre/envoltorio, no el de un documento individual dentro de él.",
+      "comportamiento_que_impone_o_permite_el_codigo": "El algoritmo de búsqueda no puede garantizar por construcción cuál `dCodRes` encuentra primero cuando hay más de uno en la misma respuesta — depende del orden de inserción de claves del objeto JS resultante del parseo XML, que a su vez depende del orden real de los tags en el XML de respuesta.",
+      "impacto": "Interpretación potencialmente incorrecta del resultado de un envío de lote (p. ej. tratar como aceptado un sobre cuyo primer `dCodRes` encontrado es en realidad el de un documento individual, o viceversa) — no verificable sin una respuesta SOAP real.",
+      "causa_raiz": "Ya identificada por el propio equipo: el spike #3 (round-trip real contra SIFEN) se descartó deliberadamente por decisión del usuario, dejando esta ambigüedad sin cerrar antes del piloto de producción.",
+      "correccion_minima": "En cuanto se tenga la primera respuesta SOAP real (aunque sea del piloto en producción), capturarla y persistirla como fixture para fijar la ruta exacta (namespace/anidamiento) y reemplazar la búsqueda genérica por sufijo con un acceso más específico allí donde haya ambigüedad demostrada.",
+      "prueba_dinamica_futura_recomendada": "Fixture SOAP: construir un objeto JS que imite una respuesta de `recibeLote` con `dCodRes` tanto a nivel de sobre como (hipotéticamente) a nivel de un documento anidado, y confirmar cuál devuelve `extraerCodigoYMensaje` — para decidir si hace falta acotar la búsqueda a un nivel. Complementar con la primera respuesta real capturada en el piloto de producción (dato ya previsto por el propio plan como la validación real pendiente).",
+      "riesgos_del_fix": "Ninguno hasta no tener el dato real — cualquier ajuste sin una respuesta real de referencia corre el riesgo de optimizar para un caso hipotético incorrecto.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "src/utils/sifen/respuestaSoap.js#buscarValorPorSufijo — nuevo parámetro opcional `excluirSufijos`: no desciende a ningún subárbol cuya clave (sin prefijo de namespace) termine en uno de esos sufijos, sin importar cuán profundo esté anidado",
+          "src/utils/sifen/respuestaSoap.js#extraerCodigoYMensaje — acepta y reenvía `excluirSufijos`",
+          "src/services/sifen/loteService.js — enviarLotesConstruidos() y consultarLotes() ahora llaman extraerCodigoYMensaje(respuesta, {excluirSufijos:['gResProcLoteDe']}) al extraer el código a nivel de sobre/lote"
+        ],
+        "nota_de_alcance": "Esto es una MITIGACIÓN, no una confirmación — sigue siendo LIMITACIÓN igual que el hallazgo original: no se dispone de una respuesta real de SIFEN para confirmar el namespace/anidamiento exacto (spike #3 sigue descartado). El cambio elimina por construcción una clase entera de error (código de sobre confundido con código de documento) para cualquier estructura real que tenga dCodRes de sobre como hermano (en cualquier nivel de ancestría) de gResProcLoteDe, que es la estructura que codigosRespuesta.js ya documenta como la esperada.",
+        "verificacion": "Script ad-hoc: (1) estructura sintética con dCodRes de sobre y gResProcLoteDe como hermanos — con y sin exclusión da el resultado correcto (0362, nunca 0260); (2) caso adversarial construido a propósito (dCodRes de sobre anidado MÁS PROFUNDO que gResProcLoteDe, que aparece primero en el recorrido) — CONFIRMADO que SIN la exclusión el algoritmo devuelve el código del documento (0260) por error, y CON la exclusión devuelve correctamente el del sobre (0362). Esto reproduce en código el riesgo real que describía el hallazgo original.",
+        "pendiente": "Capturar y fijar la estructura real en cuanto haya una primera respuesta real de SIFEN (piloto de producción) — sigue siendo el cierre definitivo de este hallazgo, no reemplazable por mitigación estática."
+      }
+    },
+    {
+      "id": "AUD-009",
+      "severidad": "P2",
+      "titulo": "firmarPendientes/armarLotes no reclaman los documentos antes de procesarlos — ejecuciones solapadas firman/generan QR dos veces (sin duplicar el envío a SIFEN)",
+      "tipo": "RIESGO",
+      "fase_componente": "Fase 4 — loteService / concurrencia (§H, hipótesis #2)",
+      "confianza": "media",
+      "evidencia": [
+        "src/services/sifen/loteService.js:261-277 (firmarPendientes: findMany({lote_id:null, estado_sifen:'GENERADO'}) sin claim, seguido de firmarYPersistirDocumento por cada uno)",
+        "src/services/sifen/loteService.js:317-339 (crearLoteConDocumentos: el updateMany de asignación de lote_id no vuelve a filtrar por `lote_id: null`, solo por `id: {in: idsDocumentos}` — un documento ya reasignado por otra corrida puede ser 'robado' silenciosamente de un Lote a otro)"
+      ],
+      "camino_de_ejecucion": "Dos ejecuciones solapadas de `armarLotes()` (mismo escenario de solapamiento de cron que AUD-003) pueden seleccionar el mismo documento GENERADO/FIRMADO antes de que la primera lo persista con un nuevo estado.",
+      "escenario_de_fallo_derivado": "El mismo documento se firma y se genera su QR dos veces en paralelo (trabajo redundante, no fiscal — el contenido firmado resultante es equivalente); o, en el armado de lotes, un documento queda con `lote_id` apuntando al último lote que ganó la carrera, dejando al primer Lote con menos documentos de los que originalmente se le asignaron (lote 'zombie' que eventualmente agota sus reintentos con una lista de XML incompleta o vacía).",
+      "comportamiento_esperado": "Cada documento debería ser procesado por una sola ejecución en curso a la vez.",
+      "comportamiento_que_impone_o_permite_el_codigo": "No hay ningún claim atómico (`UPDATE ... WHERE estado_sifen='GENERADO'` con chequeo de filas afectadas) antes de operar sobre el documento.",
+      "impacto": "Desperdicio de cómputo (firma/QR duplicados) y ruido operativo (lotes zombie que fallan sin razón real) — no se identificó, a diferencia de AUD-003, un camino que derive en un envío duplicado a SIFEN, porque `enviarLotesConstruidos` siempre relee los documentos vigentes de un lote vía la relación `lote_id` en el momento del envío.",
+      "causa_raiz": "Mismo patrón de diseño que AUD-003 — el pipeline confía en que las ejecuciones del cron no se solapan, sin una primitiva que lo garantice.",
+      "correccion_minima": "Mismo patrón que AUD-003: claim atómico vía `updateMany` con `where` que incluya el estado esperado, antes de operar. Para `crearLoteConDocumentos`, agregar `lote_id: null` al `where` del `updateMany` de asignación, y verificar que la cantidad de filas afectadas coincida con la cantidad de documentos del chunk.",
+      "prueba_dinamica_futura_recomendada": "Test de concurrencia con BD local: dos invocaciones paralelas de `armarLotes()` sobre el mismo conjunto de documentos GENERADO, confirmar que cada documento termina asociado a exactamente un Lote y que no hay Lotes con menos documentos de los reservados originalmente.",
+      "riesgos_del_fix": "Bajo — mismo tipo de cambio que AUD-003, acotado a agregar condiciones a los `where` existentes.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "prisma/schema.prisma — enum EstadoSifen: agregado FIRMANDO (transitorio, entre GENERADO y FIRMADO). Migración prisma/migrations/20260711124525_estado_sifen_firmando/ (ALTER TABLE ... MODIFY estado_sifen ENUM(...) sobre factura y nota_credito — amplía el enum, no elimina/renombra valores existentes ni cambia la nulabilidad; aplicada contra la BD MySQL local)",
+          "src/services/sifen/loteService.js#firmarPendientes — reclama cada documento (`updateMany({where:{id, estado_sifen:'GENERADO'}, data:{estado_sifen:'FIRMANDO'}})`) antes de firmarlo; si `count===0` lo descarta (ya reclamado por otra ejecución); si `firmarYPersistirDocumento` falla, libera el claim de vuelta a GENERADO",
+          "src/services/sifen/loteService.js#crearLoteConDocumentos — el updateMany de asignación de lote_id ahora incluye `lote_id: null` en el where, y compara la cantidad de filas afectadas contra la cantidad esperada (logueando un warning si no coinciden)"
+        ],
+        "verificacion": "Migración aplicada limpio (`npx prisma migrate dev`, `npx prisma validate` OK). Script ad-hoc contra la BD MySQL local: dos `updateMany({where:{id, estado_sifen:'GENERADO'}, data:{estado_sifen:'FIRMANDO'}})` consecutivos sobre la misma Factura sintética confirmaron `count=1` en el primero y `count=0` en el segundo — la exclusión mutua funciona igual que para el claim de Lote de AUD-003.",
+        "pendiente": "Ninguno de los 2 sub-problemas originalmente identificados (firma duplicada, robo silencioso de documento entre lotes) queda sin cerrar."
+      }
+    },
+    {
+      "id": "AUD-010",
+      "severidad": "P2",
+      "titulo": "SifenTrazabilidad persiste el payload completo de cada interacción (incluye PII de clientes) sin controles de acceso ni minimización, con retención por defecto de 90 días",
+      "tipo": "RIESGO",
+      "fase_componente": "Trazabilidad (§7, hipótesis #12, #18)",
+      "confianza": "media",
+      "evidencia": [
+        "prisma/schema.prisma:579-593 (SifenTrazabilidad: request_payload/response_payload @db.MediumText, sin ningún campo de minimización/anonimización)",
+        "src/services/sifen/trazabilidadService.js:26-31 (serializarPayload persiste el XML/SOAP completo tal cual, incluyendo razón social, RUC/documento y dirección del receptor)",
+        "src/services/sifen/trazabilidadService.js:90-102 (limpiezaTrazabilidad: retención default 90 días, configurable por SIFEN_TRAZABILIDAD_RETENCION_DIAS)",
+        "No se encontró ningún control de acceso específico (a nivel de rol/endpoint) sobre `obtenerTrazabilidadPorEntidad` en el código revisado en esta pasada — no se leyeron los controllers/routes que la exponen, ver limitación en el informe"
+      ],
+      "camino_de_ejecucion": "Cada interacción con SIFEN (firma, envío de lote, consulta, evento) persiste el XML/SOAP completo, que contiene datos personales del receptor del documento (nombre/razón social, RUC o documento de identidad, dirección, a veces email/teléfono).",
+      "escenario_de_fallo_derivado": "Un acceso no autorizado a `SifenTrazabilidad` (o a un backup de la BD) expone datos personales de clientes en volumen (todas las facturas de los últimos 90 días), sin que exista ningún mecanismo de minimización.",
+      "comportamiento_esperado": "Dependiendo del marco legal de protección de datos aplicable, se esperaría algún control de acceso más granular sobre esta tabla y/o minimización de los campos realmente necesarios para diagnóstico (que en la práctica son el código y mensaje de respuesta, no necesariamente el XML completo con PII).",
+      "comportamiento_que_impone_o_permite_el_codigo": "El diseño actual privilegia la trazabilidad completa (deliberado, para poder diagnosticar casos como el error 0142) sobre la minimización de datos.",
+      "impacto": "Riesgo de cumplimiento normativo (protección de datos personales) y de superficie de exposición ante una brecha de BD — no es un bug funcional del pipeline SIFEN en sí.",
+      "causa_raiz": "Decisión de diseño explícita (trazabilidad completa) sin una contraparte de control de acceso/minimización documentada.",
+      "correccion_minima": "No es una corrección de código aislada — requiere una decisión de producto/cumplimiento: (a) restringir el acceso a `obtenerTrazabilidadPorEntidad` a roles administrativos explícitos, (b) evaluar si 90 días es el período correcto para el marco legal aplicable, (c) evaluar si conviene no persistir el XML completo sino solo los campos de diagnóstico.",
+      "prueba_dinamica_futura_recomendada": "No aplica como test automatizado — recomendación de revisión de producto/legal, más una verificación de qué roles pueden efectivamente invocar el endpoint que expone `obtenerTrazabilidadPorEntidad` (pendiente de revisar en `src/controllers`/`src/routes`, fuera del alcance de esta pasada).",
+      "riesgos_del_fix": "N/A — depende de la decisión de producto.",
+      "remediacion": {
+        "estado": "no_change_needed",
+        "fecha": "2026-07-11",
+        "hallazgo_al_investigar": "Se cerró la limitación que dejaba pendiente el hallazgo original ('no se leyeron los controllers/routes que la exponen'): grep dirigido a src/routes/ y src/controllers/ confirma que HOY no existe ningún archivo `certificadoRoute.js`/`empresaRoute.js`/`trazabilidadRoute.js` — `trazabilidadService`/`certificadoService` solo se referencian desde otros módulos de `src/services/sifen/` y desde `cronJobs.js`, nunca desde un controller. No hay superficie HTTP que exponga `obtenerTrazabilidadPorEntidad` (ni el resto de trazabilidadService/certificadoService) hoy.",
+        "por_que_no_se_cambio_codigo": "El riesgo de acceso no autorizado vía API queda descartado mientras esto siga así (no hay endpoint que gatear). El riesgo real remanente — exposición de PII vía acceso directo a la BD/backup, y si 90 días de retención es el período correcto — sigue siendo una decisión de producto/cumplimiento, no algo que un fix de código pueda resolver unilateralmente sin involucrar al negocio (a qué se compromete la retención, qué exige el marco legal aplicable a datos de clientes en Paraguay).",
+        "pendiente": "Si en el futuro se agrega un controller/route que exponga trazabilidadService (p. ej. un panel de soporte para diagnosticar rechazos SIFEN), gatearlo con authJwt(['ADMIN']) o el rol que corresponda desde el día uno — no quedó ningún gap que cerrar hoy porque no hay endpoint que gatear."
+      }
+    },
+    {
+      "id": "AUD-011",
+      "severidad": "P2",
+      "titulo": "Los cron jobs no tienen mutex/lock distribuido — riesgo latente si el despliegue pasa a múltiples instancias/réplicas",
+      "tipo": "RIESGO",
+      "fase_componente": "Cron jobs (§J, hipótesis #2)",
+      "confianza": "alta (código); reachability hoy: baja, ver nota",
+      "evidencia": [
+        "src/services/cronJobs.js:1-69 (cron.schedule sin ningún mecanismo de lock — node-cron es puramente local al proceso)",
+        "docker-compose.yml (un único servicio `app`, sin `deploy.replicas` ni configuración de escalado — no hay evidencia de despliegue multi-instancia en este repo)"
+      ],
+      "camino_de_ejecucion": "Si en algún momento se despliega más de una instancia del proceso Node (múltiples contenedores, PM2 en modo cluster, autoescalado), cada instancia registra sus propios `cron.schedule` de forma completamente independiente — no hay coordinación entre procesos.",
+      "escenario_de_fallo_derivado": "Todos los riesgos de solapamiento ya descritos en AUD-003/AUD-009 se multiplican por el número de instancias corriendo simultáneamente, incluso si cada instancia individual nunca solapa sus propias corridas.",
+      "comportamiento_esperado": "Si el despliegue llegara a ser multi-instancia, cada job debería ejecutarse una sola vez por tick, vía un lock distribuido (advisory lock de MySQL, Redis, o un líder elegido explícitamente).",
+      "comportamiento_que_impone_o_permite_el_codigo": "El código no tiene ninguna defensa contra este escenario — confía enteramente en que el despliegue sea de una sola instancia.",
+      "impacto": "Nulo en el despliegue actual documentado en este repo (`docker-compose.yml` de una sola instancia); pasa a ser un riesgo real el día que se decida escalar horizontalmente sin revisar antes esta suposición implícita.",
+      "causa_raiz": "Diseño que asume implícitamente una única instancia del proceso, sin documentarlo como restricción operativa explícita.",
+      "correccion_minima": "Documentar explícitamente en MIGRATION_PLAN.md/CLAUDE.md que el despliegue debe ser de una sola instancia mientras no se implemente un lock distribuido; si se planea escalar, implementar el lock antes.",
+      "prueba_dinamica_futura_recomendada": "No aplica hasta que exista un plan de escalado — en ese momento, test de despliegue con 2 instancias reales y un mock de SIFEN lento, confirmando que un job no corre más de una vez por tick a través de ambas instancias.",
+      "riesgos_del_fix": "N/A — no es una corrección de código, es una restricción operativa a documentar.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "MIGRATION_PLAN.md — nueva nota operativa explícita en la sección 'Fase 5.1' documentando que el despliegue debe ser de una sola instancia mientras no exista un lock distribuido, y que los claims atómicos agregados en AUD-003/AUD-009 ya evitan el peor escenario (doble envío a SIFEN) aunque no un lock distribuido completo"
+        ],
+        "por_que_no_se_cambio_codigo": "Coincide con la corrección mínima ya propuesta en el hallazgo original: es una restricción operativa a documentar, no un bug de código — no hay evidencia en este repo (docker-compose.yml de una sola instancia) de que el despliegue real sea multi-instancia hoy, así que implementar un lock distribuido ahora sería trabajo especulativo sin un requisito real que lo motive.",
+        "pendiente": "Implementar un lock distribuido (advisory lock de MySQL u otro) en los 5 jobs de cronJobsSifen() antes de escalar a múltiples instancias/réplicas, si eso llega a planearse."
+      }
+    },
+    {
+      "id": "AUD-012",
+      "severidad": "P3",
+      "titulo": "Código muerto: src/db/dbApiFacturacion.js y la dependencia pg no fueron eliminados pese a estar confirmados sin referencias vivas",
+      "tipo": "BUG CONFIRMADO",
+      "fase_componente": "Fase 5/6 — limpieza de corte (§K)",
+      "confianza": "alta",
+      "evidencia": [
+        "src/db/dbApiFacturacion.js existe en el repo",
+        "grep de 'dbApiFacturacion|conectarDbApiFacturacion' en src/: sin referencias entrantes vivas (solo el propio archivo y comentarios que confirman su eliminación del wiring)",
+        "package.json:41 ('pg': '^8.12.0' todavía en dependencies)",
+        "MIGRATION_PLAN.md, tabla de Fase 5: el propio plan ya marca esto como '⚠️ Código muerto, no eliminado' — pendiente explícito, no una afirmación falsa del plan"
+      ],
+      "camino_de_ejecucion": "N/A — es código inerte, no alcanzable desde ningún punto de entrada vivo del proceso.",
+      "escenario_de_fallo_derivado": "Ninguno funcional — riesgo de mantenibilidad (alguien podría reintroducir una dependencia a este archivo sin saber que está deprecado) y de superficie de dependencias (pg sigue instalada sin uso, con su propia superficie de CVEs a monitorear sin necesidad).",
+      "comportamiento_esperado": "Igual al declarado por el propio checklist de apagado del plan (§4.4): eliminar en el corte, no dejarlo pendiente.",
+      "comportamiento_que_impone_o_permite_el_codigo": "El archivo y la dependencia siguen presentes en el árbol de código y en package.json.",
+      "impacto": "Bajo — deuda técnica confirmada, sin riesgo funcional inmediato.",
+      "causa_raiz": "Ya documentada por el propio plan: 'el sandbox de esta sesión bloqueó el rm de un archivo preexistente sin pedido explícito del usuario'.",
+      "correccion_minima": "Eliminar src/db/dbApiFacturacion.js y retirar `pg` de package.json (confirmando primero que ningún otro módulo la usa, más allá de dbApiFacturacion.js).",
+      "prueba_dinamica_futura_recomendada": "N/A — verificación estática (grep + npm ls) alcanza para confirmar que el borrado es seguro.",
+      "riesgos_del_fix": "Ninguno, dado que ya está confirmado sin referencias vivas.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "src/db/dbApiFacturacion.js — eliminado",
+          "package.json — retirada la dependencia `pg`",
+          "package-lock.json — regenerado con `npm install` (removió `pg` y 12 dependencias transitivas suyas, 13 paquetes en total)",
+          ".env.example — retirado el bloque 'DB Api Facturacion' (HOST_API_FACT/URL_API_FACT/PORT_DB_API_FACT/DB_API_FACT/USER_DB_API_FACT/PW_DB_API_FACT), huérfano una vez borrado el único archivo que los leía"
+        ],
+        "nota_de_proceso": "El primer intento de borrado fue denegado por el clasificador de auto-mode del harness (archivo preexistente, no creado en la sesión, borrado no nombrado explícitamente por el usuario) — se dejó pendiente y se le preguntó al usuario. El usuario confirmó explícitamente ('Borrá src/db/dbApiFacturacion.js y sacá pg de package.json'), lo que desbloqueó la acción.",
+        "verificacion": "`npm ls pg` → árbol vacío (0 ocurrencias en package-lock.json). `node --check` sobre cronJobs.js y src/index.js sin errores. `require('./src/services/cronJobs')` carga sin lanzar. Grep global confirma 0 referencias vivas a dbApiFacturacion fuera de un comentario histórico ya existente en cronJobs.js que documenta (en pasado) su eliminación del wiring."
+      }
+    },
+    {
+      "id": "AUD-013",
+      "severidad": "P3",
+      "titulo": "EstadoLote no tiene un estado terminal propio para rechazo/agotamiento — la señal vive únicamente en los documentos",
+      "tipo": "LIMITACIÓN",
+      "fase_componente": "Schema / máquina de estados (§A, §B)",
+      "confianza": "alta",
+      "evidencia": [
+        "prisma/schema.prisma:491-495 (enum EstadoLote { CONSTRUIDO ENVIADO CONSULTADO } — sin RECHAZADO/ERROR/AGOTADO)",
+        "src/services/sifen/loteService.js:383-393 (marcarLoteAgotado: actualiza los documentos del lote a ERROR, pero al Lote solo le escribe `ultimo_error`/`proximo_intento_en:null`, sin cambiar `estado` — el Lote queda indefinidamente en CONSTRUIDO o ENVIADO)",
+        "MIGRATION_PLAN.md §2.2 ya documenta esto como decisión consciente ('el modelo Lote no tiene un estado terminal propio en el schema, la señal vive en los documentos')"
+      ],
+      "camino_de_ejecucion": "Un lote que agota sus reintentos o es rechazado definitivamente por SIFEN nunca transiciona `Lote.estado` a un valor que lo distinga de un lote sano en curso — solo sus documentos asociados pasan a ERROR/RECHAZADO.",
+      "escenario_de_fallo_derivado": "Cualquier consulta/dashboard que filtre 'lotes con problemas' directamente por `Lote.estado` (en vez de hacer join contra el estado de sus documentos) no va a poder distinguir un lote agotado de uno sano — operacionalmente, hay que saber de antemano que la señal real está en los documentos, no en el lote.",
+      "comportamiento_esperado": "Sería más natural para operación tener un estado terminal explícito en Lote (p. ej. `AGOTADO`) para poder filtrar/alertar directamente sobre la tabla `lote`.",
+      "comportamiento_que_impone_o_permite_el_codigo": "Decisión de diseño consciente y documentada, no un descuido — pero sigue siendo una fuente de confusión operativa potencial.",
+      "impacto": "Bajo — no afecta la corrección fiscal, solo la observabilidad operativa.",
+      "causa_raiz": "Decisión de diseño explícita, documentada en MIGRATION_PLAN.md.",
+      "correccion_minima": "Si se detecta fricción operativa real, agregar un valor `AGOTADO`/`RECHAZADO` al enum `EstadoLote` (cambio aditivo de schema) y setearlo en `marcarLoteAgotado`.",
+      "prueba_dinamica_futura_recomendada": "N/A — es una recomendación de mejora de observabilidad, no un bug a probar.",
+      "riesgos_del_fix": "Bajo — cambio aditivo de enum.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [],
+        "nota": "Ya resuelto como efecto colateral del fix de AUD-003 (misma sesión anterior, no de esta tanda): `EstadoLote` ganó el valor terminal `AGOTADO` y `marcarLoteAgotado` ahora lo setea en vez de dejar el Lote indefinidamente en CONSTRUIDO/ENVIADO. Un dashboard/query que filtre `Lote.estado = 'AGOTADO'` directamente sobre la tabla `lote` ya puede distinguir un lote agotado de uno sano, sin necesitar hacer join contra el estado de sus documentos.",
+        "verificacion": "Confirmado por grep en esta sesión: prisma/schema.prisma define AGOTADO en el enum EstadoLote, y loteService.js#marcarLoteAgotado escribe `estado: \"AGOTADO\"`."
+      }
+    },
+    {
+      "id": "AUD-014",
+      "severidad": "P3",
+      "titulo": "alertaCertificadosPorVencer solo emite console.warn — sin canal de notificación real a un operador",
+      "tipo": "LIMITACIÓN",
+      "fase_componente": "Cron jobs (§J, hipótesis #17)",
+      "confianza": "alta",
+      "evidencia": [
+        "src/services/cronJobs.js:45-54 (console.warn con la lista de certificados por vencer/vencidos, sin ningún envío de correo ni integración con correoService.js)",
+        "MIGRATION_PLAN.md ya documenta esto explícitamente como pendiente menor, no bloqueante"
+      ],
+      "camino_de_ejecucion": "El job corre diariamente y solo escribe en el log del proceso.",
+      "escenario_de_fallo_derivado": "Si nadie monitorea activamente los logs del servidor, un certificado puede vencer sin que ningún humano se entere hasta que SIFEN empiece a rechazar documentos (el mismo problema de fondo — error 0142 — que motivó todo el proyecto, reintroducido en el canal de alerta en vez de en el chequeo en sí).",
+      "comportamiento_esperado": "Notificación activa (correo, y potencialmente algún canal de alerta operacional) a un administrador, no solo un log pasivo.",
+      "comportamiento_que_impone_o_permite_el_codigo": "Solo logging pasivo.",
+      "impacto": "Medio en términos de negocio (podría llevar de vuelta al problema original si no se monitorea el log), pero está correctamente clasificado por el propio plan como no bloqueante para el piloto.",
+      "causa_raiz": "Trabajo pendiente ya reconocido explícitamente, no un descuido silencioso.",
+      "correccion_minima": "Conectar `alertaCertificadosPorVencer` a `correoService.js` con un destinatario administrativo configurable.",
+      "prueba_dinamica_futura_recomendada": "Test con BD local: forzar un certificado a estado POR_VENCER, correr el job, y confirmar (con un mock de nodemailer) que se dispara un envío de correo.",
+      "riesgos_del_fix": "Bajo.",
+      "remediacion": {
+        "estado": "fixed",
+        "fecha": "2026-07-11",
+        "cambios": [
+          "src/services/correoService.js#enviarAlertaCertificadosPorVencer (nueva) — arma una tabla HTML con empresa/estado/vencimiento y la envía por nodemailer, sin depender de un template de archivo (mail técnico, no uno de marca al cliente)",
+          "src/services/cronJobs.js — el job diario ahora llama a correoService.enviarAlertaCertificadosPorVencer si `SIFEN_ALERTA_EMAIL` está configurada, en su propio try/catch (un fallo de SMTP no rompe el resto del pipeline); el console.warn original se mantiene siempre, como respaldo",
+          ".env.example — nueva variable SIFEN_ALERTA_EMAIL documentada (vacía por default; sin ella, el comportamiento es idéntico al de antes del fix)"
+        ],
+        "verificacion": "Script ad-hoc: se reemplazó nodemailer.createTransport por un stub que captura el mail en vez de enviarlo por SMTP real, y se confirmó que enviarAlertaCertificadosPorVencer arma el `to`, el `subject` (con la cantidad de certificados) y un `html` que incluye cada empresa/estado pasado. No se envió ningún correo real.",
+        "pendiente": "Ninguno respecto del hallazgo original. Queda como trabajo futuro, no reportado como bug, decidir si además de correo se quiere otro canal (Slack, etc.) — no pedido por el hallazgo."
+      }
+    },
+    {
+      "id": "AUD-015",
+      "severidad": "P4",
+      "titulo": "Defaults fiscales aproximados ya reconocidos por el plan (tipo de contribuyente del cliente, plazo de crédito, motivo de NC)",
+      "tipo": "LIMITACIÓN",
+      "fase_componente": "xmlBuilderService (§D, hipótesis #14)",
+      "confianza": "alta",
+      "evidencia": [
+        "src/services/sifen/xmlBuilderService.js:44-47 (TIPO_CONTRIBUYENTE_CLIENTE_DEFAULT=2/JURIDICA, sin campo real en Cliente)",
+        "src/services/sifen/xmlBuilderService.js:29-32 (PLAZO_CREDITO_DIAS_DEFAULT='30', sin fecha de vencimiento real en el schema)",
+        "src/services/sifen/xmlBuilderService.js:24-27 (MOTIVO_NOTA_CREDITO_DEFAULT=1, sin campo motivo en NotaCredito)"
+      ],
+      "camino_de_ejecucion": "Todo documento con receptor contribuyente asume Jurídica; toda venta a crédito informa 30 días fijos; toda Nota de Crédito informa el motivo genérico 'Devolución y Ajuste de precios', sin importar el motivo real.",
+      "escenario_de_fallo_derivado": "Documentos estructuralmente válidos ante SIFEN pero semánticamente imprecisos si el receptor real es Física, el plazo real de crédito es distinto de 30 días, o el motivo real de la NC es otro.",
+      "comportamiento_esperado": "Los datos deberían reflejar la realidad de cada operación, no un default fijo.",
+      "comportamiento_que_impone_o_permite_el_codigo": "Defaults fijos, documentados explícitamente como gap por el propio equipo.",
+      "impacto": "Bajo/medio dependiendo de qué tan seguido la realidad se aparta del default asumido — no bloquea la validez estructural del XML.",
+      "causa_raiz": "El schema actual no tiene los campos necesarios (Cliente.tipo_contribuyente, fecha de vencimiento de crédito, NotaCredito.motivo) para ser preciso.",
+      "correccion_minima": "Si se necesita precisión real, ampliar el schema de forma aditiva (ya sugerido en el propio MIGRATION_PLAN.md, desvío #4) — fuera del alcance de una corrección de código puntual.",
+      "prueba_dinamica_futura_recomendada": "N/A — es un gap de producto/alcance, no un bug a testear.",
+      "riesgos_del_fix": "N/A.",
+      "remediacion": {
+        "estado": "no_change_needed",
+        "fecha": "2026-07-11",
+        "motivo": "Confirmado al investigar para esta tanda: cerrar esto de verdad (en vez de dejar los defaults documentados) requiere (a) columnas nuevas en el schema (Cliente.tipo_contribuyente, plazo de crédito real, NotaCredito.motivo) y (b) una forma real de que esos datos lleguen desde el frontend — que no vive en este repo (`factyble-back` es solo el backend) — antes de que agregar las columnas tenga algún efecto: sin un caller que las llene, `xmlBuilderService.js` seguiría leyendo `undefined`/`null` y cayendo en el mismo default de todas formas. Agregar solo las columnas sin el resto sería trabajo cosmético que no cierra el hallazgo.",
+        "pendiente": "Decisión de producto: si se necesita precisión fiscal real en estos 3 campos, es un trabajo coordinado backend+frontend, no una corrección puntual de este repo."
+      }
+    },
+    {
+      "id": "AUD-016",
+      "severidad": "P4",
+      "titulo": "Bridge Java (node-java) usado por generarPdf.js/generarPdfRecibo.js tiene un binding nativo incompatible con el Node del entorno de verificación",
+      "tipo": "LIMITACIÓN",
+      "fase_componente": "Runtime / KUDE (§M, hipótesis #16)",
+      "confianza": "alta (ya confirmado y documentado por el propio proyecto)",
+      "evidencia": [
+        "MIGRATION_PLAN.md, 'Hallazgo de entorno': node_modules/java compilado para NODE_MODULE_VERSION 93, entorno de verificación con Node v24.13.1 (requiere 137)",
+        "Dockerfile: FROM node:20-alpine + `npm install --build-from-source` — el binding se recompila en el build de la imagen contra Node 20, distinto del Node 24 usado en las sesiones de verificación ad-hoc documentadas en el plan"
+      ],
+      "camino_de_ejecucion": "N/A directamente explotable — es una discrepancia entre el entorno de verificación local (Node 24) y el entorno de build de la imagen Docker (Node 20, con `--build-from-source`), no necesariamente un problema en el entorno de despliegue real (que si usa la imagen Docker, recompila el binding contra Node 20 correctamente).",
+      "escenario_de_fallo_derivado": "Si en algún momento se actualiza la versión de Node del Dockerfile sin volver a validar que `node-java`/JasperReports siguen compilando y cargando, el KUDE (PDF) dejaría de generarse silenciosamente en el momento de emisión de cada Factura/NotaCredito (fuera de una transacción, pero bloqueante para el flujo si lanza).",
+      "comportamiento_esperado": "El bridge Java debe cargar sin error en el mismo entorno donde corre la aplicación en producción.",
+      "comportamiento_que_impone_o_permite_el_codigo": "Dependencia de un binding nativo sensible a la versión exacta de Node — ya un riesgo estructural preexistente a esta migración, no introducido por ella.",
+      "impacto": "No verificable estáticamente si el entorno de producción real (la imagen Docker, no la sesión de verificación ad-hoc) tiene este problema — el propio MIGRATION_PLAN.md ya lo marca como preexistente y fuera de alcance de esta migración.",
+      "causa_raiz": "Uso de un binding nativo (`node-java`) sensible a NODE_MODULE_VERSION, combinado con dos entornos Node distintos en juego (build de la imagen vs. verificación ad-hoc local).",
+      "correccion_minima": "Confirmar en un smoke test del propio pipeline de CI/CD (build de la imagen Docker + arranque real) que `generarPdf.js`/`generarPdfRecibo.js` cargan y generan un PDF real — no se hizo en esta auditoría por ser una verificación dinámica.",
+      "prueba_dinamica_futura_recomendada": "Smoke test de build: levantar la imagen Docker definida en este repo y ejercitar `emitirFactura` de punta a punta, confirmando que el PDF se genera sin `ERR_DLOPEN_FAILED`.",
+      "riesgos_del_fix": "N/A — es una verificación, no un cambio de código.",
+      "remediacion": {
+        "estado": "no_change_needed",
+        "fecha": "2026-07-11",
+        "motivo": "`docker` no está disponible en este entorno de ejecución (`docker --version` → 'command not found') — no se puede correr el smoke test de build recomendado. Se reconfirmó igual la parte estática del hallazgo: `node -e \"console.log(process.versions.modules)\"` da 137 en este entorno, y `require('java')` efectivamente falla al cargar el binding precompilado (`node_modules/java/build/Release/nodejavabridge_bindings.node`) — mismo síntoma ya documentado por el propio proyecto, sin cambios. Por instrucción explícita de CLAUDE.md ('no tratar el dlopen failure como una regresión ... no es algo a arreglar como parte de trabajo no relacionado'), esto no se toca desde esta auditoría.",
+        "pendiente": "El smoke test de build real (levantar la imagen Docker del repo y ejercitar emitirFactura de punta a punta) sigue pendiente, a correr en un entorno con Docker disponible — no se pudo ejecutar en esta sesión."
+      }
+    }
+  ]
+}

@@ -1,4 +1,17 @@
+const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+const timezone = require("dayjs/plugin/timezone");
 const ErrorApp = require("../error");
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+// Zona horaria real de Paraguay (AUD-002, STATIC_AUDIT_FINDINGS.json): el CDC debe reflejar el día
+// calendario real de emisión en Paraguay, no el del timezone del proceso Node. Se resuelve vía
+// dayjs+Intl (ICU ya incluida en el binario de Node desde la v13, "full-icu" por default) en vez de
+// depender de `TZ`/`tzdata` del contenedor — funciona igual sin importar cómo esté configurado el
+// sistema operativo donde corre el proceso.
+const ZONA_HORARIA_PARAGUAY = "America/Asuncion";
 
 const CDC_LONGITUD = 44;
 
@@ -22,22 +35,19 @@ const rellenarNumerico = (valor, longitud, campo) => {
 };
 
 /**
- * Formatea una fecha como YYYYMMDD (formato exigido por SIFEN para el CDC).
- * Usa los getters locales (getFullYear/getMonth/getDate), no UTC: si se construye la
- * fecha con `new Date('YYYY-MM-DD')` (que Date interpreta como medianoche UTC), en un
- * servidor con timezone distinto a Paraguay el día puede correrse. El caller debe pasar
- * un Date cuyos campos locales ya reflejen el día calendario real de emisión.
- * @param {Date} fecha - Fecha de emisión del documento
- * @returns {string} - Fecha en formato YYYYMMDD
+ * Formatea una fecha como YYYYMMDD (formato exigido por SIFEN para el CDC), en el día calendario
+ * real de Paraguay (`ZONA_HORARIA_PARAGUAY`) — no en el timezone del proceso Node. `fecha` es un
+ * instante (Date, UTC internamente) sin ambigüedad; lo único que puede estar mal es en qué día
+ * calendario cae ese instante según la zona horaria usada para leerlo, por eso se convierte siempre
+ * explícitamente en vez de usar getters locales (ver AUD-002, STATIC_AUDIT_FINDINGS.json).
+ * @param {Date} fecha - Instante de emisión del documento
+ * @returns {string} - Fecha en formato YYYYMMDD, día calendario de Paraguay
  */
 const formatearFechaEmision = (fecha) => {
   if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) {
     throw new ErrorApp("Campo fechaEmision invalido: debe ser una fecha valida", 400);
   }
-  const anio = String(fecha.getFullYear()).padStart(4, "0");
-  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
-  const dia = String(fecha.getDate()).padStart(2, "0");
-  return `${anio}${mes}${dia}`;
+  return dayjs(fecha).tz(ZONA_HORARIA_PARAGUAY).format("YYYYMMDD");
 };
 
 /**

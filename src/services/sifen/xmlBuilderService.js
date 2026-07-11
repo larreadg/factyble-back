@@ -1,6 +1,17 @@
 const xmlgen = require("facturacionelectronicapy-xmlgen").default;
+const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+const timezone = require("dayjs/plugin/timezone");
 const ErrorApp = require("../../utils/error");
 const { validarCdc } = require("../../utils/sifen/cdc");
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+// Misma zona horaria y mismo motivo que utils/sifen/cdc.js#ZONA_HORARIA_PARAGUAY (AUD-002,
+// STATIC_AUDIT_FINDINGS.json) — la fecha del XML y la del CDC deben coincidir en el mismo día
+// calendario real de Paraguay, independientemente del timezone del proceso Node.
+const ZONA_HORARIA_PARAGUAY = "America/Asuncion";
 
 const VERSION_FORMATO = 150; // dVerFor, plantilla siRecepDE_v150.xsd (ver MIGRATION_PLAN.md §1.2)
 const TIPO_DOCUMENTO_FACTURA = 1;
@@ -71,33 +82,20 @@ const repararCTipRegVacio = (xml) => xml.replace(/<cTipReg\s*\/>/, "").replace(/
 
 /**
  * Formatea una fecha como YYYY-MM-DDTHH:mm:ss (formato exigido por `data.fecha` de xmlgen,
- * validado con `isIsoDateTime`). Usa getters locales, no UTC — mismo criterio que
- * `utils/sifen/cdc.js#formatearFechaEmision`: el caller debe pasar un Date cuyos campos locales
- * reflejen el momento real de emisión en Paraguay.
+ * validado con `isIsoDateTime`), en el momento real de Paraguay (`ZONA_HORARIA_PARAGUAY`) — no en
+ * el timezone del proceso Node (ver AUD-002, STATIC_AUDIT_FINDINGS.json).
  * @param {Date} fecha
  * @returns {string}
  */
-const formatearFechaHoraISO = (fecha) => {
-  const anio = String(fecha.getFullYear()).padStart(4, "0");
-  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
-  const dia = String(fecha.getDate()).padStart(2, "0");
-  const horas = String(fecha.getHours()).padStart(2, "0");
-  const minutos = String(fecha.getMinutes()).padStart(2, "0");
-  const segundos = String(fecha.getSeconds()).padStart(2, "0");
-  return `${anio}-${mes}-${dia}T${horas}:${minutos}:${segundos}`;
-};
+const formatearFechaHoraISO = (fecha) => dayjs(fecha).tz(ZONA_HORARIA_PARAGUAY).format("YYYY-MM-DDTHH:mm:ss");
 
 /**
- * Formatea una fecha como YYYY-MM-DD (formato exigido por `params.timbradoFecha`).
+ * Formatea una fecha como YYYY-MM-DD (formato exigido por `params.timbradoFecha`), en el día
+ * calendario real de Paraguay — mismo criterio que `formatearFechaHoraISO`.
  * @param {Date} fecha
  * @returns {string}
  */
-const formatearFechaISO = (fecha) => {
-  const anio = String(fecha.getFullYear()).padStart(4, "0");
-  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
-  const dia = String(fecha.getDate()).padStart(2, "0");
-  return `${anio}-${mes}-${dia}`;
-};
+const formatearFechaISO = (fecha) => dayjs(fecha).tz(ZONA_HORARIA_PARAGUAY).format("YYYY-MM-DD");
 
 /**
  * Arma el `params` de empresa (datos del emisor, estables entre documentos) que espera

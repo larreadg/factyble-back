@@ -40,6 +40,15 @@ const crearCertificado = async ({ empresaId, alias, archivo, clave, activo = tru
     const claveCifrada = encrypt(clave);
 
     return await prisma.$transaction(async (tx) => {
+      // Bloquea la fila de la empresa hasta el commit de esta transacción — serializa cualquier
+      // alta/activación concurrente de certificados para la misma empresa (AUD-005,
+      // STATIC_AUDIT_FINDINGS.json). Sin esto, dos transacciones que arrancan antes de que exista un
+      // certificado activo previo podían terminar cada una con el suyo en `activo:true`
+      // simultáneamente, porque el `updateMany` de abajo solo desactiva filas que ya existen y están
+      // commiteadas en el momento en que corre — mismo patrón ya usado en el proyecto para la
+      // secuencia de numeración (`facturaService.js`, `FOR UPDATE`).
+      await tx.$queryRaw`SELECT id FROM empresa WHERE id = ${empresaId} FOR UPDATE`;
+
       if (activo) {
         await tx.certificado.updateMany({
           where: { empresa_id: empresaId, activo: true },
@@ -79,6 +88,9 @@ const activarCertificado = async ({ certificadoId }) => {
         throw new ErrorApp("Certificado no encontrado", 404);
       }
 
+      // Mismo lock que en crearCertificado — ver comentario ahí (AUD-005, STATIC_AUDIT_FINDINGS.json).
+      await tx.$queryRaw`SELECT id FROM empresa WHERE id = ${certificado.empresa_id} FOR UPDATE`;
+
       await tx.certificado.updateMany({
         where: { empresa_id: certificado.empresa_id, activo: true },
         data: { activo: false },
@@ -112,8 +124,8 @@ const obtenerCertificadoActivo = async ({ empresaId }) => {
       throw new ErrorApp("La empresa no tiene un certificado activo", 404);
     }
 
-    if (certificado.estado === "VENCIDO") {
-      throw new ErrorApp("El certificado activo de la empresa esta vencido", 400);
+    if (certificado.estado === "VENCIDO" || certificado.estado === "REVOCADO") {
+      throw new ErrorApp(`El certificado activo de la empresa esta ${certificado.estado === "VENCIDO" ? "vencido" : "revocado"}`, 400);
     }
 
     return {

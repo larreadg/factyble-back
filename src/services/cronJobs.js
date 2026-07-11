@@ -2,6 +2,7 @@ const cron = require('node-cron')
 const loteService = require('./sifen/loteService')
 const certificadoService = require('./sifen/certificadoService')
 const trazabilidadService = require('./sifen/trazabilidadService')
+const correoService = require('./correoService')
 
 /**
  * Jobs del pipeline nativo SIFEN (MIGRATION_PLAN.md §3.4). `facturaService.js`/
@@ -39,14 +40,26 @@ const cronJobsSifen = () => {
     })
 
     // alertaCertificadosPorVencer: recalcula estado y devuelve los certificados POR_VENCER/VENCIDO.
-    // El canal de notificación real (email a un admin) todavía no está construido — por ahora se deja
-    // registrado en el log del servidor, para no bloquear el resto del pipeline por un envío de correo
-    // sin implementar. Conectar a `correoService.js` es trabajo pendiente, no alcance de esta fase.
+    // Siempre queda registrado en el log del servidor (no depende de que el correo esté configurado);
+    // si `SIFEN_ALERTA_EMAIL` está seteada, además envía un correo al administrador (AUD-014,
+    // STATIC_AUDIT_FINDINGS.json — antes solo llegaba a console.warn). El envío de correo está aislado
+    // en su propio try/catch para no bloquear el resto del pipeline si el SMTP falla.
     cron.schedule('0 6 * * *', async () => {
         try {
             const porAlertar = await certificadoService.actualizarEstadosPorVencimiento()
             if (porAlertar.length > 0) {
                 console.warn('[cronJobs] Certificados por vencer o vencidos:', porAlertar.map((c) => ({ id: c.id, empresa_id: c.empresa_id, estado: c.estado, fecha_vencimiento: c.fecha_vencimiento })))
+
+                const destinatario = process.env.SIFEN_ALERTA_EMAIL
+                if (destinatario) {
+                    try {
+                        await correoService.enviarAlertaCertificadosPorVencer({ destinatario, certificados: porAlertar })
+                    } catch (errorCorreo) {
+                        console.error('[cronJobs] Error al enviar la alerta de certificados por correo:', errorCorreo.message)
+                    }
+                } else {
+                    console.warn('[cronJobs] SIFEN_ALERTA_EMAIL no configurada — la alerta de certificados solo queda en el log')
+                }
             }
         } catch (error) {
             console.error('[cronJobs] Error en alertaCertificadosPorVencer:', error.message)

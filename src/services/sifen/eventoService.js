@@ -7,6 +7,7 @@ const sifenClientService = require("./sifenClientService");
 const trazabilidadService = require("./trazabilidadService");
 const { interpretarCodigo, CATEGORIA } = require("../../utils/sifen/codigosRespuesta");
 const { extraerCodigoYMensaje } = require("../../utils/sifen/respuestaSoap");
+const { esAprobado } = require("../../utils/sifen/estadoHistorico");
 
 /**
  * Eventos SIFEN (MIGRATION_PLAN.md §3.1/§3.2) — solo Cancelación implementada (Decisión cerrada,
@@ -62,9 +63,12 @@ const cancelarDocumento = async (tipoDoc, documentoId, motivo) => {
     if (!documento) {
       throw new ErrorApp(`${tipoDoc} no encontrada`, 404);
     }
-    if (documento.estado_sifen !== "APROBADO") {
+    // esAprobado cubre también el documento histórico (estado_sifen NULL + sifen_estado='Aprobado'
+    // legacy, ver AUD-001 en STATIC_AUDIT_FINDINGS.json) — sin esto, ningún documento emitido antes
+    // del corte a este pipeline podía cancelarse nunca.
+    if (!esAprobado(documento)) {
       throw new ErrorApp(
-        `Solo se puede cancelar un documento en estado APROBADO (estado actual: ${documento.estado_sifen ?? "sin definir"})`,
+        `Solo se puede cancelar un documento en estado APROBADO (estado actual: ${documento.estado_sifen ?? documento.sifen_estado ?? "sin definir"})`,
         400
       );
     }
