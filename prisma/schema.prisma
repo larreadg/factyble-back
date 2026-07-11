@@ -24,8 +24,8 @@ model Usuario {
   activo             Boolean       @default(true) @db.TinyInt
   fecha_creacion     DateTime      @default(now())
   fecha_modificacion DateTime      @updatedAt
-  empresa            Empresa       @relation(fields: [empresa_id], references: [id])
-  empresa_id         Int
+  empresa            Empresa?      @relation(fields: [empresa_id], references: [id])
+  empresa_id         Int?
   facturas           Factura[]
   roles              UsuarioRol[]
   nota_credito       NotaCredito[]
@@ -217,6 +217,49 @@ model Captcha {
   fecha_expiracion DateTime
 
   @@map("captcha")
+}
+
+// Catálogo de referencia geográfica (departamento/distrito/ciudad) según la tabla
+// oficial de SIFEN ("CODIGO DE REFERENCIA GEOGRAFICA" - ekuatia.set.gov.py). No tiene
+// FK desde Establecimiento a propósito: Establecimiento.cod_distrito/cod_ciudad/
+// cod_departamento siguen siendo texto libre, este catálogo es solo de consulta.
+model Departamento {
+  id                 Int      @id @default(autoincrement())
+  codigo             String   @unique @db.VarChar(255)
+  descripcion        String   @db.VarChar(255)
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+
+  distritos Distrito[]
+
+  @@map("departamento")
+}
+
+model Distrito {
+  id                 Int      @id @default(autoincrement())
+  codigo             String   @unique @db.VarChar(255)
+  descripcion        String   @db.VarChar(255)
+  departamento_id    Int
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+
+  departamento Departamento @relation(fields: [departamento_id], references: [id])
+  ciudades     Ciudad[]
+
+  @@map("distrito")
+}
+
+model Ciudad {
+  id                 Int      @id @default(autoincrement())
+  codigo             String   @unique @db.VarChar(255)
+  descripcion        String   @db.VarChar(255)
+  distrito_id        Int
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+
+  distrito Distrito @relation(fields: [distrito_id], references: [id])
+
+  @@map("ciudad")
 }
 
 model Establecimiento {

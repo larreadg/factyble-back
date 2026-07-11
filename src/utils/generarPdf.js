@@ -3,7 +3,7 @@ const path = require("path");
 const dayjs = require("dayjs");
 const QRCode = require("qrcode");
 const { formatNumber } = require("./format");
-const PUBLIC_LOGOS = path.resolve(__dirname,"../../public/logos");
+const LOGOS_DIR = path.resolve(__dirname, "../..", process.env.LOGOS_DIR || "logos");
 const PUBLIC_QR = path.resolve(__dirname, '../../public/qr');
 
 java.classpath.push(path.resolve(__dirname, "..", "resources/lib/jasperreports.jar"));
@@ -37,7 +37,7 @@ const generarPdf = async (datos) => {
     const HashMap = java.import("java.util.HashMap");
     const params  = new HashMap();
     if (datos.empresaLogo) {
-      params.putSync("empresaLogo", path.resolve(PUBLIC_LOGOS, datos.empresaLogo));
+      params.putSync("empresaLogo", path.resolve(LOGOS_DIR, datos.empresaLogo));
     }
     params.putSync("empresaRuc",             String(datos.empresaRuc));
     params.putSync("empresaTimbrado",        String(datos.empresaTimbrado));

@@ -7,5 +7,7 @@ routes.use('/recibo', require('./reciboRoute'));
 routes.use('/rol', require('./rolRoute'));
 routes.use('/captcha', require('./captchaRoute'))
 routes.use('/nota-credito', require('./notaDeCreditoRoute'))
+routes.use('/empresa', require('./empresaRoute'))
+routes.use('/geografia', require('./geografiaRoute'))
 
 module.exports = routes;

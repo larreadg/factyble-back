@@ -1,0 +1,455 @@
+====================================================================
+FACTYBLE-BACK — API para integración de frontend
+Autenticación + GET /empresa + POST /empresa + PUT /empresa/:id
+====================================================================
+
+Base URL: http://<host>:<PORT>  (PORT según .env)
+
+--------------------------------------------------------------------
+0) CONVENCIÓN DE RESPUESTA (aplica a TODOS los endpoints)
+--------------------------------------------------------------------
+
+Éxito (código HTTP 200):
+{
+  "status": "success",
+  "code": 200,
+  "data": <objeto o array, depende del endpoint>,
+  "message": "..."
+}
+
+Error genérico (código HTTP 400/401/403/404/500, etc.):
+{
+  "status": "error",
+  "code": <mismo código que el HTTP status>,
+  "data": null,
+  "message": "<descripción del error>"
+}
+
+Error de VALIDACIÓN (400, cuando falla express-validator — nombres/formatos de campos):
+{
+  "status": "error",
+  "code": 400,
+  "data": [
+    { "type": "field", "msg": "Parámetro empresa.ruc es requerido", "path": "empresa.ruc", "location": "body" },
+    ...
+  ],
+  "message": "Error de validación"
+}
+Nota: acá "data" es un ARRAY de errores de campo (no null) — es el único endpoint/caso donde
+"data" viene poblado en una respuesta de error. Útil para mapear errores a campos del form.
+
+--------------------------------------------------------------------
+1) AUTENTICACIÓN
+--------------------------------------------------------------------
+
+1.1) Captcha (solo para login desde navegador/web — NO para apps/integraciones server-to-server)
+
+  GET /captcha
+
+  - Sin body, sin auth.
+  - Devuelve un SVG (Content-Type: image/svg+xml) para mostrar visualmente al usuario. El texto
+    de la captcha queda asociado a la IP del request en el servidor, válido 3 minutos.
+  - El usuario escribe lo que ve en el SVG, y ese texto se manda como "captcha" en el login
+    (punto 1.2).
+  - Cada nueva llamada a GET /captcha invalida la captcha anterior de esa IP.
+
+1.2) Login
+
+  POST /usuario/authenticate
+  Content-Type: application/json
+
+  Body (JSON):
+  {
+    "usuario": "admin@empresa.com",   // string, requerido — es el EMAIL del usuario
+    "password": "********",           // string, requerido
+    "captcha": "AB12CD"                // string — requerido SOLO si no se manda el header
+                                        // x-client-type: api. Debe coincidir con el texto
+                                        // mostrado en el SVG de GET /captcha (ver 1.1).
+  }
+
+  Respuesta 200:
+  {
+    "status": "success",
+    "code": 200,
+    "data": { "token": "<JWT>" },
+    "message": "Autenticación exitosa"
+  }
+
+  Errores:
+    401 - "Captcha inválida o expirada"          (captcha vencida, incorrecta, o ya usada)
+    401 - "Error al autenticar usuario"           (usuario no existe o password incorrecta)
+    400 - error de validación (falta "usuario" o "password")
+
+  El JWT devuelto se debe mandar en TODOS los endpoints protegidos como:
+    Authorization: Bearer <JWT>
+
+  Payload interno del JWT (no hace falta decodificarlo en el front, pero por si sirve):
+  {
+    "id": 12,
+    "email": "admin@empresa.com",
+    "documento": "1234567",
+    "telefono": "021123456",
+    "empresaId": 5,
+    "empresaNombre": "Empresa SRL",
+    "empresaRuc": "80012345-6",
+    "roles": ["ADMIN"]              // o ["SUPERADMIN"] para el panel de plataforma
+  }
+
+  Vencimiento del token: según JWT_EXPIRES_IN (variable de entorno del backend).
+
+1.3) Roles relevantes para esta guía
+
+  - ADMIN        -> rol operativo, por empresa (factura, recibo, nota de crédito, etc.)
+  - SUPERADMIN   -> rol de plataforma (staff de Factyble). Es el ÚNICO rol habilitado para
+                    los endpoints de /empresa documentados abajo (alta y listado de empresas).
+                    Un usuario ADMIN normal NO puede llamar a estos endpoints (403).
+
+--------------------------------------------------------------------
+2) GET /empresa — Listado de empresas (paginado)
+--------------------------------------------------------------------
+
+  GET /empresa?page=1&itemsPerPage=10&filter=texto
+  Headers:
+    Authorization: Bearer <JWT de un usuario con rol SUPERADMIN>
+
+  Query params (todos opcionales):
+    page          number  default 1
+    itemsPerPage  number  default 10
+    filter        string  busca por ruc, nombre_empresa o email (contains, no exact match)
+
+  Respuesta 200:
+  {
+    "status": "success",
+    "code": 200,
+    "data": {
+      "items": [
+        {
+          "id": 5,
+          "ruc": "80012345-6",
+          "nombre_empresa": "Empresa SRL",
+          "email": "contacto@empresa.com",
+          "telefono": "021123456",
+          "ciudad": "Asunción",
+          "tipo_contribuyente": "JURIDICA",
+          "fecha_creacion": "2026-07-11T13:53:52.679Z",
+          "cantidadEstablecimientos": 1,
+          "cantidadUsuarios": 3,
+          "certificadoActivo": {
+            "estado": "VIGENTE",              // VIGENTE | POR_VENCER | VENCIDO | REVOCADO
+            "fecha_vencimiento": "2027-07-11T13:52:09.000Z"
+          }                                    // null si la empresa no tiene certificado activo
+        }
+      ],
+      "page": 1,
+      "itemsPerPage": 10,
+      "totalItems": 23
+    },
+    "message": "Datos obtenidos"
+  }
+
+  Errores:
+    401 - sin token / token inválido
+    403 - token válido pero sin rol SUPERADMIN ("Permiso denegado")
+    400 - error de validación (page/itemsPerPage no numéricos)
+
+--------------------------------------------------------------------
+3) GET /empresa/:id — Detalle completo de una empresa
+--------------------------------------------------------------------
+
+  GET /empresa/5
+  Headers:
+    Authorization: Bearer <JWT de un usuario con rol SUPERADMIN>
+
+  Respuesta 200 (misma forma que el "data" de POST /empresa, ver sección 4):
+  {
+    "status": "success",
+    "code": 200,
+    "data": {
+      "id": 5,
+      "ruc": "80012345-6",
+      "nombre_empresa": "Empresa SRL",
+      "timbrado": "12345678",
+      "direccion": "Av. Test 123",
+      "vigente_desde": "2026-01-01T00:00:00.000Z",
+      "telefono": "021123456",
+      "email": "contacto@empresa.com",
+      "ciudad": "Asunción",
+      "logo": null,
+      "ruc_sin_dv": "80012345",
+      "digito_verificador": "6",
+      "tipo_contribuyente": "JURIDICA",
+      "tipo_impuesto": "IVA",
+      "cod_actividad_principal": "47190",
+      "desc_actividad_principal": "Venta al por menor",
+      "cod_actividad_secundaria": null,
+      "desc_actividad_secundaria": null,
+      "cod_moneda": "PYG",
+      "desc_moneda": null,
+      "csc_id": "0001",
+      "fecha_creacion": "2026-07-11T13:53:52.679Z",
+      "establecimientos": [
+        {
+          "id": 10,
+          "nombre": "Casa Matriz",
+          "direccion": "Av. Test 123",
+          "numero_casa": null,
+          "telefono": null,
+          "codigo": "001",
+          "cod_distrito": "01",
+          "cod_ciudad": "01",
+          "cod_departamento": "11",
+          "cajas": [
+            {
+              "id": 10,
+              "nombre": "Caja 1",
+              "codigo": "001",
+              "secuencia_factura": { "valor": 0 },
+              "secuencia_nota_credito": { "valor": 0 },
+              "secuencia_recibo": { "valor": 0 }
+            }
+          ]
+        }
+      ],
+      "usuarios": [
+        { "id": 14, "nombres": "Admin", "apellidos": "Empresa", "email": "admin@empresa.com", "documento": "1234567", "telefono": "021123456" }
+      ],
+      "certificados": [
+        { "id": 12, "alias": "2026", "fecha_vencimiento": "2027-07-11T13:52:09.000Z", "activo": true, "estado": "VIGENTE" }
+      ]
+    },
+    "message": "Datos obtenidos"
+  }
+  NOTA: nunca se exponen `Usuario.password`, `Certificado.clave` ni `Empresa.csc` (quedan
+  cifrados en la base y no se incluyen en la respuesta).
+
+  Errores:
+    401 - sin token / token inválido
+    403 - sin rol SUPERADMIN
+    400 - :id no es un entero válido
+    404 - "Empresa no encontrada"
+
+--------------------------------------------------------------------
+4) POST /empresa — Alta completa de una empresa (empresa + establecimientos + cajas +
+   secuencias + usuario ADMIN inicial + certificado), TODO en una transacción atómica.
+--------------------------------------------------------------------
+
+  POST /empresa
+  Content-Type: multipart/form-data
+  Headers:
+    Authorization: Bearer <JWT de un usuario con rol SUPERADMIN>
+
+  El body va en DOS campos del form-data (no es JSON plano, porque hay que mandar un
+  archivo binario junto con datos estructurados):
+
+    campo "data"          -> string con el JSON completo (estructura detallada abajo)
+    campo "certificado"   -> archivo .p12 o .pfx (máx. 2 MB)
+
+  Ejemplo con fetch/FormData en JS:
+
+    const fd = new FormData();
+    fd.append('data', JSON.stringify(payload));   // payload = objeto de más abajo
+    fd.append('certificado', fileInput.files[0]);  // <input type="file">
+
+    await fetch('/empresa', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },  // NO seteés Content-Type a mano,
+                                                        // el browser arma el boundary solo
+      body: fd,
+    });
+
+  --------------------------------------------------------------
+  4.1) Estructura completa del JSON del campo "data"
+  --------------------------------------------------------------
+
+  {
+    "empresa": {
+      "ruc": "80012345-6",              // string, requerido — RUC completo (con DV)
+      "rucSinDv": "80012345",           // string, requerido — solo dígitos, 1 a 8 dígitos
+      "digitoVerificador": "6",         // string, requerido — UN solo dígito (0-9).
+                                         //   Se valida contra rucSinDv con el algoritmo
+                                         //   Módulo 11 de SIFEN — si no coincide, 400.
+      "nombreEmpresa": "Empresa SRL",   // string, requerido
+      "timbrado": "12345678",           // string, requerido
+      "direccion": "Av. Test 123",      // string, requerido
+      "vigenteDesde": "2026-01-01",     // string fecha ISO-8601, requerido
+      "telefono": "021123456",          // string, requerido
+      "email": "contacto@empresa.com",  // string email, requerido
+      "ciudad": "Asunción",             // string, requerido
+      "logo": null,                     // string (url/path) u omitir — OPCIONAL
+
+      "tipoContribuyente": "JURIDICA",  // requerido — "FISICA" | "JURIDICA"
+      "tipoImpuesto": "IVA",            // requerido — "IVA" | "ISC" | "RENTA" | "NINGUNO" | "IVA_RENTA"
+      "codActividadPrincipal": "47190", // string, requerido
+      "descActividadPrincipal": "Venta al por menor", // string, requerido
+      "codActividadSecundaria": null,   // string u omitir — OPCIONAL
+      "descActividadSecundaria": null,  // string u omitir — OPCIONAL
+      "codMoneda": "PYG",               // string 3 chars — OPCIONAL, default "PYG"
+      "descMoneda": null,               // string u omitir — OPCIONAL
+
+      "csc": "CODIGO-SEGURIDAD-CONTRIBUYENTE",  // string, requerido (se cifra antes de guardar)
+      "cscId": "0001"                            // string, requerido
+    },
+
+    "establecimientos": [                // array, requerido, MÍNIMO 1 elemento
+      {
+        "nombre": "Casa Matriz",         // string, requerido
+        "direccion": "Av. Test 123",     // string, requerido
+        "numeroCasa": null,              // string u omitir — OPCIONAL
+        "telefono": null,                // string u omitir — OPCIONAL
+        "codigo": "001",                 // string, requerido — EXACTO 3 dígitos ("001".."999")
+        "codDistrito": "01",             // string, requerido (código de catálogo SIFEN)
+        "codCiudad": "01",               // string, requerido
+        "codDepartamento": "11",         // string, requerido
+
+        "cajas": [                       // array, requerido, MÍNIMO 1 elemento por establecimiento
+          {
+            "nombre": "Caja 1",                    // string, requerido
+            "codigo": "001",                        // string, requerido — EXACTO 3 dígitos
+            "secuenciaFacturaInicial": 0,            // int >= 0 — OPCIONAL, default 0
+            "secuenciaNotaCreditoInicial": 0,        // int >= 0 — OPCIONAL, default 0
+            "secuenciaReciboInicial": 0              // int >= 0 — OPCIONAL, default 0
+          }
+        ]
+      }
+    ],
+
+    "usuarioAdmin": {                    // el primer usuario con rol ADMIN de la empresa
+      "nombres": "Admin",                // string, requerido
+      "apellidos": "Empresa",            // string, requerido
+      "email": "admin@empresa.com",      // string email, requerido — debe ser único en todo el sistema
+      "documento": "1234567",            // string, requerido
+      "telefono": "021123456",           // string, requerido
+      "password": "MinimoOchoChars"      // string, requerido, mínimo 8 caracteres
+    },
+
+    "certificado": {
+      "alias": "2026",                   // string, requerido — identificador legible (ej. año)
+      "clave": "contraseñaDelP12"        // string, requerido — contraseña del archivo .p12
+                                          //   (viaja en texto plano por HTTPS, se cifra en el
+                                          //   servidor antes de persistir — usar SIEMPRE HTTPS)
+    }
+  }
+
+  --------------------------------------------------------------
+  4.2) Reglas de validación importantes (para mostrar errores en el form ANTES de mandar)
+  --------------------------------------------------------------
+
+  - empresa.rucSinDv: solo dígitos, 1 a 8 caracteres.
+  - empresa.digitoVerificador: exactamente 1 dígito, y DEBE ser matemáticamente consistente
+    con rucSinDv (Módulo 11). Si el usuario no sabe el DV correcto, mejor no pre-calcularlo en
+    el front y dejar que el backend lo valide — el mensaje de error es claro: "El dígito
+    verificador no corresponde al RUC informado (rucSinDv)".
+  - establecimientos[].codigo y establecimientos[].cajas[].codigo: EXACTAMENTE 3 dígitos
+    (ej. "001", no "1" ni "0001").
+  - RUC duplicado (ruc o rucSinDv ya usado por otra empresa) -> 400.
+  - Email de usuarioAdmin duplicado (ya usado por cualquier usuario del sistema) -> 400.
+  - certificado.clave incorrecta o archivo corrupto -> 400, con mensaje descriptivo.
+  - Falta el archivo en el campo "certificado" -> 400 ("El archivo del certificado (.p12 o
+    .pfx) es requerido en el campo \"certificado\"").
+  - Archivo con extensión distinta a .p12/.pfx, o mayor a 2MB -> 400.
+
+  Estas validaciones corren TODAS antes de tocar la base de datos, así que ante cualquier
+  error no queda una empresa a medio crear ni un archivo huérfano en el servidor.
+
+  --------------------------------------------------------------
+  4.3) Respuesta 200
+  --------------------------------------------------------------
+
+  Misma forma exacta que GET /empresa/:id (ver sección 3) — la empresa recién creada, con
+  establecimientos -> cajas -> secuencias, usuarios y certificados anidados, sin exponer
+  password/clave/csc.
+
+  {
+    "status": "success",
+    "code": 200,
+    "data": { ... igual que sección 3 ... },
+    "message": "Empresa creada"
+  }
+
+  --------------------------------------------------------------
+  4.4) Códigos de error posibles
+  --------------------------------------------------------------
+
+    400 - error de validación de formato (data[] con el detalle campo por campo)
+    400 - "El dígito verificador no corresponde al RUC informado (rucSinDv)"
+    400 - "Ya existe una empresa con ese RUC"
+    400 - "El email del usuario administrador ya está en uso"
+    400 - "El certificado no pudo leerse (¿contraseña incorrecta o archivo corrupto?): ..."
+    400 - "El archivo del certificado (.p12 o .pfx) es requerido en el campo \"certificado\""
+    400 - "El certificado debe ser un archivo .p12 o .pfx" / error de tamaño de archivo
+    401 - sin token / token inválido
+    403 - token válido pero sin rol SUPERADMIN
+    500 - "El rol ADMIN no existe, debe crearse antes de dar de alta una empresa"
+          (error de configuración del servidor, no del usuario — avisar a backend si aparece)
+
+--------------------------------------------------------------------
+5) PUT /empresa/:id — Actualización parcial de los datos de una empresa
+--------------------------------------------------------------------
+
+  PUT /empresa/5
+  Content-Type: application/json
+  Headers:
+    Authorization: Bearer <JWT de un usuario con rol SUPERADMIN>
+
+  IMPORTANTE: este endpoint SOLO edita las columnas propias de `Empresa` (ver body abajo).
+  NO acepta ni toca establecimientos, cajas, secuencias de numeración, usuarios ni
+  certificados — esos son otros recursos, y editar secuencias por acá podría desalinearlas
+  contra la numeración fiscal ya emitida. Para esos recursos hace falta otro endpoint (no
+  implementado todavía).
+
+  Es un update PARCIAL: se manda solo el/los campo(s) que se quieren cambiar, el resto queda
+  intacto. Body vacío -> 400. Todos los campos son opcionales individualmente, pero debe
+  venir al menos uno.
+
+  Body (JSON, mismos nombres/reglas que `empresa.*` de POST /empresa, sección 4.1, ahora
+  todos OPCIONALES):
+  {
+    "ruc": "80012345-6",
+    "rucSinDv": "80012345",           // si se manda, DEBE mandarse junto con digitoVerificador
+                                        // (o ya debe existir un digitoVerificador previo en la
+                                        // empresa) — se revalida Módulo 11 contra el valor final
+    "digitoVerificador": "6",
+    "nombreEmpresa": "Empresa SRL",
+    "timbrado": "12345678",
+    "direccion": "Av. Test 123",
+    "vigenteDesde": "2026-01-01",
+    "telefono": "021123456",
+    "email": "contacto@empresa.com",
+    "ciudad": "Asunción",
+    "logo": null,
+    "tipoContribuyente": "JURIDICA",
+    "tipoImpuesto": "IVA",
+    "codActividadPrincipal": "47190",
+    "descActividadPrincipal": "Venta al por menor",
+    "codActividadSecundaria": null,
+    "descActividadSecundaria": null,
+    "codMoneda": "PYG",
+    "descMoneda": null,
+    "csc": "CODIGO-SEGURIDAD-CONTRIBUYENTE",  // si se manda, se re-cifra antes de guardar
+    "cscId": "0001"
+  }
+
+  Ejemplo mínimo (solo cambiar el teléfono):
+  { "telefono": "021999999" }
+
+  Respuesta 200: misma forma que GET /empresa/:id (sección 3), con los cambios aplicados.
+  {
+    "status": "success",
+    "code": 200,
+    "data": { ... igual que sección 3 ... },
+    "message": "Empresa actualizada"
+  }
+
+  Errores:
+    400 - error de validación de formato (data[] con el detalle campo por campo)
+    400 - "Debe informarse al menos un campo a actualizar" (body vacío)
+    400 - "rucSinDv y digitoVerificador deben informarse juntos"
+    400 - "El dígito verificador no corresponde al RUC informado (rucSinDv)"
+    400 - "Ya existe otra empresa con ese RUC"
+    401 - sin token / token inválido
+    403 - token válido pero sin rol SUPERADMIN
+    404 - "Empresa no encontrada"
+
+====================================================================
+FIN
+====================================================================

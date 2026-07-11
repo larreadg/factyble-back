@@ -216,4 +216,5 @@ module.exports = {
   obtenerCertificadoActivo,
   listarCertificadosPorEmpresa,
   actualizarEstadosPorVencimiento,
+  calcularEstadoPorVencimiento,
 };

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
+    "create:superadmin": "node scripts/createSuperAdmin.js",
+    "db:limpiar": "node scripts/limpiarBd.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -35,10 +37,12 @@
     "form-data": "^4.0.0",
     "java": "^0.14.0",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.2.0",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.14",
     "numero-a-letras": "^1.0.6",
     "qrcode": "^1.5.3",
+    "sharp": "^0.35.3",
     "svg-captcha": "^1.4.0",
     "uuid": "^10.0.0"
   },

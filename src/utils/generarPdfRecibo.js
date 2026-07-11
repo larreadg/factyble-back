@@ -3,7 +3,7 @@ const path = require("path");
 const dayjs = require("dayjs");
 const { formatNumber } = require("./format");
 
-const PUBLIC_LOGOS = path.resolve(__dirname, "../../public/logos");
+const LOGOS_DIR = path.resolve(__dirname, "../..", process.env.LOGOS_DIR || "logos");
 const PUBLIC_FIRMAS = path.resolve(__dirname, "../../public/firmas");
 
 java.classpath.push(path.resolve(__dirname, "..", "resources/lib/jasperreports.jar"));
@@ -51,7 +51,7 @@ const generarPdfRecibo = async (datos) => {
     const params = new HashMap();
 
     if (datos.empresaLogo) {
-      params.putSync("empresaLogo", path.resolve(PUBLIC_LOGOS, datos.empresaLogo));
+      params.putSync("empresaLogo", path.resolve(LOGOS_DIR, datos.empresaLogo));
     }
 
     if (datos.empresaFirma || datos.empresaRuc) {

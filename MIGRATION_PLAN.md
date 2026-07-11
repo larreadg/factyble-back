@@ -4,7 +4,7 @@
 
 ## Estado de implementación (para retomar en otra sesión)
 
-> Última actualización: 2026-07-11 (sesión 5 — correcciones de la auditoría estática, ver debajo).
+> Última actualización: 2026-07-11 (sesión 7 — usuario SUPERADMIN sin empresa + `PUT /empresa/:id`, ver Fase 5.3 debajo).
 
 ### Fase 5.1 — Correcciones de la auditoría estática (sesión 5, 2026-07-11)
 
@@ -20,11 +20,11 @@
 | AUD-003 (P1) — doble envío de lote | Claim atómico (`updateMany` condicional `CONSTRUIDO -> ENVIANDO`) antes de llamar a SIFEN en `enviarLotesConstruidos`. Nuevos estados `EstadoLote.ENVIANDO`/`AGOTADO` (migración aditiva `20260711121316_lote_estado_enviando_agotado`). **Bug adicional encontrado y corregido al implementar**: `marcarLoteAgotado` nunca sacaba `Lote.estado` de `CONSTRUIDO`, así que un lote rechazado/agotado se reenviaba a SIFEN indefinidamente — ahora transiciona a `AGOTADO` (terminal) | `services/sifen/loteService.js`, `prisma/schema.prisma` |
 | AUD-004 (P2) — certificado revocado no rechazado | `obtenerCertificadoActivo` ahora rechaza `REVOCADO` además de `VENCIDO` | `services/sifen/certificadoService.js` |
 | AUD-005 (P2) — carrera de activación de certificado | `crearCertificado`/`activarCertificado` toman `SELECT ... FOR UPDATE` sobre la fila de `Empresa` dentro de la transacción (mismo patrón que la secuencia de numeración) — serializa altas/activaciones concurrentes para la misma empresa | `services/sifen/certificadoService.js` |
-| AUD-006 (P2) — CSC en texto plano | `utils/crypto.js#decryptTolerante` (descifra si el valor fue cifrado, si no lo devuelve tal cual) usado al leer `Empresa.csc` en `loteService`. **No se tocó el lado de escritura**: no existe hoy ningún endpoint/CRUD de `Empresa`/`Certificado` en `src/routes/` — el alta de `csc` sigue siendo manual/ad-hoc (Prisma Studio o SQL directo), fuera del alcance de este fix | `utils/crypto.js`, `services/sifen/loteService.js` |
+| AUD-006 (P2) — CSC en texto plano | `utils/crypto.js#decryptTolerante` (descifra si el valor fue cifrado, si no lo devuelve tal cual) usado al leer `Empresa.csc` en `loteService`. El lado de escritura quedó cerrado en Fase 5.2 (ver debajo): `empresaService.js#crearEmpresaCompleta` cifra `csc` con `encrypt()` antes de persistir — ya no hay ningún camino de escritura que deje `csc` en texto plano | `utils/crypto.js`, `services/sifen/loteService.js`, `services/empresaService.js` |
 | AUD-007 (P2) — filtros Prisma `not`/`notIn` ante NULL | Las 2 queries restantes con esta ambigüedad (guard de NC vigentes antes de cancelar una Factura, suma de NC previas antes de emitir una nueva) ya no filtran `estado_sifen` en el `where` — traen todo y filtran explícito en JS con `esCancelado`/`esRechazado`, sin depender de cómo Prisma trate NULL | `facturaService.js`, `notaDeCreditoService.js` |
 | AUD-008 (P2) — parseo SOAP ambiguo | `buscarValorPorSufijo`/`extraerCodigoYMensaje` aceptan `excluirSufijos` — usado en `consultarLotes`/`enviarLotesConstruidos` para que la extracción del código a nivel de sobre/lote nunca pueda descender a leer por error el código de un documento individual dentro de `gResProcLoteDe`. Sigue siendo una mitigación, no una confirmación — el spike #3 (respuesta real de SIFEN) sigue descartado | `utils/sifen/respuestaSoap.js`, `services/sifen/loteService.js` |
 | AUD-009 (P2) — firma/armado sin claim atómico | `firmarPendientes` reclama cada documento (`GENERADO -> FIRMANDO`, nuevo valor transitorio en `EstadoSifen`, migración aditiva `20260711124525_estado_sifen_firmando`) antes de firmarlo; libera el claim si falla. `crearLoteConDocumentos` agrega `lote_id: null` al `updateMany` de asignación (antes podía "robar" en silencio un documento ya tomado por otro lote concurrente) | `services/sifen/loteService.js`, `prisma/schema.prisma` |
-| AUD-010 (P2) — PII en trazabilidad sin control de acceso | **No modificado.** Verificado al investigar el fix: no existe ningún controller/route que exponga `trazabilidadService`/`certificadoService` hoy (`src/routes/` no tiene `certificadoRoute`/`trazabilidadRoute`/`empresaRoute`) — sin superficie HTTP, el hallazgo queda acotado a exposición por acceso directo a BD, no por API. Retención (90 días) y minimización de payload siguen siendo una decisión de producto/cumplimiento pendiente, no un bug de código | — |
+| AUD-010 (P2) — PII en trazabilidad sin control de acceso | **No modificado en esa sesión.** Verificado al investigar el fix: no existía ningún controller/route que expusiera `trazabilidadService`/`certificadoService` (`src/routes/` no tenía `certificadoRoute`/`trazabilidadRoute`/`empresaRoute`) — sin superficie HTTP, el hallazgo quedaba acotado a exposición por acceso directo a BD, no por API. **La premisa cambió en Fase 5.2**: ahora existe `empresaRoute.js` (`POST /empresa`, gateado por `authJwt(['SUPERADMIN'])`), pero solo para alta — no expone lectura de `trazabilidadService` ni de `Certificado.clave`/`Empresa.csc` (la respuesta los omite explícitamente, ver `empresaService.js#obtenerEmpresaCompleta`). Retención (90 días) y minimización de payload de `SifenTrazabilidad` siguen siendo una decisión de producto/cumplimiento pendiente, no un bug de código | `routes/empresaRoute.js` |
 | AUD-011 (P2) — cron sin mutex distribuido | **No es un fix de código** — ver nota operativa abajo | — |
 
 **Verificación**: todos los cambios de código pasan `node --check`; el schema pasa `npx prisma
@@ -55,6 +55,104 @@ equivalente) a los 5 jobs de `cronJobsSifen()` — hoy ninguno lo tiene.
 
 **Pendiente real** (no bloqueado por falta de información, sino por falta de herramienta en esta
 sesión): AUD-016 espera un entorno con Docker para el smoke test de build real.
+
+### Fase 5.2 — Alta completa de empresa: `POST /empresa` (sesión 6, 2026-07-11)
+
+Cierra el gap que AUD-006/AUD-010 dejaban explícitamente documentado: no existía ningún
+endpoint para dar de alta `Empresa`/`Certificado`/`Establecimiento`/`Caja`/secuencias — el alta
+era manual (Prisma Studio o SQL directo). Decisiones de diseño (confirmadas con el usuario antes
+de implementar):
+
+- **Autorización**: nuevo rol `SUPERADMIN` (migración de datos, no de schema —
+  `prisma/migrations/20260711134651_add_superadmin_rol`, `INSERT` idempotente vía
+  `WHERE NOT EXISTS` porque `rol.nombre` no tiene constraint `UNIQUE`), distinto de `ADMIN`
+  (que es por-empresa). Solo staff de plataforma puede onboardear una empresa nueva.
+- **Alcance atómico**: una sola request crea, en una única `prisma.$transaction`, la `Empresa`
+  con **todos** sus campos fiscales (incluidos los que el schema marca nullable para permitir
+  backfill de filas legacy — acá son obligatorios, ver `empresaRoute.js`), al menos un
+  `Establecimiento` con al menos una `Caja`, las 3 secuencias de esa caja
+  (`SecuenciaFactura`/`SecuenciaNotaCredito`/`SecuenciaRecibo`, inicializadas en 0 o en el valor
+  que mande el caller), el primer `Usuario` con rol `ADMIN` de esa empresa, y el `Certificado`.
+  Si algo falla, no queda estado parcial (verificado con script ad-hoc: contraseña de
+  certificado incorrecta y RUC duplicado no dejan ninguna fila huérfana ni el `.p12` huérfano en
+  disco).
+- **Certificado**: se sube como archivo binario (`multipart/form-data`, campo `certificado`,
+  `.p12`/`.pfx`, máx. 2MB) vía nueva dependencia `multer@^2` (se instaló la v2, no la v1 —
+  la v1 tiene vulnerabilidades conocidas sin fix). Se guarda en `certificados/` en la raíz del
+  repo (ya estaba en `.gitignore`, confirmando que era la ubicación prevista) — **no** en
+  `public/`, que se sirve estático y expondría la clave privada del certificado por HTTP. Path
+  configurable vía `SIFEN_CERTIFICADOS_DIR` (nueva variable en `.env.example`). La vigencia del
+  `.p12` se valida contra el archivo real (`firmadorService.obtenerVencimientoCertificado`)
+  **antes** de escribir nada en la base de datos.
+- **Contrato del payload**: multipart con dos campos — `data` (JSON con `empresa`,
+  `establecimientos[].cajas[]`, `usuarioAdmin`, `certificado.alias`/`certificado.clave`) y
+  `certificado` (el archivo). Los nombres de campo del JSON son camelCase (`rucSinDv`,
+  `nombreEmpresa`, etc.), igual que `empresaId` en `POST /usuario/register` — el mapeo a las
+  columnas `snake_case` de Prisma pasa por `empresaService.js`. La respuesta, en cambio, refleja
+  la forma nativa de Prisma (`ruc_sin_dv`, `nombre_empresa`), igual que el resto de los endpoints
+  de lectura del proyecto (p. ej. `rolService.getRoles`).
+- **Validaciones de negocio agregadas** (más allá de tipos/formato en `empresaRoute.js`): el
+  dígito verificador informado se recalcula con `calcularDigitoVerificador` (`utils/sifen/cdc.js`,
+  el mismo Módulo 11 que ya usa el CDC) y se rechaza si no coincide con el RUC; RUC duplicado y
+  email de usuario duplicado se rechazan con 400 antes de tocar la transacción.
+- **Reuso**: se exportó `certificadoService.js#calcularEstadoPorVencimiento` (antes privado) para
+  no duplicar la lógica de `VIGENTE`/`POR_VENCER`/`VENCIDO` al crear el certificado dentro de la
+  transacción de `empresaService.js` — no se pudo reusar `certificadoService.crearCertificado`
+  directamente porque abre su propia transacción y esta alta necesita que todo el certificado
+  entre en la misma transacción que la empresa.
+
+**Añadido en la misma sesión, a pedido del usuario**: `GET /empresa` (listado paginado,
+`page`/`itemsPerPage`/`filter` por `ruc`/`nombre_empresa`/`email`, vista liviana con conteo de
+establecimientos/usuarios y el certificado activo) y `GET /empresa/:id` (detalle completo, misma
+forma que la respuesta de `POST /empresa`, reusando el mismo `select` vía
+`EMPRESA_COMPLETA_SELECT` para no duplicarlo). Ambos gateados por `SUPERADMIN`, igual que el
+alta. Contrato completo (bodies, query params, códigos de error) documentado en `api.txt` (raíz
+del repo) para integración de frontend.
+
+**Verificación**: `node --check` en los 5 archivos nuevos/tocados; smoke test end-to-end con
+script ad-hoc (no persistido, mismo patrón que el resto del proyecto) contra la BD MySQL local
+real — request `multipart/form-data` real vía `http`+`form-data` con un `.p12` autofirmado
+generado con `openssl` para la prueba, contra un server Express que monta solo `empresaRoute.js`
+(montar `src/routes/index.js` completo dispara el `ERR_DLOPEN_FAILED` ya documentado del bridge
+Java — AUD-016, no relacionado con este cambio). Se verificó: creación exitosa con los 4 niveles
+anidados + certificado cifrado + secuencias en 0; rollback limpio (sin empresa ni archivo
+huérfano) con contraseña de certificado incorrecta; rechazo 400 por RUC duplicado sin crear una
+segunda fila.
+
+**Archivos**: `prisma/migrations/20260711134651_add_superadmin_rol/`, `src/routes/empresaRoute.js`,
+`src/controllers/empresaController.js`, `src/services/empresaService.js`,
+`src/middleware/uploadCertificado.js`, `src/services/sifen/certificadoService.js` (solo el
+`export` nuevo), `src/routes/index.js`, `.env.example`, `package.json`/`package-lock.json`
+(dependencia `multer`).
+
+### Fase 5.3 — Usuario SUPERADMIN sin empresa + `PUT /empresa/:id` (sesión 7, 2026-07-11)
+
+- **`Usuario.empresa_id` ahora nullable** (migración `20260711163646_usuario_empresa_id_opcional`,
+  `Empresa? @relation(...)`, FK con `ON DELETE SET NULL`): staff de plataforma (`SUPERADMIN`) no
+  pertenece a ninguna empresa cliente, a diferencia de `ADMIN`. `usuarioService.js#authenticateUsuario`
+  ajustado para no asumir `user.empresa` no-null al armar el payload del JWT
+  (`empresaNombre`/`empresaRuc` quedan `null` para un `SUPERADMIN` sin empresa).
+- **`scripts/createSuperAdmin.js`** (reusable, `npm run create:superadmin -- --email=... --password=...
+  --nombres=... --apellidos=... --documento=... --telefono=...`): crea el usuario con
+  `empresa_id: null` y le asigna el rol `SUPERADMIN`. Es el único camino para dar de alta staff de
+  plataforma — no hay endpoint HTTP para esto, a propósito (evita exponer creación de superadmins
+  por API).
+- **`PUT /empresa/:id`** (`empresaService.js#actualizarEmpresa`, gateado por `SUPERADMIN`): update
+  PARCIAL de las columnas propias de `Empresa` únicamente — deliberadamente NO acepta
+  establecimientos/cajas/secuencias/usuarios/certificado (editar secuencias por acá desalinearía la
+  numeración fiscal ya emitida; esos siguen sin tener endpoint de edición). Revalida Módulo 11 si se
+  toca `rucSinDv`/`digitoVerificador` (deben ir juntos, o el que falte se toma del valor ya persistido)
+  y unicidad de RUC excluyéndose a sí misma. `csc` se re-cifra si viene en el body. Documentado en
+  `api.txt` sección 5.
+- **Verificación**: `node --check` en los archivos tocados; migración aplicada y `prisma generate`
+  regenerado contra la BD MySQL local real; smoke tests ad-hoc (no persistidos) — creación de
+  superadmin + login end-to-end vía `authenticateUsuario`; `actualizarEmpresa` con update parcial
+  (secuencias/otros campos intactos verificados), rechazo de DV inconsistente, rechazo de RUC
+  duplicado, 404 de empresa inexistente; smoke test HTTP completo de `PUT /empresa/:id` (sin token,
+  rol `ADMIN` sin permiso, body vacío, `:id` inválido, email inválido, empresa inexistente, y update
+  válido) contra un server Express que monta solo `empresaRoute.js` (mismo patrón que Fase 5.2, evita
+  el `ERR_DLOPEN_FAILED` de `routes/index.js` completo). Todos los datos de prueba se crearon y
+  borraron en el mismo script, sin dejar filas huérfanas.
 
 ### Fase 1 — Fundamentos: EN PROGRESO
 
