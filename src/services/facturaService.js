@@ -4,12 +4,16 @@ const ErrorApp = require("../utils/error");
 const { calcularImpuesto } = require("../utils/facturacion");
 const generarPdf = require("../utils/generarPdf");
 const { v4: uuidv4 } = require("uuid");
-const { conectarDbApiFacturacion } = require("../db/dbApiFacturacion");
-const FormData = require("form-data");
-const axios = require("axios");
 const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
-const { enviarErrorFactura, enviarFactura, enviarNotaDeCredito, enviarErrorNotaDeCredito } = require("./correoService");
-const { obtenerPeriodicidad } = require("../utils/date");
+const { enviarFactura } = require("./correoService");
+const { construirCdc } = require("../utils/sifen/cdc");
+const loteService = require("./sifen/loteService");
+const eventoService = require("./sifen/eventoService");
+
+// tipoDocumento SIFEN para el CDC (MIGRATION_PLAN.md §1.3) — 1=Factura, ver xmlBuilderService.js
+const CDC_TIPO_DOCUMENTO_FACTURA = 1;
+const CDC_TIPO_EMISION_NORMAL = 1;
+const CDC_TIPO_CONTRIBUYENTE = { FISICA: 1, JURIDICA: 2 };
 
 const emitirFactura = async (datos, datosUsuario) => {
   try {
@@ -158,7 +162,10 @@ const emitirFactura = async (datos, datosUsuario) => {
     //Datos adicionales
     const facturaUuid = uuidv4();
 
-    // Se usa transacción y FOR UPDATE para bloquear la tabla al crear el número de factura por si hay concurrencia
+    // Se usa transacción y FOR UPDATE para bloquear la tabla al crear el número de factura por si hay concurrencia.
+    // La firma nativa (SIFEN, MIGRATION_PLAN.md Fase 5) participa de la misma transacción: si falla
+    // (certificado vencido/ausente, datos fiscales incompletos de la empresa), todo se revierte junto
+    // con la numeración recién asignada — no queda un número de Factura "quemado".
     const factura = await prisma.$transaction(async (tx) => {
       const secuencia = await tx.$queryRaw`SELECT valor FROM secuencia_factura WHERE caja_id = ${caja.id} FOR UPDATE`
 
@@ -169,7 +176,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       const numeroFactura = Number(secuencia[0].valor) + 1;
       await tx.$executeRaw`UPDATE secuencia_factura SET valor = ${numeroFactura} WHERE caja_id = ${caja.id}`;
 
-      const codigosSeguridadRaw = await prisma.factura.findMany({
+      const codigosSeguridadRaw = await tx.factura.findMany({
         select: {
           codigo_seguridad: true,
         },
@@ -186,21 +193,24 @@ const emitirFactura = async (datos, datosUsuario) => {
         codigoSeguridadAleatorio = generarCodigoSeguridad();
       }
 
-      //Llamar a la API de Facturación electrónica
-      const resultado = await apiFacturacionElectronica({
-        ...datos,
-        facturaUuid,
-        codigoSeguridadAleatorio,
-        numeroFactura,
-        empresaRuc: usuario.empresa.ruc
+      // CDC calculado localmente (MIGRATION_PLAN.md §1.3) — ya no lo devuelve la API PHP legacy.
+      const [rucSinDv, dvEmisor] = usuario.empresa.ruc.split('-');
+      const cdc = construirCdc({
+        tipoDocumento: CDC_TIPO_DOCUMENTO_FACTURA,
+        rucSinDv,
+        dvEmisor,
+        establecimiento: establecimiento.codigo,
+        punto: caja.codigo,
+        numero: numeroFactura,
+        tipoContribuyente: CDC_TIPO_CONTRIBUYENTE[usuario.empresa.tipo_contribuyente],
+        fechaEmision: new Date(),
+        tipoEmision: CDC_TIPO_EMISION_NORMAL,
+        codigoSeguridad: codigoSeguridadAleatorio,
       });
 
-      if (!resultado || resultado.status != true) {
-        throw new ErrorApp("Error al generar factura", 500);
-      }
-
-      //Crear factura
-      const factura = await prisma.factura.create({
+      //Crear factura (estado_sifen: GENERADO — el pipeline nativo la firma a continuación, en esta
+      //misma transacción; `xml`/`linkqr`/`sifen_estado` legacy quedan sin escribir, ver MIGRATION_PLAN.md §2.2)
+      const factura = await tx.factura.create({
         data: {
           numero_factura: numeroFactura,
           factura_uuid: facturaUuid,
@@ -209,9 +219,8 @@ const emitirFactura = async (datos, datosUsuario) => {
           condicion_venta: datos.condicionVenta,
           total_iva: datos.totalIva,
           total: datos.total,
-          cdc: resultado.cdc,
-          xml: resultado.xmlLink,
-          linkqr: resultado.link,
+          cdc,
+          estado_sifen: 'GENERADO',
           codigo_seguridad: codigoSeguridadAleatorio,
           caja_id: caja.id
         },
@@ -228,11 +237,14 @@ const emitirFactura = async (datos, datosUsuario) => {
         descripcion: e.descripcion,
       }));
 
-      await prisma.facturaDetalle.createMany({
+      await tx.facturaDetalle.createMany({
         data: datosFacturaDetalle,
       });
 
-      return factura
+      // Firma + QR sincrónicos (mismo comportamiento que ya tenía la API PHP legacy — solo el envío a
+      // SIFEN es asíncrono por lote, ver "Conflictos detectados" en MIGRATION_PLAN.md). Devuelve la
+      // Factura ya con `xml_firmado`/`linkqr`/`estado_sifen: FIRMADO`.
+      return loteService.firmarDocumentoRecienCreado('FACTURA', factura.id, tx);
     })
 
     const itemsPdf = datos.items.map((e) => {
@@ -305,136 +317,6 @@ const emitirFactura = async (datos, datosUsuario) => {
     console.log(error);
     ErrorApp.handleServiceError(error, "Error al crear factura");
   }
-};
-
-const apiFacturacionElectronica = async (datos) => {
-  // return { status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test' }
-
-  const form = new FormData();
-
-  const condicionPago = datos.condicionVenta == "CONTADO" ? 1 : 2;
-
-  let pagos = [{}];
-  let credito = null;
-
-  if (datos.condicionVenta == 'CONTADO') {
-    pagos = [
-      {
-        name: "EFECTIVO",
-        tipoPago: "1", // 1 (efectivo), 3 (TC), 4 (TD),
-        monto: Number(datos.total),
-      }
-    ]
-  } else {
-
-    if (datos.tipoCredito == 'CUOTA') {
-      let cuotas = [];
-      const monto = Number(datos.total) / Number(datos.cantidadCuota);
-      let fechaVencimiento = dayjs();
-      const periodicidad = obtenerPeriodicidad(datos.periodicidad);
-
-      for (let i = 0; i < Number(datos.cantidadCuota); i++) {
-        fechaVencimiento = fechaVencimiento.add(periodicidad.valor, periodicidad.unidad);
-
-        const cuota = {
-          numero: i + 1,
-          monto,
-          fechaVencimiento: fechaVencimiento.format('YYYY-MM-DD')
-        }
-
-        cuotas.push(cuota);
-      }
-
-      credito = {
-        condicionCredito: 2,
-        descripcion: 'CUOTA',
-        cantidadCuota: datos.cantidadCuota,
-        cuotas
-      }
-
-    } else { // A plazo
-
-      credito = {
-        condicionCredito: 1,
-        descripcion: datos.plazoDescripcion.slice(0, 15) // Ej: Plazo a 30 días // Hasta 15 caracteres
-      }
-
-    }
-  }
-
-  const items = datos.items.map((e) => {
-    const baseGravItem = e.tasa == "0%" ? 0 : Number(e.total) - Number(e.impuesto);
-    const ivaTasa = e.tasa == "0%" ? 0 : e.tasa == "5%" ? 5 : 10;
-    const ivaAfecta = e.tasa == "0%" ? 3 : 1;
-
-    return {
-      descripcion: e.descripcion ? e.descripcion.slice(0, 119).replace(/&/g, 'Y') : '',
-      codigo: "0011",
-      unidadMedida: 77, // 77 (Unidad), 83 (kg)
-      ivaTasa,
-      ivaAfecta,
-      cantidad: Number(e.cantidad),
-      precioUnitario: Number(e.precioUnitario),
-      precioTotal: Number(e.total),
-      liqIvaItem: Number(e.impuesto),
-      baseGravItem,
-    };
-  });
-
-  //Armar datajson
-  let data = {
-    ruc: datos.empresaRuc,
-    fecha: dayjs().format("YYYY-MM-DD HH:mm:ss"),
-    documentoAsociado: {
-      remision: false,
-    },
-    establecimiento: datos.establecimiento,
-    punto: datos.caja,
-    numero: String(datos.numeroFactura),
-    descripcion: ".",
-    tipoDocumento: 1, // 1 (Factura), 5 (Nota de crédito), 7 (Nota de remision)
-    tipoEmision: 1,
-    tipoTransaccion: 1, // 1 (Venta presencial)
-    receiptid: datos.facturaUuid,
-    condicionPago,
-    moneda: "PYG",
-    cambio: 0, // Porque moneda = "PYG"
-    cliente: {
-      ... (datos.situacionTributaria === 'NO_DOMICILIADO' ? {
-        cpais: datos.pais || 'PRY',
-        numCasa: 0,
-        direccion: datos.direccion || 'ASUNCIÓN'
-      } : {}),
-      ruc: datos.ruc !== '0' ? datos.ruc : '',
-      nombre: datos.ruc !== '0' ? datos.razonSocial.replace(/&/g, 'Y') : '',
-      diplomatico: false, //Cuando un cliente es diplomatico (true). Todo tiene que ir como exenta
-    },
-    codigoSeguridadAleatorio: datos.codigoSeguridadAleatorio,
-    items,
-    pagos,
-    credito,
-    totalPago: Number(datos.total),
-    totalRedondeo: 0,
-  };
-
-  const datajson = JSON.stringify(data, null, 2);
-
-  form.append("datajson", datajson);
-  form.append("recordID", "123");
-  console.log(data);
-
-  const { data: { data: resultado } = {} } = await axios({
-    url: `${process.env.URL_API_FACT}/data.php`,
-    method: "POST",
-    data: form,
-    headers: {
-      ...form.getHeaders(),
-    },
-  });
-
-  console.log(resultado);
-
-  return resultado;
 };
 
 const generarCodigoSeguridad = (length = 9) => {
@@ -570,167 +452,9 @@ const getFacturaById = async (id) => {
   }
 };
 
-const checkFacturaStatus = async () => {
-  console.log(`${new Date().toISOString()} checkFacturaStatus Iniciado`);
-  const facturasPendientes = await prisma.factura.findMany({
-    where: {
-      OR: [
-        { sifen_estado: null },
-        { sifen_estado: 'En Proceso' }
-      ]
-    },
-    include: {
-      cliente_empresa: { include: { cliente: true, empresa: true } },
-      usuario: true,
-    },
-  });
-
-  const notasDeCreditoPendientes = await prisma.notaCredito.findMany({
-    where: {
-      OR: [
-        { sifen_estado: null },
-        { sifen_estado: 'En Proceso' }
-      ]
-    },
-    include: {
-      factura: {
-        include: {
-          cliente_empresa: { include: { cliente: true, empresa: true } }
-        }
-      },
-      usuario: true
-    }
-  })
-
-  const cdcFacturas = facturasPendientes.map((el) => el.cdc);
-  const cdcNotasDeCredito = notasDeCreditoPendientes.map((el) => el.cdc)
-
-  if (cdcFacturas.length > 0 || cdcNotasDeCredito.length > 0) {
-    const dbApiFacturacion = conectarDbApiFacturacion();
-    await dbApiFacturacion.connect();
-
-    if (cdcFacturas.length > 0) {
-
-      const { rows: resultApiFacturacion } = await dbApiFacturacion.query({
-        text: `SELECT * FROM datos_factura2 WHERE cdc IN (${Array.from(
-          { length: cdcFacturas.length },
-          (_, index) => `$${index + 1}`
-        ).join(",")})`,
-        values: cdcFacturas,
-      });
-
-      for (const item of resultApiFacturacion) {
-
-        const { cdc, sifen_estado: sifenEstado, sifen_mensaje: sifenMensaje } = item;
-
-        if (sifenEstado !== null && sifenEstado !== "") {
-          await prisma.factura.updateMany({
-            where: {
-              cdc,
-            },
-            data: {
-              sifen_estado: sifenEstado == 'N' ? 'En Proceso' : sifenEstado,
-              sifen_estado_mensaje: sifenMensaje,
-            },
-          });
-
-          const factura = facturasPendientes.find((el) => el.cdc === cdc);
-
-          if (typeof factura !== "undefined") {
-            const { cliente, empresa } = factura.cliente_empresa;
-
-            if (sifenEstado === "Aprobado") {
-
-              await enviarFactura({
-                cdc: factura.cdc,
-                cliente: cliente.tipo_identificacion === "RUC" ? cliente.razon_social : `${cliente.nombres} ${cliente.apellidos}`,
-                email: cliente.email,
-                uuid: factura.factura_uuid,
-                nroFactura: factura.numero_factura,
-                empresa: empresa.nombre_empresa,
-                emailEmpresa: empresa.email,
-              });
-
-            } else if (sifenEstado === "Rechazado") {
-
-              await enviarErrorFactura({
-                email: factura.usuario.email,
-                empresa: empresa.nombre_empresa,
-                errorFactura: sifenMensaje,
-                nroFactura: factura.numero_factura,
-              });
-
-            }
-          }
-        }
-      }
-    }
-
-    if (notasDeCreditoPendientes.length > 0) {
-      const { rows: resultadoNotasDeCredito } = await dbApiFacturacion.query({
-        text: `SELECT * FROM datos_factura2 WHERE cdc IN (${Array.from(
-          { length: cdcNotasDeCredito.length },
-          (_, index) => `$${index + 1}`
-        ).join(",")})`,
-        values: cdcNotasDeCredito
-      })
-
-      for (const item of resultadoNotasDeCredito) {
-        const { cdc, sifen_estado: sifenEstado, sifen_mensaje: sifenMensaje } = item;
-
-        if (sifenEstado !== null && sifenEstado !== "") {
-          await prisma.notaCredito.updateMany({
-            where: { cdc },
-            data: {
-              sifen_estado: sifenEstado == 'N' ? 'En Proceso' : sifenEstado,
-              sifen_estado_mensaje: sifenMensaje,
-            }
-          })
-
-          const notaDeCredito = notasDeCreditoPendientes.find(e => e.cdc === cdc)
-
-          if (notaDeCredito) {
-            const { cliente, empresa } = notaDeCredito.factura.cliente_empresa
-
-            if (sifenEstado === 'Aprobado') {
-
-              await enviarNotaDeCredito({
-                cdc: notaDeCredito.cdc,
-                cliente: cliente.tipo_identificacion === "RUC" ? cliente.razon_social : `${cliente.nombres} ${cliente.apellidos}`,
-                email: cliente.email,
-                uuid: notaDeCredito.nota_credito_uuid,
-                nroNotaDeCredito: notaDeCredito.numero_nota_credito,
-                empresa: empresa.nombre_empresa,
-                emailEmpresa: empresa.email,
-              });
-
-            } else if (sifenEstado === 'Rechazado') {
-
-              await enviarErrorNotaDeCredito({
-                email: notaDeCredito.usuario,
-                empresa: empresa.nombre_empresa,
-                errorNotaDeCredito: sifenMensaje,
-                nroNotaDeCredito: notaDeCredito.numero_nota_credito,
-              });
-
-            }
-          }
-
-        }
-
-      }
-
-    }
-
-    dbApiFacturacion.end();
-  }
-
-  console.log(`${new Date().toISOString()} checkFacturaStatus Finalizado`);
-};
-
 const reenviarFactura = async ({ email, facturaId }) => {
   const factura = await prisma.factura.findFirst({
-    where: { id: facturaId, sifen_estado: "Aprobado" },
+    where: { id: facturaId, estado_sifen: "APROBADO" },
     include: {
       cliente_empresa: { include: { cliente: true, empresa: true } },
       usuario: true,
@@ -751,6 +475,7 @@ const reenviarFactura = async ({ email, facturaId }) => {
     nroFactura: factura.numero_factura,
     empresa: empresa.nombre_empresa,
     emailEmpresa: empresa.email,
+    xmlFirmado: factura.xml_firmado,
   });
 };
 
@@ -775,7 +500,7 @@ const cancelarFactura = async (datos, datosUsuario) => {
       throw new ErrorApp('Factura no encontrada', 404)
     }
 
-    if (factura.sifen_estado == 'Cancelado') {
+    if (factura.estado_sifen == 'CANCELADO') {
       throw new ErrorApp('La Factura ya se encuentra con estado Cancelado', 400)
     }
 
@@ -784,7 +509,7 @@ const cancelarFactura = async (datos, datosUsuario) => {
       where: {
         AND: [
           { factura_id: datos.facturaId },
-          { sifen_estado: { not: 'Cancelado' } }
+          { estado_sifen: { not: 'CANCELADO' } }
         ]
       }
     })
@@ -795,31 +520,9 @@ const cancelarFactura = async (datos, datosUsuario) => {
       throw new ErrorApp(error, 400)
     }
 
-    // Se busca datos de la empresa
-    const empresa = await prisma.empresa.findFirst({
-      where: { id: datosUsuario.empresaId }
-    })
-
-    if (!empresa) {
-      throw new ErrorApp('Empresa no encontrada', 404)
-    }
-
-    const resultado = await apiFacturacionElectronicaCancelar({ ruc: empresa.ruc, cdc: factura.cdc, motivo: datos.motivo });
-
-    if (resultado && resultado.status) {
-      await prisma.factura.update({
-        where: {
-          id: datos.facturaId
-        },
-        data: {
-          sifen_estado: 'Cancelado',
-          sifen_estado_mensaje: datos.motivo
-        }
-      })
-      return resultado
-    } else {
-      throw new ErrorApp(resultado.message || 'No se pudo cancelar la factura', 400)
-    }
+    // Cancelación síncrona contra SIFEN (MIGRATION_PLAN.md §3.2) — eventoService valida por su cuenta
+    // que la Factura esté APROBADA, arma+firma+envía el evento, y actualiza estado_sifen a CANCELADO.
+    return await eventoService.cancelarFactura({ facturaId: datos.facturaId, motivo: datos.motivo });
 
   } catch (error) {
     // console.log(error);
@@ -828,42 +531,10 @@ const cancelarFactura = async (datos, datosUsuario) => {
 
 }
 
-const apiFacturacionElectronicaCancelar = async ({ cdc, motivo, ruc } = {}) => {
-  const form = new FormData();
-
-  //Armar jsondata
-  const data = {
-    tipoEvento: 2,
-    cdc,
-    motivo,
-    ruc
-  }
-  console.log(data);
-
-  const datajson = JSON.stringify(data, null, 2);
-
-  form.append("datajson", datajson);
-  form.append("recordID", "123");
-
-  const { data: resultado } = await axios({
-    url: `${process.env.URL_API_FACT}/eventos.php`,
-    method: "POST",
-    data: form,
-    headers: {
-      ...form.getHeaders(),
-    },
-  });
-
-  console.log(resultado);
-
-  return resultado;
-}
-
 module.exports = {
   emitirFactura,
   getFacturas,
   getFacturaById,
-  checkFacturaStatus,
   reenviarFactura,
   cancelarFactura
 };

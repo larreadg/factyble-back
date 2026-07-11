@@ -28,6 +28,10 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-validator": "^7.1.0",
+    "facturacionelectronicapy-qrgen": "^1.0.9",
+    "facturacionelectronicapy-setapi": "^1.0.34",
+    "facturacionelectronicapy-xmlgen": "^1.0.283",
+    "facturacionelectronicapy-xmlsign": "^1.0.28",
     "form-data": "^4.0.0",
     "java": "^0.14.0",
     "jsonwebtoken": "^9.0.2",
@@ -41,5 +45,8 @@
   },
   "devDependencies": {
     "prisma": "^5.16.1"
+  },
+  "overrides": {
+    "xml2js": "^0.6.2"
   }
 }

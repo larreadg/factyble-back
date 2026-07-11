@@ -14,62 +14,82 @@ datasource db {
 }
 
 model Usuario {
+  id                 Int           @id @default(autoincrement())
+  nombres            String        @db.VarChar(255)
+  apellidos          String        @db.VarChar(255)
+  email              String        @unique @db.VarChar(255)
+  documento          String        @db.VarChar(20)
+  telefono           String        @db.VarChar(20)
+  password           String        @db.VarChar(100)
+  activo             Boolean       @default(true) @db.TinyInt
+  fecha_creacion     DateTime      @default(now())
+  fecha_modificacion DateTime      @updatedAt
+  empresa            Empresa       @relation(fields: [empresa_id], references: [id])
+  empresa_id         Int
+  facturas           Factura[]
+  roles              UsuarioRol[]
+  nota_credito       NotaCredito[]
+  recibos            Recibo[]
+
   @@map("usuario")
-  id                  Int         @id @default(autoincrement())
-  nombres             String      @db.VarChar(255)
-  apellidos           String      @db.VarChar(255)
-  email               String      @unique @db.VarChar(255)
-  documento           String      @db.VarChar(20)
-  telefono            String      @db.VarChar(20)
-  password            String      @db.VarChar(100)
-  activo              Boolean     @default(true) @db.TinyInt
-  fecha_creacion      DateTime    @default(now())
-  fecha_modificacion  DateTime    @updatedAt
-  empresa             Empresa     @relation(fields: [empresa_id], references: [id])
-  empresa_id          Int
-  facturas            Factura[]
-  roles               UsuarioRol[]
-  nota_credito        NotaCredito[]
-  recibos             Recibo[]
 }
 
 model Rol {
+  id                 Int          @id @default(autoincrement())
+  nombre             String       @db.VarChar(255)
+  fecha_creacion     DateTime     @default(now())
+  fecha_modificacion DateTime     @updatedAt
+  usuarios           UsuarioRol[]
+
   @@map("rol")
-  id                  Int           @id @default(autoincrement())
-  nombre              String        @db.VarChar(255)
-  fecha_creacion      DateTime      @default(now())
-  fecha_modificacion  DateTime      @updatedAt
-  usuarios            UsuarioRol[]
 }
 
 model UsuarioRol {
+  id                 Int      @id @default(autoincrement())
+  usuario            Usuario  @relation(fields: [usuario_id], references: [id])
+  usuario_id         Int
+  rol                Rol      @relation(fields: [rol_id], references: [id])
+  rol_id             Int
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+
   @@map("usuario_rol")
-  id                  Int       @id @default(autoincrement())
-  usuario             Usuario   @relation(fields: [usuario_id], references: [id])
-  usuario_id          Int
-  rol                 Rol       @relation(fields: [rol_id], references: [id])
-  rol_id              Int
-  fecha_creacion      DateTime  @default(now())
-  fecha_modificacion  DateTime  @updatedAt
 }
 
 model Empresa {
+  id                        Int                @id @default(autoincrement())
+  ruc                       String             @db.VarChar(255)
+  nombre_empresa            String             @db.VarChar(255)
+  timbrado                  String             @db.VarChar(255)
+  direccion                 String             @db.VarChar(255)
+  vigente_desde             DateTime
+  telefono                  String             @db.VarChar(20)
+  email                     String             @db.VarChar(255)
+  ciudad                    String             @db.VarChar(100)
+  logo                      String?            @db.VarChar(255)
+  // Datos fiscales SIFEN (gap analysis MIGRATION_PLAN.md §2.2) — nullable: se backfillean antes del corte, no existen hoy
+  ruc_sin_dv                String?            @db.VarChar(15)
+  digito_verificador        String?            @db.VarChar(1)
+  tipo_contribuyente        TipoContribuyente?
+  tipo_impuesto             TipoImpuesto?
+  cod_actividad_principal   String?            @db.VarChar(10)
+  desc_actividad_principal  String?            @db.VarChar(255)
+  cod_actividad_secundaria  String?            @db.VarChar(10)
+  desc_actividad_secundaria String?            @db.VarChar(255)
+  cod_moneda                String             @default("PYG") @db.VarChar(3)
+  desc_moneda               String?            @db.VarChar(50)
+  csc                       String?            @db.VarChar(255)
+  csc_id                    String?            @db.VarChar(10)
+  fecha_creacion            DateTime           @default(now())
+  fecha_modificacion        DateTime           @updatedAt
+  usuarios                  Usuario[]
+  clientes                  ClienteEmpresa[]
+  establecimientos          Establecimiento[]
+  certificados              Certificado[]
+  lotes                     Lote[]
+  eventos_sifen             EventoSifen[]
+
   @@map("empresa")
-  id                  Int             @id @default(autoincrement())
-  ruc                 String          @db.VarChar(255)
-  nombre_empresa      String          @db.VarChar(255)
-  timbrado            String          @db.VarChar(255)
-  direccion           String          @db.VarChar(255)
-  vigente_desde       DateTime
-  telefono            String          @db.VarChar(20)
-  email               String          @db.VarChar(255)
-  ciudad              String          @db.VarChar(100)
-  logo                String?         @db.VarChar(255)
-  fecha_creacion      DateTime        @default(now())
-  fecha_modificacion  DateTime        @updatedAt  
-  usuarios            Usuario[]
-  clientes            ClienteEmpresa[]
-  establecimientos    Establecimiento[]
 }
 
 enum TipoIdentificacion {
@@ -87,36 +107,38 @@ enum SituacionTributaria {
 }
 
 model Cliente {
+  id                   Int                 @id @default(autoincrement())
+  ruc                  String              @db.VarChar(255)
+  documento            String              @db.VarChar(255)
+  dv                   Int?                @db.TinyInt
+  razon_social         String?             @db.VarChar(255)
+  tipo_identificacion  TipoIdentificacion
+  nombres              String              @db.VarChar(255)
+  apellidos            String              @db.VarChar(255)
+  pais                 String?             @db.VarChar(255)
+  direccion            String?             @db.Text
+  email                String?             @db.VarChar(255)
+  telefono             String?             @db.VarChar(20)
+  situacion_tributaria SituacionTributaria
+  fecha_creacion       DateTime            @default(now())
+  fecha_modificacion   DateTime            @updatedAt
+  empresas             ClienteEmpresa[]
+
   @@map("cliente")
-  id                    Int                 @id @default(autoincrement())
-  ruc                   String              @db.VarChar(255)
-  documento             String              @db.VarChar(255)
-  dv                    Int?                @db.TinyInt
-  razon_social          String?             @db.VarChar(255)
-  tipo_identificacion   TipoIdentificacion
-  nombres               String              @db.VarChar(255)
-  apellidos             String              @db.VarChar(255)
-  pais                  String?             @db.VarChar(255)
-  direccion             String?             @db.Text
-  email                 String?             @db.VarChar(255)
-  telefono              String?             @db.VarChar(20)
-  situacion_tributaria  SituacionTributaria
-  fecha_creacion        DateTime            @default(now())
-  fecha_modificacion    DateTime            @updatedAt
-  empresas              ClienteEmpresa[]
 }
 
 model ClienteEmpresa {
+  id                 Int       @id @default(autoincrement())
+  cliente            Cliente   @relation(fields: [cliente_id], references: [id])
+  cliente_id         Int
+  empresa            Empresa   @relation(fields: [empresa_id], references: [id])
+  empresa_id         Int
+  fecha_creacion     DateTime  @default(now())
+  fecha_modificacion DateTime  @updatedAt
+  facturas           Factura[]
+  recibos            Recibo[]
+
   @@map("cliente_empresa")
-  id                  Int       @id @default(autoincrement())
-  cliente             Cliente   @relation(fields: [cliente_id], references: [id])
-  cliente_id          Int
-  empresa             Empresa   @relation(fields: [empresa_id], references: [id])
-  empresa_id          Int
-  fecha_creacion      DateTime   @default(now())
-  fecha_modificacion  DateTime   @updatedAt
-  facturas            Factura[]
-  recibos             Recibo[]
 }
 
 enum CondicionVenta {
@@ -125,30 +147,45 @@ enum CondicionVenta {
 }
 
 model Factura {
-  @@map("factura")
-  id                    Int               @id @default(autoincrement())
+  id                    Int              @id @default(autoincrement())
   numero_factura        Int
-  factura_uuid          String            @db.VarChar(255)
-  usuario               Usuario           @relation(fields: [usuario_id], references: [id])
+  factura_uuid          String           @db.VarChar(255)
+  usuario               Usuario          @relation(fields: [usuario_id], references: [id])
   usuario_id            Int
-  cliente_empresa       ClienteEmpresa    @relation(fields: [cliente_empresa_id], references: [id])
+  cliente_empresa       ClienteEmpresa   @relation(fields: [cliente_empresa_id], references: [id])
   cliente_empresa_id    Int
-  fecha_creacion        DateTime          @default(now())
-  fecha_modificacion    DateTime          @updatedAt
+  fecha_creacion        DateTime         @default(now())
+  fecha_modificacion    DateTime         @updatedAt
   condicion_venta       CondicionVenta
   total_iva             Float
   total                 Float
-  cdc                   String            @db.VarChar(255)
-  xml                   String?           @db.Text
-  linkqr                String?           @db.Text
-  sifen_estado          String?           @db.Text
-  sifen_estado_mensaje  String?           @db.Text
-  codigo_seguridad      String            @db.VarChar(10)
+  cdc                   String           @db.VarChar(255)
+  // Legacy (API PHP) — congelado, no se le escribe más luego del corte, se dropea en el apagado (MIGRATION_PLAN.md §4.4)
+  xml                   String?          @db.Text
+  linkqr                String?          @db.Text
+  sifen_estado          String?          @db.Text
+  sifen_estado_mensaje  String?          @db.Text
+  // Pipeline nativo SIFEN (MIGRATION_PLAN.md §2.2) — nullable hasta el corte, los escribe el nuevo pipeline desde Fase 2
+  xml_firmado           String?          @db.MediumText
+  estado_sifen          EstadoSifen?
+  sifen_cod_respuesta   String?          @db.VarChar(10)
+  sifen_num_transaccion String?          @db.VarChar(50)
+  fecha_firma           DateTime?
+  fecha_envio_sifen     DateTime?
+  fecha_respuesta_sifen DateTime?
+  lote_id               Int?
+  lote                  Lote?            @relation(fields: [lote_id], references: [id])
+  eventos_sifen         EventoSifen[]
+  codigo_seguridad      String           @db.VarChar(10)
   detalles              FacturaDetalle[]
   nota_credito          NotaCredito[]
   recibo_facturas       ReciboFactura[]
   caja_id               Int?
-  caja                  Caja?              @relation(fields: [caja_id], references: [id])
+  caja                  Caja?            @relation(fields: [caja_id], references: [id])
+
+  @@index([lote_id])
+  @@index([estado_sifen])
+  @@map("factura")
 }
 
 enum Tasa {
@@ -158,213 +195,399 @@ enum Tasa {
 }
 
 model FacturaDetalle {
+  id                 Int      @id @default(autoincrement())
+  factura            Factura  @relation(fields: [id_factura], references: [id])
+  id_factura         Int
+  cantidad           Int
+  precio_unitario    Float
+  tasa               Tasa
+  impuesto           Float
+  total              Float
+  descripcion        String   @db.Text
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+
   @@map("factura_detalle")
-  id                  Int        @id @default(autoincrement())
-  factura             Factura    @relation(fields: [id_factura], references: [id])
-  id_factura          Int             
-  cantidad            Int
-  precio_unitario     Float
-  tasa                Tasa
-  impuesto            Float
-  total               Float
-  descripcion         String      @db.Text
-  fecha_creacion      DateTime    @default(now())
-  fecha_modificacion  DateTime    @updatedAt
 }
 
 model Captcha {
+  id               Int      @id @default(autoincrement())
+  captcha          String   @db.VarChar(6)
+  ip               String   @db.VarChar(40)
+  fecha_expiracion DateTime
+
   @@map("captcha")
-  id                  Int           @id @default(autoincrement())
-  captcha             String        @db.VarChar(6)
-  ip                  String        @db.VarChar(40)
-  fecha_expiracion    DateTime    
 }
 
 model Establecimiento {
-  @@map("establecimiento")
-  id                  Int           @id @default(autoincrement())
-  nombre              String        @db.Text
-  direccion           String        @db.Text
-  numero_casa         String?       @db.VarChar(255)
-  telefono            String?       @db.VarChar(255)
-  codigo              String        @db.VarChar(255)
-  cod_distrito        String        @db.VarChar(255)
-  cod_ciudad          String        @db.VarChar(255)
-  cod_departamento    String        @db.VarChar(255)
-  empresa_id          Int
-  fecha_creacion      DateTime      @default(now())
-  fecha_modificacion  DateTime      @updatedAt 
+  id                 Int      @id @default(autoincrement())
+  nombre             String   @db.Text
+  direccion          String   @db.Text
+  numero_casa        String?  @db.VarChar(255)
+  telefono           String?  @db.VarChar(255)
+  codigo             String   @db.VarChar(255)
+  cod_distrito       String   @db.VarChar(255)
+  cod_ciudad         String   @db.VarChar(255)
+  cod_departamento   String   @db.VarChar(255)
+  empresa_id         Int
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
 
-  empresa             Empresa       @relation(fields: [empresa_id], references: [id])
-  cajas               Caja[]
+  empresa Empresa @relation(fields: [empresa_id], references: [id])
+  cajas   Caja[]
+
+  @@map("establecimiento")
 }
 
 model Caja {
+  id                     Int                   @id @default(autoincrement())
+  nombre                 String                @db.Text
+  codigo                 String                @db.VarChar(255)
+  establecimiento_id     Int
+  fecha_creacion         DateTime              @default(now())
+  fecha_modificacion     DateTime              @updatedAt
+  establecimiento        Establecimiento       @relation(fields: [establecimiento_id], references: [id])
+  secuencia_factura      SecuenciaFactura?
+  secuencia_nota_credito SecuenciaNotaCredito?
+  secuencia_recibo       SecuenciaRecibo?
+  facturas               Factura[]
+  nota_credito           NotaCredito[]
+  recibos                Recibo[]
+
   @@map("caja")
-  id                      Int               @id @default(autoincrement())
-  nombre                  String            @db.Text
-  codigo                  String            @db.VarChar(255)
-  establecimiento_id      Int
-  fecha_creacion          DateTime          @default(now())
-  fecha_modificacion      DateTime          @updatedAt 
-  establecimiento         Establecimiento   @relation(fields: [establecimiento_id], references: [id])
-  secuencia_factura       SecuenciaFactura?
-  secuencia_nota_credito  SecuenciaNotaCredito?
-  secuencia_recibo        SecuenciaRecibo?
-  facturas                Factura[]
-  nota_credito            NotaCredito[]
-  recibos                 Recibo[]
 }
 
 model SecuenciaFactura {
-  @@map("secuencia_factura")
-  caja_id            Int       @id
+  caja_id            Int      @id
   valor              Int
-  fecha_creacion     DateTime  @default(now())
-  fecha_modificacion DateTime  @updatedAt
-  caja               Caja      @relation(fields: [caja_id], references: [id])
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+  caja               Caja     @relation(fields: [caja_id], references: [id])
+
+  @@map("secuencia_factura")
 }
 
 model SecuenciaRecibo {
-  @@map("secuencia_recibo")
-  caja_id            Int       @id
+  caja_id            Int      @id
   valor              Int
-  fecha_creacion     DateTime  @default(now())
-  fecha_modificacion DateTime  @updatedAt
-  caja               Caja      @relation(fields: [caja_id], references: [id])
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+  caja               Caja     @relation(fields: [caja_id], references: [id])
+
+  @@map("secuencia_recibo")
 }
 
 model NotaCredito {
-  @@map("nota_credito")
-  id                    Int               @id @default(autoincrement())
+  id                    Int                  @id @default(autoincrement())
   numero_nota_credito   Int
   factura_id            Int
-  nota_credito_uuid     String            @db.VarChar(255)
-  usuario               Usuario           @relation(fields: [usuario_id], references: [id])
+  nota_credito_uuid     String               @db.VarChar(255)
+  usuario               Usuario              @relation(fields: [usuario_id], references: [id])
   usuario_id            Int
   total_iva             Float
   total                 Float
-  cdc                   String            @db.VarChar(255)
-  xml                   String?           @db.Text
-  linkqr                String?           @db.Text
-  sifen_estado          String?           @db.Text
-  sifen_estado_mensaje  String?           @db.Text
-  codigo_seguridad      String            @db.VarChar(10)
-  fecha_creacion        DateTime          @default(now())
-  fecha_modificacion    DateTime          @updatedAt
-  factura               Factura           @relation(fields: [factura_id], references: [id])
+  cdc                   String               @db.VarChar(255)
+  // Legacy (API PHP) — congelado, no se le escribe más luego del corte, se dropea en el apagado (MIGRATION_PLAN.md §4.4)
+  xml                   String?              @db.Text
+  linkqr                String?              @db.Text
+  sifen_estado          String?              @db.Text
+  sifen_estado_mensaje  String?              @db.Text
+  // Pipeline nativo SIFEN (MIGRATION_PLAN.md §2.2) — nullable hasta el corte, los escribe el nuevo pipeline desde Fase 2
+  xml_firmado           String?              @db.MediumText
+  estado_sifen          EstadoSifen?
+  sifen_cod_respuesta   String?              @db.VarChar(10)
+  sifen_num_transaccion String?              @db.VarChar(50)
+  fecha_firma           DateTime?
+  fecha_envio_sifen     DateTime?
+  fecha_respuesta_sifen DateTime?
+  lote_id               Int?
+  lote                  Lote?                @relation(fields: [lote_id], references: [id])
+  eventos_sifen         EventoSifen[]
+  codigo_seguridad      String               @db.VarChar(10)
+  fecha_creacion        DateTime             @default(now())
+  fecha_modificacion    DateTime             @updatedAt
+  factura               Factura              @relation(fields: [factura_id], references: [id])
   nota_credito_detalle  NotaCreditoDetalle[]
   recibo_notas_credito  ReciboNotaCredito[]
   caja_id               Int?
-  caja                  Caja?              @relation(fields: [caja_id], references: [id])    
+  caja                  Caja?                @relation(fields: [caja_id], references: [id])
+
+  @@index([lote_id])
+  @@index([estado_sifen])
+  @@map("nota_credito")
 }
 
 model NotaCreditoDetalle {
+  id                 Int         @id @default(autoincrement())
+  nota_credito_id    Int
+  cantidad           Int
+  precio_unitario    Float
+  tasa               Tasa
+  impuesto           Float
+  total              Float
+  descripcion        String      @db.VarChar(255)
+  fecha_creacion     DateTime    @default(now())
+  fecha_modificacion DateTime    @updatedAt
+  nota_credito       NotaCredito @relation(fields: [nota_credito_id], references: [id])
+
   @@map("nota_credito_detalle")
-  id                  Int           @id @default(autoincrement())
-  nota_credito_id     Int           
-  cantidad            Int
-  precio_unitario     Float
-  tasa                Tasa
-  impuesto            Float
-  total               Float
-  descripcion         String        @db.VarChar(255)
-  fecha_creacion      DateTime      @default(now())
-  fecha_modificacion  DateTime      @updatedAt
-  nota_credito        NotaCredito   @relation(fields: [nota_credito_id], references: [id])
 }
 
 model Recibo {
-  @@map("recibo")
-  id                  Int              @id @default(autoincrement())
-  numero_recibo       Int
-  recibo_uuid         String           @db.VarChar(255)
-  cliente_empresa_id  Int
-  cliente_empresa     ClienteEmpresa   @relation(fields: [cliente_empresa_id], references: [id])
-  usuario_id          Int
-  usuario             Usuario          @relation(fields: [usuario_id], references: [id])
-  total_efectivo      Decimal          @default(0) @db.Decimal(15, 2)
-  total_cheques       Decimal          @default(0) @db.Decimal(15, 2)
-  total_transferencias Decimal         @default(0) @db.Decimal(15, 2)
-  total               Decimal          @db.Decimal(15, 2)
-  total_letras        String           @db.VarChar(255)
-  concepto            String?          @db.Text
-  fecha_emision       DateTime         @default(now())
-  fecha_creacion      DateTime         @default(now())
-  fecha_modificacion  DateTime         @updatedAt
-  caja_id             Int?
-  caja                Caja?            @relation(fields: [caja_id], references: [id])
-  facturas            ReciboFactura[]
-  notas_credito       ReciboNotaCredito[]
-  cheques             ReciboCheque[]
-  transferencias      ReciboTransferencia[]
+  id                   Int                   @id @default(autoincrement())
+  numero_recibo        Int
+  recibo_uuid          String                @db.VarChar(255)
+  cliente_empresa_id   Int
+  cliente_empresa      ClienteEmpresa        @relation(fields: [cliente_empresa_id], references: [id])
+  usuario_id           Int
+  usuario              Usuario               @relation(fields: [usuario_id], references: [id])
+  total_efectivo       Decimal               @default(0) @db.Decimal(15, 2)
+  total_cheques        Decimal               @default(0) @db.Decimal(15, 2)
+  total_transferencias Decimal               @default(0) @db.Decimal(15, 2)
+  total                Decimal               @db.Decimal(15, 2)
+  total_letras         String                @db.VarChar(255)
+  concepto             String?               @db.Text
+  fecha_emision        DateTime              @default(now())
+  fecha_creacion       DateTime              @default(now())
+  fecha_modificacion   DateTime              @updatedAt
+  caja_id              Int?
+  caja                 Caja?                 @relation(fields: [caja_id], references: [id])
+  facturas             ReciboFactura[]
+  notas_credito        ReciboNotaCredito[]
+  cheques              ReciboCheque[]
+  transferencias       ReciboTransferencia[]
 
   @@unique([caja_id, numero_recibo], map: "uk_recibo_caja_numero")
+  @@map("recibo")
 }
 
 model ReciboFactura {
-  @@map("recibo_factura")
-  id                  Int       @id @default(autoincrement())
-  recibo_id           Int
-  factura_id          Int
-  monto_aplicado      Decimal   @db.Decimal(15, 2)
-  fecha_creacion      DateTime  @default(now())
-  fecha_modificacion  DateTime  @updatedAt
-  recibo              Recibo    @relation(fields: [recibo_id], references: [id])
-  factura             Factura   @relation(fields: [factura_id], references: [id])
+  id                 Int      @id @default(autoincrement())
+  recibo_id          Int
+  factura_id         Int
+  monto_aplicado     Decimal  @db.Decimal(15, 2)
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+  recibo             Recibo   @relation(fields: [recibo_id], references: [id])
+  factura            Factura  @relation(fields: [factura_id], references: [id])
 
   @@unique([recibo_id, factura_id], map: "uk_recibo_factura")
   @@index([factura_id])
+  @@map("recibo_factura")
 }
 
 model ReciboNotaCredito {
-  @@map("recibo_nota_credito")
-  id                  Int         @id @default(autoincrement())
-  recibo_id           Int
-  nota_credito_id     Int
-  monto_aplicado      Decimal     @db.Decimal(15, 2)
-  fecha_creacion      DateTime    @default(now())
-  fecha_modificacion  DateTime    @updatedAt
-  recibo              Recibo      @relation(fields: [recibo_id], references: [id])
-  nota_credito        NotaCredito @relation(fields: [nota_credito_id], references: [id])
+  id                 Int         @id @default(autoincrement())
+  recibo_id          Int
+  nota_credito_id    Int
+  monto_aplicado     Decimal     @db.Decimal(15, 2)
+  fecha_creacion     DateTime    @default(now())
+  fecha_modificacion DateTime    @updatedAt
+  recibo             Recibo      @relation(fields: [recibo_id], references: [id])
+  nota_credito       NotaCredito @relation(fields: [nota_credito_id], references: [id])
 
   @@unique([recibo_id, nota_credito_id], map: "uk_recibo_nota_credito")
   @@index([nota_credito_id])
+  @@map("recibo_nota_credito")
 }
 
 model ReciboCheque {
-  @@map("recibo_cheque")
-  id                  Int       @id @default(autoincrement())
-  recibo_id           Int
-  banco               String    @db.VarChar(120)
-  numero_cheque       String    @db.VarChar(50)
-  monto               Decimal   @db.Decimal(15, 2)
-  fecha_creacion      DateTime  @default(now())
-  fecha_modificacion  DateTime  @updatedAt
-  recibo              Recibo    @relation(fields: [recibo_id], references: [id])
+  id                 Int      @id @default(autoincrement())
+  recibo_id          Int
+  banco              String   @db.VarChar(120)
+  numero_cheque      String   @db.VarChar(50)
+  monto              Decimal  @db.Decimal(15, 2)
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+  recibo             Recibo   @relation(fields: [recibo_id], references: [id])
 
   @@index([recibo_id])
+  @@map("recibo_cheque")
 }
 
 model ReciboTransferencia {
-  @@map("recibo_transferencia")
-  id                  Int       @id @default(autoincrement())
-  recibo_id           Int
-  banco               String    @db.VarChar(120)
-  numero_referencia   String    @db.VarChar(50)
-  monto               Decimal   @db.Decimal(15, 2)
-  fecha_creacion      DateTime  @default(now())
-  fecha_modificacion  DateTime  @updatedAt
-  recibo              Recibo    @relation(fields: [recibo_id], references: [id])
+  id                 Int      @id @default(autoincrement())
+  recibo_id          Int
+  banco              String   @db.VarChar(120)
+  numero_referencia  String   @db.VarChar(50)
+  monto              Decimal  @db.Decimal(15, 2)
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+  recibo             Recibo   @relation(fields: [recibo_id], references: [id])
 
   @@index([recibo_id])
+  @@map("recibo_transferencia")
 }
 
 model SecuenciaNotaCredito {
-  @@map("secuencia_nota_credito")
-  caja_id            Int       @id
+  caja_id            Int      @id
   valor              Int
-  fecha_creacion     DateTime  @default(now())
-  fecha_modificacion DateTime  @updatedAt
-  caja               Caja      @relation(fields: [caja_id], references: [id])
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+  caja               Caja     @relation(fields: [caja_id], references: [id])
+
+  @@map("secuencia_nota_credito")
+}
+
+// ============================================================================
+// Dominio SIFEN (MIGRATION_PLAN.md — absorción de factyble-api)
+// ============================================================================
+
+enum EstadoSifen {
+  GENERADO
+  FIRMADO
+  ENCOLADO
+  ENVIADO
+  APROBADO
+  RECHAZADO
+  ERROR
+  CANCELADO
+}
+
+enum TipoContribuyente {
+  FISICA
+  JURIDICA
+}
+
+enum TipoImpuesto {
+  IVA
+  ISC
+  RENTA
+  NINGUNO
+  IVA_RENTA
+}
+
+enum EstadoCertificado {
+  VIGENTE
+  POR_VENCER
+  VENCIDO
+  REVOCADO
+}
+
+model Certificado {
+  id                 Int               @id @default(autoincrement())
+  empresa            Empresa           @relation(fields: [empresa_id], references: [id])
+  empresa_id         Int
+  alias              String            @db.VarChar(100)
+  archivo            String            @db.VarChar(500)
+  // Cifrada a nivel aplicación (secreto de cifrado en variable de entorno) — nunca texto plano
+  clave              String            @db.VarChar(500)
+  fecha_vencimiento  DateTime
+  activo             Boolean           @default(true)
+  estado             EstadoCertificado @default(VIGENTE)
+  fecha_creacion     DateTime          @default(now())
+  fecha_modificacion DateTime          @updatedAt
+
+  @@index([empresa_id])
+  @@index([empresa_id, activo])
+  @@map("certificado")
+}
+
+enum TipoDocumentoSifen {
+  FACTURA
+  NOTA_CREDITO
+}
+
+enum EstadoLote {
+  CONSTRUIDO
+  ENVIADO
+  CONSULTADO
+}
+
+model Lote {
+  id                     Int                @id @default(autoincrement())
+  empresa                Empresa            @relation(fields: [empresa_id], references: [id])
+  empresa_id             Int
+  secuencia              String             @unique @db.VarChar(50)
+  tipo_doc               TipoDocumentoSifen
+  estado                 EstadoLote         @default(CONSTRUIDO)
+  archivo_zip            String?            @db.VarChar(255)
+  sifen_numero_lote      String?            @db.VarChar(50)
+  sifen_envio_codigo     String?            @db.VarChar(10)
+  sifen_envio_mensaje    String?            @db.Text
+  sifen_consulta_codigo  String?            @db.VarChar(100)
+  sifen_consulta_mensaje String?            @db.MediumText
+  intentos_envio         Int                @default(0)
+  proximo_intento_en     DateTime?
+  ultimo_error           String?            @db.Text
+  fecha_creacion         DateTime           @default(now())
+  fecha_modificacion     DateTime           @updatedAt
+  facturas               Factura[]
+  notas_credito          NotaCredito[]
+
+  @@index([empresa_id])
+  @@index([estado])
+  @@map("lote")
+}
+
+enum TipoEventoSifen {
+  CANCELACION
+  INACTIVACION_RANGO
+  NOMINACION_RECEPTOR
+  INUTILIZACION
+  CONFORMIDAD
+  DISCONFORMIDAD
+  DESCONOCIMIENTO
+  NOTIFICACION
+}
+
+model EventoSifen {
+  id                      Int             @id @default(autoincrement())
+  empresa                 Empresa         @relation(fields: [empresa_id], references: [id])
+  empresa_id              Int
+  tipo_evento             TipoEventoSifen
+  factura_id              Int?
+  factura                 Factura?        @relation(fields: [factura_id], references: [id])
+  nota_credito_id         Int?
+  nota_credito            NotaCredito?    @relation(fields: [nota_credito_id], references: [id])
+  // Payload específico del tipo de evento (rango/timbrado para inactivación, RUC/nombre para nominación, etc.)
+  // — JSON en vez de columnas dispersas nulleable, ver antipatrón V en MIGRATION_PLAN.md
+  datos_evento            Json?
+  motivo                  String?         @db.Text
+  secuencia_sifen         String?         @db.VarChar(50)
+  xml_firmado             String?         @db.MediumText
+  sifen_respuesta_codigo  String?         @db.VarChar(10)
+  sifen_respuesta_mensaje String?         @db.Text
+  sifen_respuesta_xml     String?         @db.MediumText
+  intentos_envio          Int             @default(0)
+  proximo_intento_en      DateTime?
+  ultimo_error            String?         @db.Text
+  fecha_creacion          DateTime        @default(now())
+  fecha_modificacion      DateTime        @updatedAt
+
+  @@index([empresa_id])
+  @@index([factura_id])
+  @@index([nota_credito_id])
+  @@map("evento_sifen")
+}
+
+enum EntidadSifen {
+  FACTURA
+  NOTA_CREDITO
+  LOTE
+  EVENTO
+}
+
+enum OperacionSifen {
+  FIRMA
+  ENVIO_LOTE
+  CONSULTA_LOTE
+  CONSULTA_DOCUMENTO
+  EVENTO
+}
+
+model SifenTrazabilidad {
+  id               Int            @id @default(autoincrement())
+  entidad_tipo     EntidadSifen
+  entidad_id       Int
+  operacion        OperacionSifen
+  request_payload  String?        @db.MediumText
+  response_payload String?        @db.MediumText
+  codigo_respuesta String?        @db.VarChar(20)
+  exitoso          Boolean
+  fecha_creacion   DateTime       @default(now())
+
+  @@index([entidad_tipo, entidad_id])
+  @@index([fecha_creacion])
+  @@map("sifen_trazabilidad")
 }

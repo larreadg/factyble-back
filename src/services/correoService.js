@@ -1,9 +1,8 @@
 const nodemailer = require('nodemailer')
 const path = require('path')
 const fs = require('fs')
-const axios = require('axios')
 
-const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, emailEmpresa }) => {
+const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, emailEmpresa, xmlFirmado }) => {
 
     let filePath = path.join(__dirname, '..', 'resources', 'facturaTemplate.html')
     let html = fs.readFileSync(filePath, {encoding:'utf-8'})
@@ -13,8 +12,9 @@ const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, e
     html = html.replace(/\$cliente/g, cliente)
     html = html.replace(/\$emailEmpresa/g, emailEmpresa)
 
-    const xmlResponse = await axios.get(`http://${process.env.HOST_API_FACT}/factyble-api/firmados/${cdc}.xml`, { responseType: 'arraybuffer' });
-    const xmlBuffer = Buffer.from(xmlResponse.data, 'binary');
+    // El XML firmado vive en la BD (`xml_firmado`), no en un archivo servido por la API PHP legacy
+    // (antipatrón F, MIGRATION_PLAN.md §2.2) — se recibe ya como contenido, sin fetch por HTTP.
+    const xmlBuffer = Buffer.from(xmlFirmado, 'utf-8');
 
     let transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST,
@@ -82,7 +82,7 @@ const enviarErrorFactura = async ({ email, nroFactura, errorFactura, empresa }) 
 
 }
 
-const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito, empresa, emailEmpresa }) => {
+const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito, empresa, emailEmpresa, xmlFirmado }) => {
 
     let filePath = path.join(__dirname, '..', 'resources', 'notaDeCreditoTemplate.html')
     let html = fs.readFileSync(filePath, {encoding:'utf-8'})
@@ -92,8 +92,9 @@ const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito
     html = html.replace(/\$cliente/g, cliente)
     html = html.replace(/\$emailEmpresa/g, emailEmpresa)
 
-    const xmlResponse = await axios.get(`http://${process.env.HOST_API_FACT}/factyble-api/firmados/${cdc}.xml`, { responseType: 'arraybuffer' });
-    const xmlBuffer = Buffer.from(xmlResponse.data, 'binary');
+    // El XML firmado vive en la BD (`xml_firmado`), no en un archivo servido por la API PHP legacy
+    // (antipatrón F, MIGRATION_PLAN.md §2.2) — se recibe ya como contenido, sin fetch por HTTP.
+    const xmlBuffer = Buffer.from(xmlFirmado, 'utf-8');
 
     let transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST,

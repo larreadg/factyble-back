@@ -2,12 +2,18 @@ const dayjs = require("dayjs");
 const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
 const { calcularImpuesto } = require("../utils/facturacion");
-const FormData = require("form-data");
-const axios = require("axios");
 const { v4: uuidv4 } = require("uuid");
 const generarPdf = require("../utils/generarPdf");
 const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
 const { enviarNotaDeCredito } = require("./correoService");
+const { construirCdc } = require("../utils/sifen/cdc");
+const loteService = require("./sifen/loteService");
+const eventoService = require("./sifen/eventoService");
+
+// tipoDocumento SIFEN para el CDC (MIGRATION_PLAN.md §1.3) — 5=Nota de Credito, ver xmlBuilderService.js
+const CDC_TIPO_DOCUMENTO_NOTA_CREDITO = 5;
+const CDC_TIPO_EMISION_NORMAL = 1;
+const CDC_TIPO_CONTRIBUYENTE = { FISICA: 1, JURIDICA: 2 };
 
 const emitirNotaDeCredito = async (datos, datosUsuario) => {
   try {
@@ -51,7 +57,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     const factura = await prisma.factura.findFirst({
       where: {
         cdc: datos.cdc,
-        sifen_estado: { not: "Cancelado" },
+        estado_sifen: { not: "CANCELADO" },
       },
       include: {
         cliente_empresa: {
@@ -66,7 +72,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       throw new ErrorApp('No se encontró cdc', 404)
     }
 
-    if(factura.sifen_estado != 'Aprobado'){
+    if(factura.estado_sifen !== 'APROBADO'){
       throw new ErrorApp('La factura aún no se ha aprobado', 400)
     }
 
@@ -107,7 +113,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     const notasDeCredito = await prisma.notaCredito.findMany({
       where: {
         factura_id: factura.id,
-        sifen_estado: { notIn: ["Cancelado", "Rechazado"] }, // Excluir múltiples valores
+        estado_sifen: { notIn: ["CANCELADO", "RECHAZADO"] }, // Excluir múltiples valores
       },
     });
 
@@ -129,7 +135,10 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     // Datos adicionales
     const notaDeCreditoUuid = uuidv4();
 
-    // Se usa transacción y FOR UPDATE para bloquear la tabla al crear el número de factura por si hay concurrencia
+    // Se usa transacción y FOR UPDATE para bloquear la tabla al crear el número de factura por si hay concurrencia.
+    // La firma nativa (SIFEN, MIGRATION_PLAN.md Fase 5) participa de la misma transacción: si falla
+    // (certificado vencido/ausente, datos fiscales incompletos de la empresa), todo se revierte junto
+    // con la numeración recién asignada — no queda un número de Nota de Crédito "quemado".
     const notaDeCredito = await prisma.$transaction(async (tx) => {
       const secuencia =
         await tx.$queryRaw`SELECT valor FROM secuencia_nota_credito WHERE caja_id = ${caja.id} FOR UPDATE`;
@@ -141,7 +150,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       const numeroNotaDeCredito = Number(secuencia[0].valor) + 1;
       await tx.$executeRaw`UPDATE secuencia_nota_credito SET valor = ${numeroNotaDeCredito} WHERE caja_id = ${caja.id}`;
 
-      const codigosSeguridadRaw = await prisma.notaCredito.findMany({
+      const codigosSeguridadRaw = await tx.notaCredito.findMany({
         select: {
           codigo_seguridad: true,
         },
@@ -160,40 +169,35 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
         codigoSeguridadAleatorio = generarCodigoSeguridad();
       }
 
-      // Llamar a la API de facturación
-      const resultado = await apiFacturacionElectronicaNotaDeCredito({
-        ...datos,
-        codigoSeguridadAleatorio,
-        notaDeCreditoUuid,
-        numeroNotaDeCredito,
-        empresaRuc: usuario.empresa.ruc,
-        clienteRuc: factura.cliente_empresa.cliente.ruc,
-        clienteNombre: factura.cliente_empresa.cliente.nombres,
-        ruc: factura.cliente_empresa.cliente.ruc,
-        razonSocial: factura.cliente_empresa.cliente.razon_social,
-        pais: factura.cliente_empresa.cliente.pais,
-        direccion: factura.cliente_empresa.cliente.direccion,
-        situacionTributaria: factura.cliente_empresa.cliente.situacion_tributaria,
+      // CDC calculado localmente (MIGRATION_PLAN.md §1.3) — ya no lo devuelve la API PHP legacy.
+      const [rucSinDv, dvEmisor] = usuario.empresa.ruc.split('-');
+      const cdc = construirCdc({
+        tipoDocumento: CDC_TIPO_DOCUMENTO_NOTA_CREDITO,
+        rucSinDv,
+        dvEmisor,
+        establecimiento: establecimiento.codigo,
+        punto: caja.codigo,
+        numero: numeroNotaDeCredito,
+        tipoContribuyente: CDC_TIPO_CONTRIBUYENTE[usuario.empresa.tipo_contribuyente],
+        fechaEmision: new Date(),
+        tipoEmision: CDC_TIPO_EMISION_NORMAL,
+        codigoSeguridad: codigoSeguridadAleatorio,
       });
 
-      if (!resultado || resultado.status != true) {
-        throw new ErrorApp("Error al generar nota de crédito", 500);
-      }
-
-      // Crear nota de crédito
-      const notaDeCredito = await prisma.notaCredito.create({
+      // Crear nota de crédito (estado_sifen: GENERADO — el pipeline nativo la firma a continuación,
+      // en esta misma transacción; `xml`/`linkqr`/`sifen_estado` legacy quedan sin escribir, ver
+      // MIGRATION_PLAN.md §2.2)
+      const notaDeCredito = await tx.notaCredito.create({
         data: {
           factura_id: factura.id,
           nota_credito_uuid: notaDeCreditoUuid,
           usuario_id: usuario.id,
           total_iva: datos.totalIva,
           total: datos.total,
-          cdc: resultado.cdc,
-          xml: resultado.xmlLink,
-          linkqr: resultado.link,
+          cdc,
+          estado_sifen: 'GENERADO',
           codigo_seguridad: codigoSeguridadAleatorio,
           numero_nota_credito: numeroNotaDeCredito,
-          usuario_id: usuario.id,
           caja_id: caja.id,
         },
       });
@@ -209,11 +213,13 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
         descripcion: e.descripcion,
       }));
 
-      await prisma.notaCreditoDetalle.createMany({
+      await tx.notaCreditoDetalle.createMany({
         data: datosNotaDeCreditoDetalle,
       });
 
-      return notaDeCredito;
+      // Firma + QR sincrónicos (mismo comportamiento que ya tenía la API PHP legacy — solo el envío a
+      // SIFEN es asíncrono por lote, ver "Conflictos detectados" en MIGRATION_PLAN.md).
+      return loteService.firmarDocumentoRecienCreado('NOTA_CREDITO', notaDeCredito.id, tx);
     });
 
     // Crear PDF
@@ -268,103 +274,6 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     console.log(error);
     ErrorApp.handleServiceError(error);
   }
-};
-
-const apiFacturacionElectronicaNotaDeCredito = async (datos) => {
-  // return {status: true, recordID: '123', cdc: 'test', link: 'test', xmlLink: 'test'}
-
-  const form = new FormData();
-
-  let pagos = [
-    {
-      name: "cash",
-      tipoPago: "99", // 1 (efectivo), 3 (TC), 4 (TD), 99 (Otros)
-      monto: Number(datos.total),
-    },
-  ];
-
-  const items = datos.items.map((e) => {
-    const baseGravItem =
-      e.tasa == "0%" ? 0 : Number(e.total) - Number(e.impuesto);
-    const ivaTasa = e.tasa == "0%" ? 0 : e.tasa == "5%" ? 5 : 10;
-    const ivaAfecta = e.tasa == "0%" ? 3 : 1;
-
-    return {
-      descripcion: e.descripcion ? e.descripcion.slice(0,119) : '',
-      codigo: "0011",
-      unidadMedida: 77, // 77 (Unidad), 83 (kg)
-      ivaTasa,
-      ivaAfecta,
-      cantidad: Number(e.cantidad),
-      precioUnitario: Number(e.precioUnitario),
-      precioTotal: Number(e.total),
-      liqIvaItem: Number(e.impuesto),
-      baseGravItem,
-    };
-  });
-
-  //Armar datajson
-  let data = {
-    ruc: datos.empresaRuc,
-    fecha: dayjs().format("YYYY-MM-DD HH:mm:ss"),
-    documentoAsociado: {
-      remision: false,
-      tipoDocumento: 1,
-      cdcAsociado: datos.cdc,
-    },
-    establecimiento: datos.establecimiento,
-    punto: datos.caja,
-    numero: String(datos.numeroNotaDeCredito),
-    descripcion: ".",
-    tipoDocumento: 5, // 1 (Factura), 5 (Nota de crédito), 7 (Nota de remision)
-    tipoEmision: 1,
-    tipoTransaccion: 1, // 1 (Venta presencial)
-    receiptid: datos.notaDeCreditoUuid,
-    condicionPago: 1, // condicion_venta = CONTADO
-    moneda: "PYG",
-    cambio: 0, // Porque moneda = "PYG"
-    cliente: {
-      ... (datos.situacionTributaria === 'NO_DOMICILIADO' ? {
-        cpais: datos.pais || 'PRY',
-        numCasa: 0,
-        direccion: datos.direccion || 'ASUNCIÓN'
-      } : {}),
-      ruc: datos.ruc !== '0' ? datos.ruc : '',
-      nombre: datos.ruc !== '0' ? datos.razonSocial.replace(/&/g, 'Y') : '',
-      diplomatico: false, //Cuando un cliente es diplomatico (true). Todo tiene que ir como exenta
-    },
-    codigoSeguridadAleatorio: datos.codigoSeguridadAleatorio,
-    items,
-    pagos,
-    totalPago: Number(datos.total),
-    totalRedondeo: 0,
-  };
-
-  const datajson = JSON.stringify(data, null, 2);
-
-  form.append("datajson", datajson);
-  form.append("recordID", "123");
-  console.log(data);
-
-  const response = await axios({
-    url: `${process.env.URL_API_FACT}/data.php`,
-    method: "POST",
-    data: form,
-    headers: {
-      ...form.getHeaders(),
-    },
-  });
-
-  // 2) Muestras el “raw” completo
-  console.log('Respuesta completa:', response);
-
-  // 3) Desestructuras sólo lo que te interesa
-  const { data: { data: resultado } = {} } = response;
-
-  // 4) Y ya puedes usar o loguear tu variable
-  console.log('Campo resultado:', resultado);
-
-  return resultado;
 };
 
 const generarCodigoSeguridad = (length = 9) => {
@@ -496,35 +405,13 @@ const cancelarNotaDeCredito = async (datos, datosUsuario) => {
       throw new ErrorApp('Nota de crédito no encontrada', 404)
     }
 
-    if (notaDeCredito.sifen_estado == 'Cancelado') {
+    if (notaDeCredito.estado_sifen == 'CANCELADO') {
       throw new ErrorApp('La nota de crédito ya se encuentra con estado Cancelado', 400)
     }
 
-    // Se busca datos de la empresa
-    const empresa = await prisma.empresa.findFirst({
-      where: { id: datosUsuario.empresaId }
-    })
-
-    if (!empresa) {
-      throw new ErrorApp('Empresa no encontrada', 404)
-    }
-
-    const resultado = await apiFacturacionElectronicaCancelarNotaDeCredito({ ruc: empresa.ruc, cdc: notaDeCredito.cdc, motivo: datos.motivo });
-
-    if (resultado && resultado.status) {
-      await prisma.notaCredito.update({
-        where: {
-          id: datos.notaDeCreditoId
-        },
-        data: {
-          sifen_estado: 'Cancelado',
-          sifen_estado_mensaje: datos.motivo
-        }
-      })
-      return resultado
-    } else {
-      throw new ErrorApp(resultado.message || 'No se pudo cancelar la nota de crédito', 400)
-    }
+    // Cancelación síncrona contra SIFEN (MIGRATION_PLAN.md §3.2) — eventoService valida por su cuenta
+    // que la Nota de Crédito esté APROBADA, arma+firma+envía el evento, y actualiza estado_sifen a CANCELADO.
+    return await eventoService.cancelarNotaCredito({ notaCreditoId: datos.notaDeCreditoId, motivo: datos.motivo });
 
   } catch (error) {
     // console.log(error);
@@ -532,41 +419,9 @@ const cancelarNotaDeCredito = async (datos, datosUsuario) => {
   }
 }
 
-const apiFacturacionElectronicaCancelarNotaDeCredito = async ({cdc, motivo, ruc} = {}) => {
-  const form = new FormData();
-
-  //Armar jsondata
-  const data = {
-      tipoEvento: 2,
-      cdc,
-      motivo,
-      ruc
-  }
-  console.log(data);
-
-  const datajson = JSON.stringify(data, null, 2);
-
-  form.append("datajson", datajson);
-  form.append("recordID", "123");
-
-  const { data: resultado } = await axios({
-      url: `${process.env.URL_API_FACT}/eventos.php`,
-      method: "POST",
-      data: form,
-      headers: {
-          ...form.getHeaders(),
-      },
-  });
-  
-  console.log(resultado);
-
-  return resultado;
-}
-
-
 const reenviarNotaDeCredito = async ({ email, notaDeCreditoId }) => {
   const notaDeCredito = await prisma.notaCredito.findFirst({
-    where: { id: notaDeCreditoId, sifen_estado: "Aprobado" },
+    where: { id: notaDeCreditoId, estado_sifen: "APROBADO" },
     include: {
       factura: {
         include: {
@@ -591,6 +446,7 @@ const reenviarNotaDeCredito = async ({ email, notaDeCreditoId }) => {
     nroNotaDeCredito: notaDeCredito.numero_nota_credito,
     empresa: empresa.nombre_empresa,
     emailEmpresa: empresa.email,
+    xmlFirmado: notaDeCredito.xml_firmado,
   });
 };
 
