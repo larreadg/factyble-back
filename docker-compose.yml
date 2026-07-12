@@ -8,7 +8,7 @@ services:
     env_file:
       - .env
     ports:
-      - "${DOCKER_APP_HOST_PORT}:${DOCKER_APP_CONTAINER_PORT}"
+      - "127.0.0.1:${DOCKER_APP_HOST_PORT}:${DOCKER_APP_CONTAINER_PORT}"
     volumes:
       - ./public:/app/public
       - ./logos:/app/logos
