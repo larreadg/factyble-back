@@ -409,6 +409,7 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
             cliente: true,
           },
         },
+        eventos_sifen: true,
       },
     });
 
@@ -440,6 +441,7 @@ const getFacturaById = async (id) => {
       },
       include: {
         detalles: true,
+        eventos_sifen: true,
       },
     });
 

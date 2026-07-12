@@ -9,7 +9,13 @@ const sifenClientService = require("./sifenClientService");
 const trazabilidadService = require("./trazabilidadService");
 const correoService = require("../correoService");
 const { interpretarCodigo, CATEGORIA } = require("../../utils/sifen/codigosRespuesta");
-const { extraerCodigoYMensaje, extraerProtocoloLote, extraerResultadosPorDocumento, extraerCdc } = require("../../utils/sifen/respuestaSoap");
+const {
+  extraerCodigoYMensaje,
+  extraerProtocoloLote,
+  extraerResultadosPorDocumento,
+  extraerCdc,
+  extraerProtocoloAutorizacion,
+} = require("../../utils/sifen/respuestaSoap");
 const { decryptTolerante } = require("../../utils/crypto");
 
 /**
@@ -25,12 +31,13 @@ const { decryptTolerante } = require("../../utils/crypto");
  * (SIFEN aceptó el lote) -> APROBADO | RECHAZADO | ERROR (definitivo, tras `consultarLotes` o la red
  * de seguridad por CDC).
  *
- * Los campos exactos de la respuesta SOAP de SIFEN (namespace, anidamiento) no están confirmados por
- * lectura de código (ver `utils/sifen/respuestaSoap.js`) — el spike #3 (round-trip real contra SIFEN
- * test) sigue bloqueado por falta de RUC/certificado de prueba de la SET. La extracción de campos acá
- * usa búsqueda por sufijo de nombre de tag (robusta a variaciones de namespace) y está aislada en
- * funciones puntuales para poder ajustarla rápido en cuanto se pueda verificar contra una respuesta
- * real.
+ * Los campos exactos de la respuesta SOAP de `consultaLote` (namespace, anidamiento) están confirmados
+ * contra un round-trip real de producción (spike #3 resuelto — ver `utils/sifen/respuestaSoap.js`): el
+ * nodo por-documento es `gResProcLote` (no `gResProcLoteDe`), el código/mensaje de sobre son
+ * `dCodResLot`/`dMsgResLot` (distintos de `dCodRes`/`dMsgRes`, que a ese nivel son del documento
+ * anidado), el CDC viene en `id` y el protocolo de autorización en `dProtAut`. La extracción de campos
+ * acá usa búsqueda por sufijo de nombre de tag (robusta a variaciones de namespace) y está aislada en
+ * funciones puntuales en `respuestaSoap.js`.
  */
 
 const LOTE_MAX_DOCUMENTOS = 50;
@@ -481,9 +488,9 @@ const enviarLotesConstruidos = async () => {
       });
 
       // Código a nivel de sobre/lote (0300/0301, ver codigosRespuesta.js) — se excluye explícitamente
-      // el subárbol gResProcLoteDe (breakdown por documento, si llegara a venir en esta respuesta) para
+      // el subárbol gResProcLote (breakdown por documento, si llegara a venir en esta respuesta) para
       // que nunca se confunda con el código de un documento individual (AUD-008, STATIC_AUDIT_FINDINGS.json).
-      const { codigo, mensaje } = extraerCodigoYMensaje(respuesta, { excluirSufijos: ["gResProcLoteDe"] });
+      const { codigo, mensaje } = extraerCodigoYMensaje(respuesta, { excluirSufijos: ["gResProcLote"] });
       const protocolo = extraerProtocoloLote(respuesta);
       const interpretacion = interpretarCodigo(codigo);
 
@@ -556,11 +563,11 @@ const enviarLotesConstruidos = async () => {
 
 /**
  * Actualiza un documento (Factura o NotaCredito) a partir de su entrada de resultado dentro de
- * `gResProcLoteDe` (respuesta de `consultaLote`). No toca nada si el resultado todavía es
+ * `gResProcLote` (respuesta de `consultaLote`). No toca nada si el resultado todavía es
  * INFORMATIVO (sin resolución final).
  * @param {"FACTURA"|"NOTA_CREDITO"} tipoDoc
  * @param {number} loteId
- * @param {Object} resultadoDocumento - Una entrada de `gResProcLoteDe`
+ * @param {Object} resultadoDocumento - Una entrada de `gResProcLote`
  */
 const actualizarDocumentoPorResultado = async (tipoDoc, loteId, resultadoDocumento) => {
   const cdc = extraerCdc(resultadoDocumento);
@@ -583,6 +590,7 @@ const actualizarDocumentoPorResultado = async (tipoDoc, loteId, resultadoDocumen
     data: {
       estado_sifen: nuevoEstado,
       sifen_cod_respuesta: interpretacion.codigo,
+      sifen_num_transaccion: extraerProtocoloAutorizacion(resultadoDocumento) || null,
       fecha_respuesta_sifen: new Date(),
     },
   });
@@ -615,10 +623,12 @@ const consultarLotes = async () => {
         certificadoPassword: certificado.clave,
       });
 
-      // Código a nivel de sobre/lote — se excluye explícitamente el subárbol gResProcLoteDe (donde sí
-      // vive el código de cada documento individual) para que la interpretación de nivel-lote nunca
-      // termine leyendo por error el código de un documento anidado (AUD-008, STATIC_AUDIT_FINDINGS.json).
-      const { codigo, mensaje } = extraerCodigoYMensaje(respuesta, { excluirSufijos: ["gResProcLoteDe"] });
+      // Código a nivel de sobre/lote de una respuesta de consultaLote: viene en dCodResLot/dMsgResLot,
+      // no en dCodRes/dMsgRes (esos, a este nivel, son los del documento individual anidado dentro de
+      // gResProcLote — confirmado contra un round-trip real, ver respuestaSoap.js). No es un caso
+      // particular de dCodRes: es un tag distinto, por eso se pasa sufijoCodigo/sufijoMensaje en vez de
+      // excluirSufijos (AUD-008, STATIC_AUDIT_FINDINGS.json — la exclusión original no cubría esto).
+      const { codigo, mensaje } = extraerCodigoYMensaje(respuesta, { sufijoCodigo: "dCodResLot", sufijoMensaje: "dMsgResLot" });
       const resultadosPorDocumento = extraerResultadosPorDocumento(respuesta);
       const interpretacionLote = interpretarCodigo(codigo);
 
@@ -629,7 +639,10 @@ const consultarLotes = async () => {
         request: { id: lote.id, numeroProtocolo: lote.sifen_numero_lote },
         response: respuesta,
         codigoRespuesta: interpretacionLote.codigo,
-        exitoso: interpretacionLote.categoria !== CATEGORIA.RECHAZADO,
+        // El código de sobre de consultaLote (p. ej. "0362", "procesamiento concluido") todavía no está
+        // en codigosRespuesta.js (pendiente de verificar contra el Manual Técnico, no se inventa acá) —
+        // no lo uses solo para decidir "exitoso": si ya hay resultado por documento, la consulta funcionó.
+        exitoso: resultadosPorDocumento.length > 0 || interpretacionLote.categoria !== CATEGORIA.RECHAZADO,
       });
 
       await prisma.lote.update({

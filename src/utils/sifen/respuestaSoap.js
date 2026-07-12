@@ -2,20 +2,20 @@
  * Extracción de campos de la respuesta SOAP de SIFEN ya parseada (xml2js, `explicitArray: false`,
  * tal como la devuelve `sifenClientService`), sin asumir un namespace prefix fijo en las claves.
  *
- * El propio código fuente de `facturacionelectronicapy-setapi` (SET.js) tiene, comentado, un intento
- * anterior de bajar a una clave específica con prefijo (`result['env:Envelope']['env:Body']['ns2:rResEnviLoteDe']`)
- * que fue reemplazado por devolver `env:Body` entero sin bajar más — es decir, el nombre exacto del
- * nodo raíz de la respuesta (con o sin prefijo de namespace) no está confirmado por lectura de código,
- * y depende de cómo SIFEN namespacea la respuesta real (pendiente del spike #3, round-trip real contra
- * SIFEN test — ver MIGRATION_PLAN.md). Los nombres de campo (`dCodRes`, `dMsgRes`, `dProtConsLote`,
- * `gResProcLoteDe`, `CDC`) sí están confirmados contra documentación oficial SET/DNIT (Manual Técnico
- * SIFEN v150 y "Guía de Mejores Prácticas para la Gestión del Envío de DE") vía búsqueda dirigida.
+ * El nombre exacto del nodo raíz (con o sin prefijo de namespace) no se fija en ningún lado a
+ * propósito — estas funciones buscan por *sufijo* de nombre de tag (ignorando el prefijo `algo:` si
+ * existe, y case-insensitive) recorriendo el objeto completo, robusto ante variaciones de namespace.
  *
- * Para no depender de acertar el namespace/anidamiento exacto, estas funciones buscan por *sufijo* de
- * nombre de tag (ignorando el prefijo `algo:` si existe, y case-insensitive) recorriendo el objeto
- * completo — robusto ante variaciones de namespace, a costa de no distinguir dos campos con el mismo
- * sufijo en ramas distintas del árbol (no es el caso de los campos que se buscan acá, todos únicos
- * dentro del scope en el que se invocan).
+ * Nombres de campo confirmados contra una respuesta real de `consultaLote` (round-trip contra SIFEN
+ * test, ver info2.json de auditoría / MIGRATION_PLAN.md, corrigió el spike #3 que estaba pendiente):
+ * el nodo por-documento se llama `gResProcLote` (**sin** "De" final, a diferencia de lo que se había
+ * asumido inicialmente), el código/mensaje a nivel de sobre/lote de una respuesta de `consultaLote`
+ * vienen en `dCodResLot`/`dMsgResLot` (no `dCodRes`/`dMsgRes`, que a ese nivel son los del *documento*,
+ * anidados dentro de `gResProcLote.gResProc`), el CDC de cada entrada viene en el campo `id` (no
+ * `CDC`), y el protocolo de autorización SIFEN (destino: `sifen_num_transaccion`) viene en `dProtAut`.
+ * `dProtConsLote` (respuesta de `recibeLote`) y `dCodRes`/`dMsgRes` a nivel de sobre de `recibeLote`
+ * siguen confirmados contra documentación oficial SET/DNIT (Manual Técnico SIFEN v150) vía búsqueda
+ * dirigida — no se tocan acá.
  */
 
 /**
@@ -69,16 +69,18 @@ const buscarValorPorSufijo = (obj, sufijo, { excluirSufijos = [], visitados = ne
 
 /**
  * Extrae {codigo, mensaje} de un nivel puntual (lote o documento) de una respuesta SOAP ya parseada.
- * @param {Object} respuestaSoap - Objeto (respuesta completa, o un sub-nodo puntual como una entrada de `gResProcLoteDe`)
+ * @param {Object} respuestaSoap - Objeto (respuesta completa, o un sub-nodo puntual como una entrada de `gResProcLote`)
  * @param {Object} [opciones]
- * @param {string[]} [opciones.excluirSufijos] - Ver `buscarValorPorSufijo` — p. ej. pasar
- *   `["gResProcLoteDe"]` al extraer el código a nivel de sobre de una respuesta de `consultaLote`, para
- *   no confundirlo nunca con el código de un documento individual anidado adentro.
+ * @param {string[]} [opciones.excluirSufijos] - Ver `buscarValorPorSufijo`.
+ * @param {string} [opciones.sufijoCodigo] - Default `"dCodRes"` (nivel documento, y nivel sobre de
+ *   `recibeLote`). Pasar `"dCodResLot"` para el código a nivel de sobre de una respuesta de
+ *   `consultaLote`, que es un tag distinto (no un caso particular de `dCodRes`).
+ * @param {string} [opciones.sufijoMensaje] - Default `"dMsgRes"`, análogo a `sufijoCodigo`.
  * @returns {{codigo: string|undefined, mensaje: string|undefined}}
  */
-const extraerCodigoYMensaje = (respuestaSoap, { excluirSufijos } = {}) => ({
-  codigo: buscarValorPorSufijo(respuestaSoap, "dCodRes", { excluirSufijos }),
-  mensaje: buscarValorPorSufijo(respuestaSoap, "dMsgRes", { excluirSufijos }),
+const extraerCodigoYMensaje = (respuestaSoap, { excluirSufijos, sufijoCodigo = "dCodRes", sufijoMensaje = "dMsgRes" } = {}) => ({
+  codigo: buscarValorPorSufijo(respuestaSoap, sufijoCodigo, { excluirSufijos }),
+  mensaje: buscarValorPorSufijo(respuestaSoap, sufijoMensaje, { excluirSufijos }),
 });
 
 /**
@@ -90,7 +92,7 @@ const extraerCodigoYMensaje = (respuestaSoap, { excluirSufijos } = {}) => ({
 const extraerProtocoloLote = (respuestaSoap) => buscarValorPorSufijo(respuestaSoap, "dProtConsLote");
 
 /**
- * Extrae la lista de resultados por documento (`gResProcLoteDe`) de una respuesta de `consultaLote`,
+ * Extrae la lista de resultados por documento (`gResProcLote`) de una respuesta de `consultaLote`,
  * normalizada siempre a array — xml2js con `explicitArray: false` devuelve un objeto único (no un
  * array de 1 elemento) cuando el lote consultado tiene un solo documento, caso borde que el caller no
  * debería tener que manejar aparte.
@@ -98,7 +100,7 @@ const extraerProtocoloLote = (respuestaSoap) => buscarValorPorSufijo(respuestaSo
  * @returns {Object[]}
  */
 const extraerResultadosPorDocumento = (respuestaSoap) => {
-  const grupo = buscarValorPorSufijo(respuestaSoap, "gResProcLoteDe");
+  const grupo = buscarValorPorSufijo(respuestaSoap, "gResProcLote");
   if (!grupo) {
     return [];
   }
@@ -106,11 +108,22 @@ const extraerResultadosPorDocumento = (respuestaSoap) => {
 };
 
 /**
- * Extrae el CDC de una entrada puntual de `gResProcLoteDe`.
+ * Extrae el CDC de una entrada puntual de `gResProcLote`. Ojo: busca por sufijo `"id"`, que es
+ * genérico — solo es seguro porque el caller siempre pasa acá una entrada ya recortada de
+ * `extraerResultadosPorDocumento` (cuyas claves son `id`/`dEstRes`/`dProtAut`/`gResProc`), nunca la
+ * respuesta SOAP completa (que sí trae un `id` de tracking de la llamada, ajeno al CDC, al nivel raíz).
  * @param {Object} resultadoDocumento
  * @returns {string|undefined}
  */
-const extraerCdc = (resultadoDocumento) => buscarValorPorSufijo(resultadoDocumento, "CDC");
+const extraerCdc = (resultadoDocumento) => buscarValorPorSufijo(resultadoDocumento, "id");
+
+/**
+ * Extrae el protocolo de autorización SIFEN (`dProtAut`) de una entrada puntual de `gResProcLote` —
+ * el número de transacción que identifica el documento ya aprobado (destino: `sifen_num_transaccion`).
+ * @param {Object} resultadoDocumento
+ * @returns {string|undefined}
+ */
+const extraerProtocoloAutorizacion = (resultadoDocumento) => buscarValorPorSufijo(resultadoDocumento, "dProtAut");
 
 module.exports = {
   buscarValorPorSufijo,
@@ -118,4 +131,5 @@ module.exports = {
   extraerProtocoloLote,
   extraerResultadosPorDocumento,
   extraerCdc,
+  extraerProtocoloAutorizacion,
 };

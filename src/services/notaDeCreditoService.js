@@ -340,6 +340,7 @@ const getNotasDeCredito = async (
         },
         include: {
           factura: true,
+          eventos_sifen: true,
         },
       });
 
@@ -372,6 +373,7 @@ const getNotasDeCredito = async (
           },
           include: {
             factura: true,
+            eventos_sifen: true,
           },
         });
 

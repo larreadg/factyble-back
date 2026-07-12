@@ -10,10 +10,19 @@
  * está sourceada, no adivinada:
  * - "0142": ya documentado en MIGRATION_PLAN.md desde el inicio del proyecto (motivo original de esta
  *   migración — certificado no asociado/vencido para el RUC emisor).
- * - "0260", "0300", "0301": confirmados contra documentación oficial de la SET/DNIT (Manual Técnico
- *   SIFEN v150 y "Guía de Mejores Prácticas para la Gestión del Envío de DE", ambos publicados en
- *   dnit.gov.py) vía búsqueda dirigida — no inventados, ver MIGRATION_PLAN.md "Estado de
- *   implementación" para el detalle de la verificación.
+ * - "0260", "0300", "0301", "0360", "0361", "0362", "0363", "0420", "0421", "0422", "0600":
+ *   confirmados contra el Manual Técnico SIFEN v150 oficial (DNIT), copia local
+ *   `Manual Técnico Versión 150.md` — tabla maestra de códigos en §12.1.1/§12.2, y detalle por WS en
+ *   §12.3.2.3 (`siRecepLoteDE`), §12.3.3.3 (`siResultLoteDE`/`consultaLote`), §12.3.4.3 (`siConsDE`,
+ *   Tabla G en §9.4.2) y §12.3.6.3 (`siRecepEvento`).
+ *
+ * `0361` ("Lote en procesamiento") y `0362` ("Procesamiento de lote concluido") están catalogados en
+ * el manual como códigos de validación del WS `siResultLoteDE` en sí (columna "E" = R/A), no como
+ * aprobación/rechazo de negocio del lote — acá se re-mapean a INFORMATIVO/APROBADO respectivamente
+ * porque es lo que representan funcionalmente para `consultarLotes()`: `0361` significa "todavía no
+ * terminó, no es un resultado final" (mismo criterio que ya se usa para `0300`), y tratarlo como
+ * RECHAZADO (el default de código no mapeado) hacía que `marcarLoteAgotado()` matara un lote que SIFEN
+ * simplemente no había terminado de procesar todavía — bug real encontrado al hacer esta verificación.
  *
  * Para ampliar este mapa: consultar el Manual Técnico oficial (dnit.gov.py), nunca adivinar un
  * código nuevo.
@@ -56,6 +65,62 @@ const CODIGOS_RESPUESTA = {
     mensajeInterno:
       "Lote no encolado para procesamiento (rechazado a nivel de sobre/envoltorio, p. ej. ZIP o XML " +
       "malformado) — no reintentar el mismo envío tal cual, requiere revisar el error antes de reenviar.",
+  },
+  // Nivel sobre, respuesta de consultaLote (Manual §12.3.3.3, WS siResultLoteDE).
+  "0360": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Lote inexistente — el número de protocolo consultado no existe del lado de SIFEN (no debería " +
+      "pasar en operación normal, revisar manualmente el Lote y su sifen_numero_lote).",
+  },
+  "0361": {
+    // Ver nota arriba del archivo: no es un rechazo de negocio, es "SIFEN todavía no terminó de
+    // procesar este lote" — mismo tratamiento que 0300 (no dispara ninguna transición final).
+    categoria: CATEGORIA.INFORMATIVO,
+    alertar: false,
+    mensajeInterno: "Lote todavía en procesamiento por SIFEN — no es un resultado final, reintentar la consulta más adelante.",
+  },
+  "0362": {
+    categoria: CATEGORIA.APROBADO,
+    alertar: false,
+    mensajeInterno:
+      "Procesamiento del lote concluido por SIFEN (código de validación del WS, no de un documento en " +
+      "particular — el resultado real de cada documento viene en gResProcLote).",
+  },
+  "0363": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Lote con tipos distintos de documento electrónico — no debería poder pasar (loteService agrupa " +
+      "por tipo_doc antes de armar el lote), si aparece es señal de un bug en el armado de lotes.",
+  },
+  // Nivel documento, respuesta de siConsDE (Manual §9.4.2 Tabla G / §12.3.4.3) — usado por
+  // consultaIndividualRedDeSeguridad (consulta por CDC, no por lote).
+  "0420": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "CDC inexistente en SIFEN — el documento no fue encontrado (solo los DE que superaron todas las " +
+      "validaciones y se convirtieron en DTE quedan consultables por este WS).",
+  },
+  "0421": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "El RUC del certificado usado en la conexión no tiene permiso para consultar este DE — revisar " +
+      "el certificado activo de la empresa antes de reintentar.",
+  },
+  "0422": {
+    categoria: CATEGORIA.APROBADO,
+    alertar: false,
+    mensajeInterno: "CDC encontrado — el documento existe como DTE en SIFEN (fue aprobado).",
+  },
+  // Nivel documento, respuesta de siRecepEvento (Manual §9.5.3 / §12.3.6.3).
+  "0600": {
+    categoria: CATEGORIA.APROBADO,
+    alertar: false,
+    mensajeInterno: "Evento registrado correctamente por SIFEN (p. ej. cancelación aprobada).",
   },
 };
 

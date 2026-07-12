@@ -5,6 +5,7 @@ const QRCode = require("qrcode");
 const { formatNumber } = require("./format");
 const LOGOS_DIR = path.resolve(__dirname, "../..", process.env.LOGOS_DIR || "logos");
 const PUBLIC_QR = path.resolve(__dirname, '../../public/qr');
+const FACTYBLE_LOGO = path.resolve(__dirname, "..", "resources", "factura.png");
 
 java.classpath.push(path.resolve(__dirname, "..", "resources/lib/jasperreports.jar"));
 java.classpath.push(path.resolve(__dirname, "..", "resources/lib/jasperreports-fonts.jar"));
@@ -39,6 +40,7 @@ const generarPdf = async (datos) => {
     if (datos.empresaLogo) {
       params.putSync("empresaLogo", path.resolve(LOGOS_DIR, datos.empresaLogo));
     }
+    params.putSync("factyble",               FACTYBLE_LOGO);
     params.putSync("empresaRuc",             String(datos.empresaRuc));
     params.putSync("empresaTimbrado",        String(datos.empresaTimbrado));
     params.putSync("empresaVigenteDesde",    datos.empresaVigenteDesde);

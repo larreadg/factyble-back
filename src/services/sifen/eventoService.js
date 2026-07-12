@@ -6,7 +6,7 @@ const certificadoService = require("./certificadoService");
 const sifenClientService = require("./sifenClientService");
 const trazabilidadService = require("./trazabilidadService");
 const { interpretarCodigo, CATEGORIA } = require("../../utils/sifen/codigosRespuesta");
-const { extraerCodigoYMensaje } = require("../../utils/sifen/respuestaSoap");
+const { extraerCodigoYMensaje, extraerProtocoloAutorizacion } = require("../../utils/sifen/respuestaSoap");
 const { esAprobado } = require("../../utils/sifen/estadoHistorico");
 
 /**
@@ -126,6 +126,8 @@ const cancelarDocumento = async (tipoDoc, documentoId, motivo) => {
           sifen_respuesta_codigo: interpretacion.codigo,
           sifen_respuesta_mensaje: mensaje || null,
           sifen_respuesta_xml: typeof respuesta === "string" ? respuesta : JSON.stringify(respuesta),
+          // dProtAut, generado por SIFEN para cada evento registrado (dCodRes=0600) — Manual §9.5.3.
+          secuencia_sifen: extraerProtocoloAutorizacion(respuesta) || null,
         },
       });
 

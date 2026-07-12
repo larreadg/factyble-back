@@ -4,7 +4,67 @@
 
 ## Estado de implementación (para retomar en otra sesión)
 
-> Última actualización: 2026-07-11 (sesión 7 — usuario SUPERADMIN sin empresa + `PUT /empresa/:id`, ver Fase 5.3 debajo).
+> Última actualización: 2026-07-11 (sesión 8 — spike #3 resuelto contra el piloto real en producción, bug de parseo de `consultaLote` encontrado y corregido, ver debajo).
+
+### Fase 5.4 — Spike #3 resuelto: bug real en el parseo de `consultaLote` (sesión 8, 2026-07-11)
+
+> Detectado a partir de evidencia real del piloto en producción (empresa 1, facturas 2 y 3): ambos
+> lotes quedaron con `sifen_consulta_codigo="0260"`/`"Aprobado"` y `Lote.estado="ENVIADO"` para
+> siempre, pero las dos `Factura` asociadas nunca pasaron de `estado_sifen="ENVIADO"` — el pipeline
+> nativo dejaba de actualizar el documento aunque SIFEN ya lo hubiera aprobado.
+
+**Causa raíz**: la respuesta real de `consultaLote` (capturada en `sifen_trazabilidad`) no coincide con
+la estructura que se había asumido sin poder verificarla (spike #3, antes bloqueado por falta de
+RUC/certificado de test):
+- El nodo por-documento se llama **`gResProcLote`** (sin "De" final), no `gResProcLoteDe` como asumía
+  el código. `extraerResultadosPorDocumento` buscaba el sufijo equivocado y siempre devolvía `[]`.
+- El código/mensaje a **nivel de sobre/lote** de `consultaLote` vienen en **`dCodResLot`/`dMsgResLot`**,
+  no en `dCodRes`/`dMsgRes` (esos, a ese nivel, son los del documento individual anidado dentro de
+  `gResProcLote.gResProc`). Por el nombre equivocado de arriba, la exclusión de AUD-008 nunca aplicaba y
+  el código "de sobre" terminaba siendo en realidad el código del documento (`0260`/"Aprobado") —
+  coincidencia que ocultó el bug hasta que se comparó contra el estado real de `Factura`.
+- El CDC de cada entrada viene en el campo **`id`**, no `CDC`.
+- El protocolo de autorización SIFEN viene en **`dProtAut`** — nunca se leía; ahora se persiste en
+  `Factura.sifen_num_transaccion`/`NotaCredito.sifen_num_transaccion` (campo que existía en el schema
+  desde el principio pero ningún código lo escribía).
+
+**Fix**: `utils/sifen/respuestaSoap.js` (sufijos corregidos + nueva `extraerProtocoloAutorizacion` +
+`extraerCodigoYMensaje` ahora acepta `sufijoCodigo`/`sufijoMensaje` para no tratar `dCodResLot` como
+caso particular de `dCodRes`) y `services/sifen/loteService.js` (`consultarLotes`,
+`actualizarDocumentoPorResultado`, `enviarLotesConstruidos`).
+
+**Verificación**: `node --check` sobre ambos archivos; script ad-hoc (no persistido) que corrió los
+extractores contra el JSON real capturado en `sifen_trazabilidad` (id 6/8/10/12, lote 2) y confirmó
+`cdc`, `codigo` documento (`0260`→`APROBADO`) y `dProtAut` correctos. Los lotes 2 y 3 se resolvieron
+solos con el fix (seguían en `Lote.estado=ENVIADO`, el cron los volvió a tomar).
+
+**Continuación (misma sesión, misma noche)**: al cancelar `Factura id=2` vía `eventoService`, SIFEN
+respondió `dCodRes=0600`/"Evento registrado correctamente" (`dEstRes=Aprobado`), pero como `"0600"` no
+estaba mapeado en `codigosRespuesta.js`, `eventoService.js` lo trató como rechazo y nunca pasó
+`estado_sifen` a `CANCELADO`. Se verificó `"0600"` contra el Manual Técnico oficial (copia local
+`Manual Técnico Versión 150.md`, §9.5.3/§12.3.6.3 — "BU01 Evento registrado correctamente 0600 A") y,
+aprovechando la lectura, se verificaron también todos los demás códigos que el pipeline puede recibir
+(§12.3.2.3/§12.3.3.3/§12.3.4.3, WS `siRecepLoteDE`/`siResultLoteDE`/`siConsDE`). Se encontraron **dos
+bugs más de la misma familia**, ya corregidos:
+- `"0361"` ("Lote en procesamiento") no estaba mapeado → caía en el default `RECHAZADO` → si
+  `consultarLotes()` alcanzaba a consultar un lote que SIFEN todavía no había terminado de procesar
+  (sin `gResProcLote` en la respuesta todavía), `marcarLoteAgotado()` lo mataba en vez de esperar al
+  siguiente poll. Mapeado ahora a `INFORMATIVO` (mismo criterio que `0300`), con nota en
+  `codigosRespuesta.js` explicando por qué se reinterpreta la columna "E"=R de la tabla del manual (esa
+  columna es sobre la validación del WS, no sobre el resultado de negocio del lote).
+- `"0422"` ("CDC encontrado", WS `siConsDE`) no estaba mapeado → caía en `RECHAZADO` → cualquier
+  documento que `consultaIndividualRedDeSeguridad()` (red de seguridad, +120min atascado) encontraba
+  exitosamente aprobado en SIFEN se marcaba `RECHAZADO` en la base. Mapeado a `APROBADO`.
+
+También se agregaron `"0360"`, `"0363"`, `"0420"`, `"0421"` (explícitos, mismo resultado que el default
+pero documentados) y se empezó a persistir `EventoSifen.secuencia_sifen` (`dProtAut` del evento, campo
+que existía en el schema pero nunca se escribía — mismo patrón que `sifen_num_transaccion` arriba).
+
+**Reparación de datos**: con confirmación explícita del usuario, se corrió un script puntual (escrito,
+ejecutado y borrado en la misma sesión — no quedó en el repo) que corrigió `Factura id=2`
+(`estado_sifen`: `APROBADO` → `CANCELADO`) y backfilleó `EventoSifen id=1.secuencia_sifen=57136540`,
+verificando antes de escribir que `EventoSifen.sifen_respuesta_codigo="0600"` y que la factura seguía en
+el estado esperado.
 
 ### Fase 5.1 — Correcciones de la auditoría estática (sesión 5, 2026-07-11)
 
@@ -22,7 +82,7 @@
 | AUD-005 (P2) — carrera de activación de certificado | `crearCertificado`/`activarCertificado` toman `SELECT ... FOR UPDATE` sobre la fila de `Empresa` dentro de la transacción (mismo patrón que la secuencia de numeración) — serializa altas/activaciones concurrentes para la misma empresa | `services/sifen/certificadoService.js` |
 | AUD-006 (P2) — CSC en texto plano | `utils/crypto.js#decryptTolerante` (descifra si el valor fue cifrado, si no lo devuelve tal cual) usado al leer `Empresa.csc` en `loteService`. El lado de escritura quedó cerrado en Fase 5.2 (ver debajo): `empresaService.js#crearEmpresaCompleta` cifra `csc` con `encrypt()` antes de persistir — ya no hay ningún camino de escritura que deje `csc` en texto plano | `utils/crypto.js`, `services/sifen/loteService.js`, `services/empresaService.js` |
 | AUD-007 (P2) — filtros Prisma `not`/`notIn` ante NULL | Las 2 queries restantes con esta ambigüedad (guard de NC vigentes antes de cancelar una Factura, suma de NC previas antes de emitir una nueva) ya no filtran `estado_sifen` en el `where` — traen todo y filtran explícito en JS con `esCancelado`/`esRechazado`, sin depender de cómo Prisma trate NULL | `facturaService.js`, `notaDeCreditoService.js` |
-| AUD-008 (P2) — parseo SOAP ambiguo | `buscarValorPorSufijo`/`extraerCodigoYMensaje` aceptan `excluirSufijos` — usado en `consultarLotes`/`enviarLotesConstruidos` para que la extracción del código a nivel de sobre/lote nunca pueda descender a leer por error el código de un documento individual dentro de `gResProcLoteDe`. Sigue siendo una mitigación, no una confirmación — el spike #3 (respuesta real de SIFEN) sigue descartado | `utils/sifen/respuestaSoap.js`, `services/sifen/loteService.js` |
+| AUD-008 (P2) — parseo SOAP ambiguo | `buscarValorPorSufijo`/`extraerCodigoYMensaje` aceptan `excluirSufijos` — usado en `consultarLotes`/`enviarLotesConstruidos` para que la extracción del código a nivel de sobre/lote nunca pueda descender a leer por error el código de un documento individual. La mitigación en sí no alcanzó: el nombre real del nodo (`gResProcLote`, no `gResProcLoteDe`) recién se confirmó en Fase 5.4 (sesión 8) contra una respuesta real de producción — ver esa sección para el fix definitivo | `utils/sifen/respuestaSoap.js`, `services/sifen/loteService.js` |
 | AUD-009 (P2) — firma/armado sin claim atómico | `firmarPendientes` reclama cada documento (`GENERADO -> FIRMANDO`, nuevo valor transitorio en `EstadoSifen`, migración aditiva `20260711124525_estado_sifen_firmando`) antes de firmarlo; libera el claim si falla. `crearLoteConDocumentos` agrega `lote_id: null` al `updateMany` de asignación (antes podía "robar" en silencio un documento ya tomado por otro lote concurrente) | `services/sifen/loteService.js`, `prisma/schema.prisma` |
 | AUD-010 (P2) — PII en trazabilidad sin control de acceso | **No modificado en esa sesión.** Verificado al investigar el fix: no existía ningún controller/route que expusiera `trazabilidadService`/`certificadoService` (`src/routes/` no tenía `certificadoRoute`/`trazabilidadRoute`/`empresaRoute`) — sin superficie HTTP, el hallazgo quedaba acotado a exposición por acceso directo a BD, no por API. **La premisa cambió en Fase 5.2**: ahora existe `empresaRoute.js` (`POST /empresa`, gateado por `authJwt(['SUPERADMIN'])`), pero solo para alta — no expone lectura de `trazabilidadService` ni de `Certificado.clave`/`Empresa.csc` (la respuesta los omite explícitamente, ver `empresaService.js#obtenerEmpresaCompleta`). Retención (90 días) y minimización de payload de `SifenTrazabilidad` siguen siendo una decisión de producto/cumplimiento pendiente, no un bug de código | `routes/empresaRoute.js` |
 | AUD-011 (P2) — cron sin mutex distribuido | **No es un fix de código** — ver nota operativa abajo | — |
@@ -243,7 +303,7 @@ Los 3 XML finales (con `DE` + `Signature` + `gCamFuFD`, orden correcto) validan 
 
 ### Resultados de los spikes de Fase 0 (§4.0) — spikes #1 y #2
 
-> Ambos resueltos leyendo el código fuente transpilado en `node_modules/` (JS, no minificado) — no hicieron falta credenciales ni red. El spike #3 (round-trip real) no es resoluble así: queda pendiente, ver abajo.
+> Ambos resueltos leyendo el código fuente transpilado en `node_modules/` (JS, no minificado) — no hicieron falta credenciales ni red. El spike #3 (round-trip real) no era resoluble así — quedó resuelto recién en Fase 5.4 (sesión 8), contra una respuesta real capturada durante el piloto en producción, ver esa sección.
 
 **Spike #1 — ¿`setapi.recibeLote` arma el envoltorio `<rLoteDE>` + zip internamente, o solo transporta?**
 
@@ -623,7 +683,7 @@ Sin Redis/BullMQ (instrucción explícita) salvo que el volumen lo justifique (D
 
 1. ✅ **RESUELTO** — ¿`facturacionelectronicapy-setapi.recibeLote` arma internamente el envoltorio `&lt;rLoteDE&gt;` + zip, o solo transporta? **Arma todo internamente** (rLoteDE + zip + sobre SOAP + mTLS) — ver "Resultados de los spikes" en "Estado de implementación" al inicio del doc.
 2. ✅ **RESUELTO** — ¿`facturacionelectronicapy-xmlsign` firma el nodo `rEve` de eventos, o solo el nodo `DE`? **Sí lo cubre** (`signXMLEvento`), wire-compatible con el output de `xmlgen` sin adaptación — ver misma sección, incluye hallazgo de seguridad nuevo sobre la vía Java de la lib (usar siempre `signByNodeJS: true`).
-3. ⬜ **PENDIENTE** — Round-trip mínimo contra el ambiente de test de SIFEN con certificado de prueba. Bloqueado: requiere RUC/certificado P12 de prueba de la SET, no disponibles todavía.
+3. ✅ **RESUELTO (sesión 8, Fase 5.4)** — Round-trip mínimo contra SIFEN. No se resolvió contra el ambiente de test (nunca se consiguió RUC/certificado de prueba de la SET) sino contra el piloto real en producción: la respuesta real de `consultaLote` reveló que el nodo por-documento es `gResProcLote` (no `gResProcLoteDe`), el código de sobre es `dCodResLot`/`dMsgResLot`, el CDC viene en `id` y el protocolo de autorización en `dProtAut` — ver Fase 5.4 arriba para el detalle y el fix.
 
 ### 4.1 Fases incrementales
 
@@ -631,7 +691,7 @@ Sin Redis/BullMQ (instrucción explícita) salvo que el volumen lo justifique (D
 
 | Fase | Contenido | Criterio de aceptación |
 |---|---|---|
-| **1 — Fundamentos** | Migraciones Prisma (§2.2) ✅, instalación de las 4 libs `facturacionelectronicapy-*` ✅, variables de entorno (`SIFEN_ENV`, `CERT_ENCRYPTION_KEY`) ✅, spikes de §4.0 🟡 2/3 | Migraciones aplican limpio sobre copia de BD real (✅ verificado); spikes #1 y #2 resueltos y documentados (✅), spike #3 pendiente de credenciales de test de la SET (⬜); endpoints existentes sin cambios de comportamiento (✅ verificado — ninguna columna/tabla legacy tocada) |
+| **1 — Fundamentos** | Migraciones Prisma (§2.2) ✅, instalación de las 4 libs `facturacionelectronicapy-*` ✅, variables de entorno (`SIFEN_ENV`, `CERT_ENCRYPTION_KEY`) ✅, spikes de §4.0 ✅ 3/3 | Migraciones aplican limpio sobre copia de BD real (✅ verificado); spikes #1, #2 y #3 resueltos y documentados (✅ — #3 recién en Fase 5.4, sesión 8, contra el piloto real en producción, no contra test); endpoints existentes sin cambios de comportamiento (✅ verificado — ninguna columna/tabla legacy tocada) |
 | **2 — CDC + XML + firma + QR (sin envío)** | `cdc.js`, `xmlBuilderService`, `firmadorService`, `qrService` | ✅ Completo (2026-07-10): validado que el XML final valida contra el XSD oficial `siRecepDE_v150.xsd` (ver "Validación end-to-end de Fase 2" arriba). Pendiente, no bloqueante: comparación estructural contra fixtures reales de `factyble-api/v1/firmados/` (no se hizo, solo datos sintéticos) |
 | **3 — SifenClient + certificados + trazabilidad** | `sifenClientService` (recibeLote/evento/consultaLote/consulta/consultaRuc) ✅, `certificadoService` ✅, `trazabilidadService` ✅ | ✅ Completa (2026-07-10). Módulos escritos y verificados ad-hoc (sin test runner) — `certificadoService` y `trazabilidadService` además corridos contra la BD MySQL local real, no solo `require()`. Round-trip real contra SIFEN (test o producción) sigue quedando para el piloto de Fase 4, ver "Actualización de estrategia" arriba |
 | **4 — Código completo + piloto en producción con montos pequeños** | `loteService`, `eventoService`, jobs de §3.4 — ✅ código 100% escrito y verificado ad-hoc (2026-07-10, sesión 2). Spike #3 descartado (sesión 3): no hay ambiente de test de por medio. **Wiring de `facturaService.js`/`notaDeCreditoService.js` (Fase 5) ✅ completo (2026-07-11, sesión 4, con pedido explícito del usuario)** — ver tabla de Fase 5 arriba. Falta únicamente el certificado real de producción + datos fiscales de la empresa piloto antes de poder arrancar: montos bajos, iterando bugs | Ver los 4 puntos del criterio de salida del piloto, arriba ("Actualización de estrategia de validación final") — ~~ya no es "suite completa contra SIFEN test para todas las empresas"~~ |

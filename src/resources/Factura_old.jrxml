@@ -70,7 +70,6 @@
 	<parameter name="creditoCuotaCantidad" class="java.lang.String"/>
 	<parameter name="creditoCuotaPeriodicidad" class="java.lang.String"/>
 	<parameter name="creditoAPlazoDescripcion" class="java.lang.String"/>
-	<parameter name="factyble" class="java.lang.String"/>
 	<queryString>
 		<![CDATA[]]>
 	</queryString>
@@ -190,7 +189,8 @@
 		<groupHeader>
 			<band height="140">
 				<property name="com.jaspersoft.studio.unit.height" value="px"/>
-				<printWhenExpression><![CDATA[$P{condicionVenta}.equals("CREDITO") && $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+				<printWhenExpression><![CDATA[$P{condicionVenta}.equals("CREDITO") && $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 				<rectangle>
 					<reportElement positionType="Float" stretchType="ContainerHeight" mode="Transparent" x="0" y="9" width="555" height="121" isRemoveLineWhenBlank="true" forecolor="#20A5DE" uuid="0f883965-d020-4624-869e-05a5f7eee7ad">
 						<property name="com.jaspersoft.studio.unit.width" value="px"/>
@@ -202,7 +202,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="false"/>
@@ -214,7 +215,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="false"/>
@@ -227,7 +229,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="true"/>
@@ -240,7 +243,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="true"/>
@@ -253,7 +257,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="true"/>
@@ -265,7 +270,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="false"/>
@@ -277,7 +283,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="false"/>
@@ -290,7 +297,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="true"/>
@@ -303,7 +311,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="true"/>
@@ -316,7 +325,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="true"/>
@@ -328,7 +338,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="false"/>
@@ -340,7 +351,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="false"/>
@@ -353,7 +365,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="true"/>
@@ -366,7 +379,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="false"/>
@@ -379,7 +393,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="true"/>
@@ -391,7 +406,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="false"/>
@@ -403,7 +419,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="false"/>
@@ -416,7 +433,8 @@
 						<printWhenExpression><![CDATA[$P{condicionVenta} != null
 && $P{condicionVenta}.equals("CREDITO")
 && $P{tipoCredito} != null
-&& $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+&& $P{tipoCredito}.equals("CUOTA")
+]]></printWhenExpression>
 					</reportElement>
 					<textElement verticalAlignment="Middle">
 						<font size="8" isBold="true"/>
@@ -890,7 +908,7 @@
 		</band>
 	</detail>
 	<summary>
-		<band height="296">
+		<band height="200">
 			<property name="com.jaspersoft.studio.unit.height" value="px"/>
 			<rectangle>
 				<reportElement x="0" y="0" width="555" height="20" uuid="8e9996b2-81e4-48c5-9c4c-ec64af8a5a6b">
@@ -1078,20 +1096,6 @@
 				</textElement>
 				<text><![CDATA[Si su documento electrónico presenta algún error, podrá solicitar la modificación de las 72 horas siguientes de la
 emisión de éste comprobante]]></text>
-			</staticText>
-			<image>
-				<reportElement x="455" y="210" width="100" height="40" uuid="ef4b4c18-0adc-43ad-bc5c-d4fe65c1c1cb">
-					<property name="com.jaspersoft.studio.unit.width" value="px"/>
-					<property name="com.jaspersoft.studio.unit.height" value="px"/>
-				</reportElement>
-				<imageExpression><![CDATA[$P{factyble}]]></imageExpression>
-			</image>
-			<staticText>
-				<reportElement x="455" y="251" width="100" height="14" forecolor="#1FA5DE" uuid="623279dd-8720-4ff2-bda3-ccfea51560dc"/>
-				<textElement textAlignment="Center">
-					<font size="8"/>
-				</textElement>
-				<text><![CDATA[https://factyble.simplifika.lat]]></text>
 			</staticText>
 		</band>
 	</summary>

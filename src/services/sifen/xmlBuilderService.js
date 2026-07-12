@@ -90,12 +90,17 @@ const repararCTipRegVacio = (xml) => xml.replace(/<cTipReg\s*\/>/, "").replace(/
 const formatearFechaHoraISO = (fecha) => dayjs(fecha).tz(ZONA_HORARIA_PARAGUAY).format("YYYY-MM-DDTHH:mm:ss");
 
 /**
- * Formatea una fecha como YYYY-MM-DD (formato exigido por `params.timbradoFecha`), en el día
- * calendario real de Paraguay — mismo criterio que `formatearFechaHoraISO`.
+ * Formatea una fecha-calendario (sin componente horario significativo, p. ej. `Empresa.vigente_desde`)
+ * como YYYY-MM-DD para `params.timbradoFecha`. A diferencia de `formatearFechaHoraISO`, NO convierte
+ * a `ZONA_HORARIA_PARAGUAY`: el valor se persiste como medianoche UTC del día real, y convertirlo a
+ * un huso horario negativo (UTC-3) corre la fecha un día hacia atrás — causa raíz de un rechazo SIFEN
+ * real (1107 "Fecha de inicio de vigencia del timbrado incorrecta") reproducido y confirmado contra
+ * el XML firmado (`<dFeIniT>` salía un día antes de `Empresa.vigente_desde`). Se lee el día calendario
+ * tal cual está guardado (`dayjs.utc`), sin reinterpretarlo como un instante en otro huso horario.
  * @param {Date} fecha
  * @returns {string}
  */
-const formatearFechaISO = (fecha) => dayjs(fecha).tz(ZONA_HORARIA_PARAGUAY).format("YYYY-MM-DD");
+const formatearFechaISO = (fecha) => dayjs.utc(fecha).format("YYYY-MM-DD");
 
 /**
  * Arma el `params` de empresa (datos del emisor, estables entre documentos) que espera
