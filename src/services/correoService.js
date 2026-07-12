@@ -2,6 +2,19 @@ const nodemailer = require('nodemailer')
 const path = require('path')
 const fs = require('fs')
 
+// Logo de Factyble embebido por CID (Content-ID), no como data-URI base64 ni como imagen remota:
+// Outlook de escritorio no renderiza imágenes base64 inline, y varios webmails (Gmail incluido)
+// bloquean o filtran ese formato de forma inconsistente. El adjunto con `cid` + `contentDisposition:
+// 'inline'` es el mecanismo estándar que garantiza que el logo se vea en todos los clientes de correo.
+const LOGO_FACTYBLE_PATH = path.join(__dirname, '..', 'resources', 'factyble-logo.png')
+const LOGO_FACTYBLE_CID = 'factybleLogo'
+const adjuntoLogoFactyble = () => ({
+    filename: 'factyble-logo.png',
+    path: LOGO_FACTYBLE_PATH,
+    cid: LOGO_FACTYBLE_CID,
+    contentDisposition: 'inline',
+})
+
 const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, emailEmpresa, xmlFirmado }) => {
 
     let filePath = path.join(__dirname, '..', 'resources', 'facturaTemplate.html')
@@ -27,7 +40,8 @@ const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, e
             filename: `${uuid}.pdf`,
             path: pdfPath,
             contentType: 'application/pdf'
-        }
+        },
+        adjuntoLogoFactyble()
     ]
 
     // El XML firmado vive en la BD (`xml_firmado`), no en un archivo servido por la API PHP legacy
@@ -79,7 +93,8 @@ const enviarErrorFactura = async ({ email, nroFactura, errorFactura, empresa }) 
         from: process.env.EMAIL_FROM, // sender address
         to: email, // list of receivers
         subject: `Error Factura Nro.: ${nroFactura} | ${empresa}`,
-        html
+        html,
+        attachments: [adjuntoLogoFactyble()]
     }
 
     let info = await transporter.sendMail(mailObj)
@@ -113,7 +128,8 @@ const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito
             filename: `${uuid}.pdf`,
             path: pdfPath,
             contentType: 'application/pdf'
-        }
+        },
+        adjuntoLogoFactyble()
     ]
 
     // El XML firmado vive en la BD (`xml_firmado`), no en un archivo servido por la API PHP legacy
@@ -172,7 +188,8 @@ const enviarRecibo = async ({ email, cliente, uuid, reciboId, nroRecibo, empresa
                 filename: `${uuid}.pdf`,
                 path: pdfPath,
                 contentType: 'application/pdf'
-            }
+            },
+            adjuntoLogoFactyble()
         ]
     }
 
@@ -204,7 +221,8 @@ const enviarErrorNotaDeCredito = async ({ email, nroNotaDeCredito, errorNotaDeCr
         from: process.env.EMAIL_FROM, // sender address
         to: email, // list of receivers
         subject: `Error Nota de crédito Nro.: ${nroNotaDeCredito} | ${empresa}`,
-        html
+        html,
+        attachments: [adjuntoLogoFactyble()]
     }
 
     let info = await transporter.sendMail(mailObj)
