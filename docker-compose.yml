@@ -5,33 +5,17 @@ services:
     build: .
     container_name: factyble-back-v2
     restart: always
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
+    env_file:
+      - .env
     ports:
       - "${DOCKER_APP_HOST_PORT}:${DOCKER_APP_CONTAINER_PORT}"
-    depends_on:
-      - db
     volumes:
       - ./public:/app/public
+      - ./logos:/app/logos
+      - ./certificados:/app/certificados
     networks:
-      - factyble-network-v2
-
-  db:
-    image: mysql:8
-    container_name: factyble-mysql-v2
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-    ports:
-      - "${DOCKER_DB_HOST_PORT}:${DOCKER_DB_CONTAINER_PORT}"
-    volumes:
-      - mysql_data_v2:/var/lib/mysql
-    networks:
-      - factyble-network-v2
+      - simplifika-network
 
 networks:
-  factyble-network-v2:
-
-volumes:
-  mysql_data_v2:
+  simplifika-network:
+    external: true

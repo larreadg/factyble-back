@@ -31,9 +31,9 @@ COPY wait-for-it.sh /usr/local/bin/wait-for-it.sh
 RUN chmod +x /usr/local/bin/wait-for-it.sh
 
 # Expone el puerto en el que se ejecutará la aplicación
-EXPOSE 12100
+EXPOSE 3100
 
 # Comando para ejecutar la aplicación junto con la migración
 # CMD ["bash", "/usr/local/bin/wait-for-it.sh", "factyble-mysql:3306", "--", "sh", "-c", "npx prisma migrate deploy && npm start"]
 # Comando para ejecutar la aplicación junto con la migración y verificar el valor de DATABASE_URL
-CMD ["sh", "-c", "echo 'DATABASE_URL=' $DATABASE_URL && /usr/local/bin/wait-for-it.sh factyble-mysql-v2:3306 -- sh -c 'npx prisma migrate deploy && npm start'"]
+CMD ["sh", "-c", "echo 'DATABASE_URL=' $DATABASE_URL && /usr/local/bin/wait-for-it.sh mysql:3306 -- sh -c 'npx prisma migrate deploy && npm start'"]
