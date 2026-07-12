@@ -31,7 +31,7 @@ COPY wait-for-it.sh /usr/local/bin/wait-for-it.sh
 RUN chmod +x /usr/local/bin/wait-for-it.sh
 
 # Expone el puerto en el que se ejecutará la aplicación
-EXPOSE 3100
+EXPOSE 8000
 
 # Comando para ejecutar la aplicación junto con la migración
 # CMD ["bash", "/usr/local/bin/wait-for-it.sh", "factyble-mysql:3306", "--", "sh", "-c", "npx prisma migrate deploy && npm start"]
