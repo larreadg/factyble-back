@@ -1,8 +1,8 @@
 # Usa una imagen base oficial de Node.js con Alpine Linux
 FROM node:20-alpine
 
-# Instala OpenJDK 8, Python 3, make, g++, y bash
-RUN apk add --no-cache openjdk8 python3 make g++ bash
+# Instala OpenJDK 8, Python 3, make, g++, bash y OpenSSL (requerido por el motor nativo de Prisma)
+RUN apk add --no-cache openjdk8 python3 make g++ bash openssl
 
 # Establece el directorio de trabajo dentro del contenedor
 WORKDIR /app
