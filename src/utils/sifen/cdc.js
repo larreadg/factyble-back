@@ -6,12 +6,16 @@ const ErrorApp = require("../error");
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-// Zona horaria real de Paraguay (AUD-002, STATIC_AUDIT_FINDINGS.json): el CDC debe reflejar el día
-// calendario real de emisión en Paraguay, no el del timezone del proceso Node. Se resuelve vía
-// dayjs+Intl (ICU ya incluida en el binario de Node desde la v13, "full-icu" por default) en vez de
-// depender de `TZ`/`tzdata` del contenedor — funciona igual sin importar cómo esté configurado el
-// sistema operativo donde corre el proceso.
-const ZONA_HORARIA_PARAGUAY = "America/Asuncion";
+// Zona horaria real de facturación (AUD-002, STATIC_AUDIT_FINDINGS.json): el CDC debe reflejar el día
+// calendario real de emisión, no el del timezone del proceso Node. Se resuelve vía dayjs+Intl (ICU ya
+// incluida en el binario de Node desde la v13, "full-icu" por default) en vez de depender de
+// `TZ`/`tzdata` del contenedor — funciona igual sin importar cómo esté configurado el sistema
+// operativo donde corre el proceso.
+// Se usa "America/Argentina/Buenos_Aires" en lugar de "America/Asuncion": Paraguay tiene offset
+// oficial -03:00 desde 2024, igual que Argentina, pero la entrada de tzdata de Asunción arrastra
+// reglas históricas de DST que han dado resultados incorrectos — Buenos Aires es -03:00 fijo, sin
+// DST, desde 2009, así que da el mismo resultado real sin ese riesgo.
+const ZONA_HORARIA_FACTURACION = "America/Argentina/Buenos_Aires";
 
 const CDC_LONGITUD = 44;
 
@@ -36,7 +40,7 @@ const rellenarNumerico = (valor, longitud, campo) => {
 
 /**
  * Formatea una fecha como YYYYMMDD (formato exigido por SIFEN para el CDC), en el día calendario
- * real de Paraguay (`ZONA_HORARIA_PARAGUAY`) — no en el timezone del proceso Node. `fecha` es un
+ * real de Paraguay (`ZONA_HORARIA_FACTURACION`) — no en el timezone del proceso Node. `fecha` es un
  * instante (Date, UTC internamente) sin ambigüedad; lo único que puede estar mal es en qué día
  * calendario cae ese instante según la zona horaria usada para leerlo, por eso se convierte siempre
  * explícitamente en vez de usar getters locales (ver AUD-002, STATIC_AUDIT_FINDINGS.json).
@@ -47,7 +51,7 @@ const formatearFechaEmision = (fecha) => {
   if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) {
     throw new ErrorApp("Campo fechaEmision invalido: debe ser una fecha valida", 400);
   }
-  return dayjs(fecha).tz(ZONA_HORARIA_PARAGUAY).format("YYYYMMDD");
+  return dayjs(fecha).tz(ZONA_HORARIA_FACTURACION).format("YYYYMMDD");
 };
 
 /**

@@ -8,10 +8,12 @@ const { validarCdc } = require("../../utils/sifen/cdc");
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-// Misma zona horaria y mismo motivo que utils/sifen/cdc.js#ZONA_HORARIA_PARAGUAY (AUD-002,
+// Misma zona horaria y mismo motivo que utils/sifen/cdc.js#ZONA_HORARIA_FACTURACION (AUD-002,
 // STATIC_AUDIT_FINDINGS.json) — la fecha del XML y la del CDC deben coincidir en el mismo día
-// calendario real de Paraguay, independientemente del timezone del proceso Node.
-const ZONA_HORARIA_PARAGUAY = "America/Asuncion";
+// calendario real, independientemente del timezone del proceso Node. Se usa
+// "America/Argentina/Buenos_Aires" en vez de "America/Asuncion" (ver detalle en cdc.js): mismo
+// offset -03:00 real, sin depender de las reglas de DST históricas de la entrada de Asunción.
+const ZONA_HORARIA_FACTURACION = "America/Argentina/Buenos_Aires";
 
 const VERSION_FORMATO = 150; // dVerFor, plantilla siRecepDE_v150.xsd (ver MIGRATION_PLAN.md §1.2)
 const TIPO_DOCUMENTO_FACTURA = 1;
@@ -82,17 +84,17 @@ const repararCTipRegVacio = (xml) => xml.replace(/<cTipReg\s*\/>/, "").replace(/
 
 /**
  * Formatea una fecha como YYYY-MM-DDTHH:mm:ss (formato exigido por `data.fecha` de xmlgen,
- * validado con `isIsoDateTime`), en el momento real de Paraguay (`ZONA_HORARIA_PARAGUAY`) — no en
+ * validado con `isIsoDateTime`), en el momento real de Paraguay (`ZONA_HORARIA_FACTURACION`) — no en
  * el timezone del proceso Node (ver AUD-002, STATIC_AUDIT_FINDINGS.json).
  * @param {Date} fecha
  * @returns {string}
  */
-const formatearFechaHoraISO = (fecha) => dayjs(fecha).tz(ZONA_HORARIA_PARAGUAY).format("YYYY-MM-DDTHH:mm:ss");
+const formatearFechaHoraISO = (fecha) => dayjs(fecha).tz(ZONA_HORARIA_FACTURACION).format("YYYY-MM-DDTHH:mm:ss");
 
 /**
  * Formatea una fecha-calendario (sin componente horario significativo, p. ej. `Empresa.vigente_desde`)
  * como YYYY-MM-DD para `params.timbradoFecha`. A diferencia de `formatearFechaHoraISO`, NO convierte
- * a `ZONA_HORARIA_PARAGUAY`: el valor se persiste como medianoche UTC del día real, y convertirlo a
+ * a `ZONA_HORARIA_FACTURACION`: el valor se persiste como medianoche UTC del día real, y convertirlo a
  * un huso horario negativo (UTC-3) corre la fecha un día hacia atrás — causa raíz de un rechazo SIFEN
  * real (1107 "Fecha de inicio de vigencia del timbrado incorrecta") reproducido y confirmado contra
  * el XML firmado (`<dFeIniT>` salía un día antes de `Empresa.vigente_desde`). Se lee el día calendario
