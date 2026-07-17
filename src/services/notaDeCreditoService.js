@@ -206,6 +206,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
           total: datos.total,
           cdc,
           estado_sifen: 'GENERADO',
+          fuente: datos.fuente || 'APP',
           codigo_seguridad: codigoSeguridadAleatorio,
           numero_nota_credito: numeroNotaDeCredito,
           caja_id: caja.id,

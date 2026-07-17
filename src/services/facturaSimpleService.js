@@ -56,6 +56,7 @@ const emitirFacturaSimple = async (datos, datosUsuario) => {
       items,
       establecimiento: establecimiento.codigo,
       caja: caja.codigo,
+      fuente: "BOT",
     };
 
     // Crédito simplificado: siempre "a plazo" con una descripción fija — facturaService.emitirFactura
@@ -93,10 +94,17 @@ const cancelarFacturaSimple = async (datos, datosUsuario) => {
       throw new ErrorApp("Factura no encontrada", 404);
     }
 
-    return await facturaService.cancelarFactura(
+    const resultado = await facturaService.cancelarFactura(
       { facturaId: factura.id, motivo: "A pedido del usuario" },
       datosUsuario
     );
+
+    await prisma.factura.update({
+      where: { id: factura.id },
+      data: { fuente: "BOT" },
+    });
+
+    return resultado;
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al cancelar factura simple");
   }

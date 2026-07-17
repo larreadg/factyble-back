@@ -222,6 +222,7 @@ const emitirFactura = async (datos, datosUsuario) => {
           total: datos.total,
           cdc,
           estado_sifen: 'GENERADO',
+          fuente: datos.fuente || 'APP',
           codigo_seguridad: codigoSeguridadAleatorio,
           caja_id: caja.id
         },

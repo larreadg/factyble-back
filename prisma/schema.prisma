@@ -146,6 +146,14 @@ enum CondicionVenta {
   CREDITO
 }
 
+// Origen de emisión/cancelación de Factura/NotaCredito. API está definido pero sin uso todavía
+// (integraciones directas futuras).
+enum FuenteDocumento {
+  APP
+  API
+  BOT
+}
+
 model Factura {
   id                    Int              @id @default(autoincrement())
   numero_factura        Int
@@ -160,6 +168,11 @@ model Factura {
   total_iva             Float
   total                 Float
   cdc                   String           @db.VarChar(255)
+  // Origen del documento: APP (panel web, default), API (integraciones directas, aún sin uso) o BOT
+  // (endpoints /simple, ver facturaSimpleService.js). Nullable por convención de columnas nuevas sobre
+  // tablas con filas existentes — el valor se fija siempre explícitamente desde el código, nunca por
+  // default de columna, mismo criterio que estado_sifen.
+  fuente                FuenteDocumento?
   // Legacy (API PHP) — congelado, no se le escribe más luego del corte, se dropea en el apagado (MIGRATION_PLAN.md §4.4)
   xml                   String?          @db.Text
   linkqr                String?          @db.Text
@@ -333,6 +346,11 @@ model NotaCredito {
   total_iva             Float
   total                 Float
   cdc                   String               @db.VarChar(255)
+  // Origen del documento: APP (panel web, default), API (integraciones directas, aún sin uso) o BOT
+  // (endpoints /simple, ver notaDeCreditoSimpleService.js). Nullable por convención de columnas nuevas
+  // sobre tablas con filas existentes — el valor se fija siempre explícitamente desde el código, nunca
+  // por default de columna, mismo criterio que estado_sifen.
+  fuente                FuenteDocumento?
   // Legacy (API PHP) — congelado, no se le escribe más luego del corte, se dropea en el apagado (MIGRATION_PLAN.md §4.4)
   xml                   String?              @db.Text
   linkqr                String?              @db.Text

@@ -52,6 +52,7 @@ const emitirNotaDeCreditoSimple = async (datos, datosUsuario) => {
       items,
       establecimiento: establecimiento.codigo,
       caja: caja.codigo,
+      fuente: "BOT",
     };
 
     return await notaDeCreditoService.emitirNotaDeCredito(datosCompletos, datosUsuario);
@@ -82,10 +83,17 @@ const cancelarNotaDeCreditoSimple = async (datos, datosUsuario) => {
       throw new ErrorApp("Nota de crédito no encontrada", 404);
     }
 
-    return await notaDeCreditoService.cancelarNotaDeCredito(
+    const resultado = await notaDeCreditoService.cancelarNotaDeCredito(
       { notaDeCreditoId: notaDeCredito.id, motivo: "A pedido del usuario" },
       datosUsuario
     );
+
+    await prisma.notaCredito.update({
+      where: { id: notaDeCredito.id },
+      data: { fuente: "BOT" },
+    });
+
+    return resultado;
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al cancelar nota de crédito simple");
   }
