@@ -164,6 +164,9 @@ model Factura {
   xml                   String?          @db.Text
   linkqr                String?          @db.Text
   sifen_estado          String?          @db.Text
+  // Reutilizado por el pipeline nativo (loteService.js) para el mensaje textual de SIFEN cuando
+  // estado_sifen pasa a RECHAZADO/ERROR — decisión explícita de no sumar un campo nuevo dado que ya
+  // existía este, aunque venga del bloque legacy. sifen_cod_respuesta guarda el código asociado.
   sifen_estado_mensaje  String?          @db.Text
   // Pipeline nativo SIFEN (MIGRATION_PLAN.md §2.2) — nullable hasta el corte, los escribe el nuevo pipeline desde Fase 2
   xml_firmado           String?          @db.MediumText
@@ -334,6 +337,9 @@ model NotaCredito {
   xml                   String?              @db.Text
   linkqr                String?              @db.Text
   sifen_estado          String?              @db.Text
+  // Reutilizado por el pipeline nativo (loteService.js) para el mensaje textual de SIFEN cuando
+  // estado_sifen pasa a RECHAZADO/ERROR — decisión explícita de no sumar un campo nuevo dado que ya
+  // existía este, aunque venga del bloque legacy. sifen_cod_respuesta guarda el código asociado.
   sifen_estado_mensaje  String?              @db.Text
   // Pipeline nativo SIFEN (MIGRATION_PLAN.md §2.2) — nullable hasta el corte, los escribe el nuevo pipeline desde Fase 2
   xml_firmado           String?              @db.MediumText

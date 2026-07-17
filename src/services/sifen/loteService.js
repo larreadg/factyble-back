@@ -431,7 +431,7 @@ const marcarLoteAgotado = async (lote, mensajeError) => {
   const modelo = lote.tipo_doc === "FACTURA" ? prisma.factura : prisma.notaCredito;
   await modelo.updateMany({
     where: { lote_id: lote.id, estado_sifen: { notIn: ["APROBADO", "RECHAZADO"] } },
-    data: { estado_sifen: "ERROR" },
+    data: { estado_sifen: "ERROR", sifen_estado_mensaje: mensajeError },
   });
   await prisma.lote.update({
     where: { id: lote.id },
@@ -590,6 +590,7 @@ const actualizarDocumentoPorResultado = async (tipoDoc, loteId, resultadoDocumen
     data: {
       estado_sifen: nuevoEstado,
       sifen_cod_respuesta: interpretacion.codigo,
+      sifen_estado_mensaje: nuevoEstado === "RECHAZADO" ? mensaje || interpretacion.mensajeInterno : null,
       sifen_num_transaccion: extraerProtocoloAutorizacion(resultadoDocumento) || null,
       fecha_respuesta_sifen: new Date(),
     },
@@ -728,7 +729,12 @@ const consultaIndividualRedDeSeguridad = async () => {
         const nuevoEstado = interpretacion.categoria === CATEGORIA.APROBADO ? "APROBADO" : "RECHAZADO";
         await config.modelo().update({
           where: { id: documento.id },
-          data: { estado_sifen: nuevoEstado, sifen_cod_respuesta: interpretacion.codigo, fecha_respuesta_sifen: new Date() },
+          data: {
+            estado_sifen: nuevoEstado,
+            sifen_cod_respuesta: interpretacion.codigo,
+            sifen_estado_mensaje: nuevoEstado === "RECHAZADO" ? mensaje || interpretacion.mensajeInterno : null,
+            fecha_respuesta_sifen: new Date(),
+          },
         });
 
         if (interpretacion.alertar) {
