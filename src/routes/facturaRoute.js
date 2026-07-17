@@ -65,6 +65,24 @@ routes.post(
     facturaController.emitirFactura
 );
 
+routes.post(
+    '/simple',
+    authJwt(['ADMIN']),
+    body('situacionTributaria', 'Parámetro situacionTributaria requerido').notEmpty().isIn([
+        'CONTRIBUYENTE','NO_CONTRIBUYENTE'
+    ]),
+    body('personaDocumento', 'Parámetro personaDocumento requerido').notEmpty().isString(),
+    body('personaNombre', 'Parámetro personaNombre requerido').notEmpty().isString(),
+    body('condicionVenta', 'Parámetro condicionVenta requerido').notEmpty().isIn(['CONTADO', 'CREDITO']),
+    body('items', 'Parámetro items requerido').isArray({min: 1}),
+    body('items.*', 'Parámetros item requerido Object').isObject(),
+    body('items.*.cantidad', 'Parámetro cantidad[number] dentro de items requerido').isInt(),
+    body('items.*.precioUnitario', 'Parámetro precioUnitario dentro de items requerido').isNumeric(),
+    body('items.*.descripcion', 'Parámetro descripcion dentro de items requerido').isString().notEmpty(),
+    body('items.*.tasa', 'Parámetro tasa dentro de items requerido').isIn(['0%','5%','10%']),
+    facturaController.emitirFacturaSimple
+);
+
 routes.get(
     '/',
     authJwt(['ADMIN']),
@@ -76,6 +94,13 @@ routes.get(
     authJwt(['ADMIN']),
     param('id').isInt().withMessage('Parámetro :id requerido'),
     facturaController.getFacturaById
+);
+
+routes.get(
+    '/cdc/:cdc/total',
+    authJwt(['ADMIN']),
+    param('cdc').matches(/^\d{44}$/).withMessage('Parámetro :cdc inválido, debe ser numérico de 44 dígitos'),
+    facturaController.getMontoTotalFacturaPorCdc
 );
 
 routes.post(
@@ -92,6 +117,13 @@ routes.post(
     body('facturaId', 'Parámetro facturaId requerido').isInt({min: 1}),
     body('motivo', 'Parámetro motivo requerido').isString().notEmpty(),
     facturaController.cancelarFactura
+);
+
+routes.post(
+    '/simple/cancelar',
+    authJwt(['ADMIN']),
+    body('cdc').matches(/^\d{44}$/).withMessage('Parámetro cdc inválido, debe ser numérico de 44 dígitos'),
+    facturaController.cancelarFacturaSimple
 );
 
 module.exports = routes;

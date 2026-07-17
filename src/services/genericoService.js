@@ -1,6 +1,9 @@
 const axios = require('axios');
 const ErrorApp = require('../utils/error');
 const prisma = require('../prisma/cliente');
+const { buscarPorRuc } = require('./padronRucPersistenciaService');
+
+const ESTADO_PADRON_RUC_VALIDO = 'ACTIVO';
 
 const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
 
@@ -27,27 +30,25 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
         }
 
         if(situacionTributaria == 'CONTRIBUYENTE'){
-            const { data: { data } } = await axios({
-                url: `${process.env.TURUC}/${ruc}`,
-            });
+            const registro = await buscarPorRuc(ruc);
 
-            if(!data){
+            if(!registro || registro.estado !== ESTADO_PADRON_RUC_VALIDO){
                 throw new ErrorApp('No se encontró datos', 404);
             }
 
             const nuevoCliente = await prisma.cliente.create({
                 data: {
-                    ruc: data.ruc,
-                    documento: String(data.doc),
-                    razon_social: data.razonSocial,
-                    dv: data.dv,
+                    ruc: registro.ruc,
+                    documento: registro.ruc,
+                    razon_social: registro.razonSocial,
+                    dv: Number(registro.digitoVerificador),
                     situacion_tributaria: situacionTributaria,
                     tipo_identificacion: 'RUC',
-                    nombres: data.razonSocial.includes(',') ? data.razonSocial.split(',')[1].trim() : data.razonSocial,
-                    apellidos: data.razonSocial.includes(',') ? data.razonSocial.split(',')[0].trim() : ''
+                    nombres: registro.razonSocial.includes(',') ? registro.razonSocial.split(',')[1].trim() : registro.razonSocial,
+                    apellidos: registro.razonSocial.includes(',') ? registro.razonSocial.split(',')[0].trim() : ''
                 }
             });
-            
+
             return nuevoCliente;
         }
 

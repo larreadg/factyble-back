@@ -1,5 +1,6 @@
 const { validationResult } = require('express-validator');
 const facturaService = require('../services/facturaService');
+const facturaSimpleService = require('../services/facturaSimpleService');
 const Response = require('../utils/response');
 const ErrorApp = require('../utils/error');
 
@@ -17,7 +18,25 @@ const emitirFactura = async (req, res) => {
         const { code, message } = ErrorApp.handleControllerError(error, 'Error al crear factura');
 
         return res.status(code).send(Response.error(message, code));
-        
+
+    }
+}
+
+const emitirFacturaSimple = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const data = await facturaSimpleService.emitirFacturaSimple(req.body, req.usuario);
+
+        return res.status(200).send(Response.success(data, 'Factura creada'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al crear factura');
+
+        return res.status(code).send(Response.error(message, code));
+
     }
 }
 
@@ -63,6 +82,26 @@ const getFacturaById = async (req, res) => {
     }
 }
 
+const getMontoTotalFacturaPorCdc = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const { cdc } = req.params;
+
+        const data = await facturaService.getMontoTotalPorCdc(cdc, Number(req.usuario.empresaId));
+
+        return res.status(200).send(Response.success(data, 'Datos obtenidos'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al obtener monto total de factura');
+
+        return res.status(code).send(Response.error(message, code));
+
+    }
+}
+
 const reenviarFactura = async (req, res) => {
     try {
 
@@ -101,10 +140,31 @@ const cancelarFactura = async (req, res) => {
     }
 }
 
+const cancelarFacturaSimple = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const data = await facturaSimpleService.cancelarFacturaSimple(req.body, req.usuario);
+
+        return res.status(200).send(Response.success(data, 'Solicitud procesada'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al procesar solicitud');
+
+        return res.status(code).send(Response.error(message, code));
+
+    }
+}
+
 module.exports = {
     emitirFactura,
+    emitirFacturaSimple,
     getFacturas,
     getFacturaById,
+    getMontoTotalFacturaPorCdc,
     reenviarFactura,
-    cancelarFactura
+    cancelarFactura,
+    cancelarFacturaSimple
 }

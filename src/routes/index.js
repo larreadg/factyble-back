@@ -9,5 +9,6 @@ routes.use('/captcha', require('./captchaRoute'))
 routes.use('/nota-credito', require('./notaDeCreditoRoute'))
 routes.use('/empresa', require('./empresaRoute'))
 routes.use('/geografia', require('./geografiaRoute'))
+routes.use('/rucs', require('./padronRucRoute'))
 
 module.exports = routes;

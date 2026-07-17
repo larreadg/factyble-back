@@ -12,7 +12,7 @@ app.use(cors())
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended : false }))
 
-cronJobs()
+// cronJobs()
 
 app.use('/public', express.static(path.join(__dirname, '..', 'public')))
 app.use(routes)

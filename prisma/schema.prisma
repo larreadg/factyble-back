@@ -637,3 +637,24 @@ model SifenTrazabilidad {
   @@index([fecha_creacion])
   @@map("sifen_trazabilidad")
 }
+
+// ============================================================================
+// Padrón de RUC (importación masiva desde los .zip publicados por la SET/DNIT)
+// ============================================================================
+
+// `ruc` es el RUC SIN dígito verificador (identificador único de actualización del
+// padrón); el RUC completo tal como lo emite SIFEN se arma en tiempo de lectura
+// concatenando `${ruc}-${digito_verificador}`, no se persiste duplicado.
+model PadronRuc {
+  id                 Int      @id @default(autoincrement())
+  ruc                String   @unique @db.VarChar(15)
+  razon_social       String   @db.VarChar(255)
+  digito_verificador String   @db.VarChar(2)
+  ruc_anterior       String?  @db.VarChar(20)
+  estado             String   @db.VarChar(50)
+  fecha_creacion     DateTime @default(now())
+  fecha_modificacion DateTime @updatedAt
+
+  @@index([estado])
+  @@map("padron_ruc")
+}

@@ -1,5 +1,6 @@
 const { validationResult } = require('express-validator');
 const notaDeCreditoService = require('../services/notaDeCreditoService');
+const notaDeCreditoSimpleService = require('../services/notaDeCreditoSimpleService');
 const Response = require('../utils/response');
 const ErrorApp = require('../utils/error');
 
@@ -17,7 +18,25 @@ const emitirNotaDeCredito = async (req, res) => {
         const { code, message } = ErrorApp.handleControllerError(error, 'Error al crear nota de crédito');
 
         return res.status(code).send(Response.error(message, code));
-        
+
+    }
+}
+
+const emitirNotaDeCreditoSimple = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const data = await notaDeCreditoSimpleService.emitirNotaDeCreditoSimple(req.body, req.usuario);
+
+        return res.status(200).send(Response.success(data, 'Nota de crédito creada'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al crear nota de crédito');
+
+        return res.status(code).send(Response.error(message, code));
+
     }
 }
 
@@ -80,10 +99,30 @@ const reenviarNotaDeCredito = async (req, res) => {
     }
 }
 
+const cancelarNotaDeCreditoSimple = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const data = await notaDeCreditoSimpleService.cancelarNotaDeCreditoSimple(req.body, req.usuario);
+
+        return res.status(200).send(Response.success(data, 'Solicitud procesada'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al procesar solicitud');
+
+        return res.status(code).send(Response.error(message, code));
+
+    }
+}
+
 module.exports = {
     emitirNotaDeCredito,
+    emitirNotaDeCreditoSimple,
     getNotasDeCredito,
     cancelarNotaDeCredito,
+    cancelarNotaDeCreditoSimple,
     reenviarNotaDeCredito
 }
 

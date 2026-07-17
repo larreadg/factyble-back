@@ -34,6 +34,19 @@ routes.post(
     notaDeCreditoController.emitirNotaDeCredito
 )
 
+routes.post(
+    '/simple',
+    authJwt(['ADMIN']),
+    body('cdc', 'Parámetro cdc requerido').notEmpty().isString(),
+    body('items', 'Parámetro items requerido').isArray({min: 1}),
+    body('items.*', 'Parámetros item requerido Object').isObject(),
+    body('items.*.cantidad', 'Parámetro cantidad[number] dentro de items requerido').isInt(),
+    body('items.*.precioUnitario', 'Parámetro precioUnitario dentro de items requerido').isNumeric(),
+    body('items.*.descripcion', 'Parámetro descripcion dentro de items requerido').isString().notEmpty(),
+    body('items.*.tasa', 'Parámetro tasa dentro de items requerido').isIn(['0%','5%','10%']),
+    notaDeCreditoController.emitirNotaDeCreditoSimple
+)
+
 routes.get(
     '/',
     authJwt(['ADMIN']),
@@ -46,6 +59,13 @@ routes.post(
     body('notaDeCreditoId', 'Parámetro notaDeCreditoId requerido').isInt({min: 1}),
     body('motivo', 'Parámetro motivo requerido').isString().notEmpty(),
     notaDeCreditoController.cancelarNotaDeCredito
+);
+
+routes.post(
+    '/simple/cancelar',
+    authJwt(['ADMIN']),
+    body('cdc').matches(/^\d{44}$/).withMessage('Parámetro cdc inválido, debe ser numérico de 44 dígitos'),
+    notaDeCreditoController.cancelarNotaDeCreditoSimple
 );
 
 routes.post(

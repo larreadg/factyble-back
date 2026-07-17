@@ -60,7 +60,7 @@ const emitirFactura = async (datos, datosUsuario) => {
     });
 
     const nombres = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[1] ? datos.razonSocial.split(",")[1].trim() : datos.razonSocial) : datos.razonSocial;
-    const apellidos = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[0] ? datos.razonSocial.split(",")[0] : "") : "";
+    const apellidos = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[0] ? datos.razonSocial.split(",")[0].trim() : "") : "";
 
     //Crear cliente si no existe
     if (!cliente) {
@@ -87,7 +87,7 @@ const emitirFactura = async (datos, datosUsuario) => {
     if (datos.tipoIdentificacion !== cliente.tipo_identificacion
       || datos.situacionTributaria !== cliente.situacion_tributaria
       || nombres !== cliente.nombres
-      || apellidos !== cliente.nombres
+      || apellidos !== cliente.apellidos
       || datos.direccion !== cliente.direccion
       || datos.email !== cliente.email
       || datos.telefono !== cliente.telefono
@@ -277,7 +277,10 @@ const emitirFactura = async (datos, datosUsuario) => {
       }
     }
 
-    generarPdf({
+    // Se espera la generación del PDF (antes era fire-and-forget) para poder devolver su nombre de
+    // archivo al caller — lo necesita /factura/simple para que el bot de WhatsApp lo descargue apenas
+    // responde la API, y de paso deja de tragarse en silencio un eventual error de JasperReports.
+    await generarPdf({
       empresaLogo: usuario.empresa.logo,
       empresaRuc: usuario.empresa.ruc,
       empresaTimbrado: usuario.empresa.timbrado,
@@ -312,7 +315,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       plazoDescripcion: datos.plazoDescripcion
     });
 
-    return factura;
+    return { ...factura, pdfNombre: `${facturaUuid}.pdf` };
 
   } catch (error) {
     console.log(error);
@@ -455,6 +458,30 @@ const getFacturaById = async (id) => {
   }
 };
 
+const getMontoTotalPorCdc = async (cdc, empresaId) => {
+  const factura = await prisma.factura.findFirst({
+    where: {
+      cdc,
+      cliente_empresa: { empresa_id: empresaId },
+    },
+    select: {
+      cdc: true,
+      total: true,
+      total_iva: true,
+    },
+  });
+
+  if (!factura) {
+    throw new ErrorApp("No se encontró factura con ese cdc", 404);
+  }
+
+  return {
+    cdc: factura.cdc,
+    total: factura.total,
+    totalIva: factura.total_iva,
+  };
+};
+
 const reenviarFactura = async ({ email, facturaId }) => {
   // No se filtra por estado_sifen en la query: para una Factura histórica (emitida antes del corte a
   // este pipeline) ese campo es siempre NULL, y el dato real de aprobación vive en `sifen_estado`
@@ -543,6 +570,7 @@ module.exports = {
   emitirFactura,
   getFacturas,
   getFacturaById,
+  getMontoTotalPorCdc,
   reenviarFactura,
   cancelarFactura
 };

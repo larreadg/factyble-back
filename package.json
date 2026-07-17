@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "create:superadmin": "node scripts/createSuperAdmin.js",
     "db:limpiar": "node scripts/limpiarBd.js",
+    "import:padron-ruc": "node scripts/importarPadronRuc.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -44,7 +45,8 @@
     "qrcode": "^1.5.3",
     "sharp": "^0.35.3",
     "svg-captcha": "^1.4.0",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "prisma": "^5.16.1"
