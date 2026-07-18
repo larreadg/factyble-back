@@ -248,7 +248,13 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       };
     });
 
-    generarPdf({
+    // Mismo formato que el número impreso en el PDF (establecimiento-caja-numero, con el número
+    // rellenado a 7 dígitos) — se reutiliza acá para no duplicar el criterio de formateo.
+    const numeroNotaCreditoFormateada = `${datos.establecimiento}-${datos.caja}-${formatNumberWithLeadingZeros(notaDeCredito.numero_nota_credito)}`;
+
+    // Se espera la generación del PDF (antes era fire-and-forget) para poder devolver su nombre de
+    // archivo al caller, mismo criterio que facturaService.emitirFactura.
+    await generarPdf({
       empresaLogo: usuario.empresa.logo,
       empresaRuc: usuario.empresa.ruc,
       empresaTimbrado: usuario.empresa.timbrado,
@@ -260,7 +266,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       empresaTelefono: usuario.empresa.telefono,
       empresaCiudad: usuario.empresa.ciudad,
       empresaCorreoElectronico: usuario.empresa.email,
-      facturaId: `${datos.establecimiento}-` + `${datos.caja}-` + formatNumberWithLeadingZeros(notaDeCredito.numero_nota_credito),
+      facturaId: numeroNotaCreditoFormateada,
       condicionVenta: 'CONTADO',
       ruc: factura.cliente_empresa.cliente.ruc,
       razonSocial: factura.cliente_empresa.cliente.razon_social,
@@ -279,8 +285,8 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       tipoDocumentoTop: 'KuDE de Nota de crédito Electrónica'
     });
 
-    return notaDeCredito;
-    
+    return { ...notaDeCredito, pdfNombre: `${notaDeCreditoUuid}.pdf`, numeroNotaCreditoFormateada };
+
   } catch (error) {
     console.log(error);
     ErrorApp.handleServiceError(error);

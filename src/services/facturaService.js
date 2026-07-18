@@ -278,6 +278,10 @@ const emitirFactura = async (datos, datosUsuario) => {
       }
     }
 
+    // Mismo formato que el número impreso en el PDF (establecimiento-caja-numero, con el número
+    // rellenado a 7 dígitos) — se reutiliza acá para no duplicar el criterio de formateo.
+    const numeroFacturaFormateada = `${datos.establecimiento}-${datos.caja}-${formatNumberWithLeadingZeros(factura.numero_factura)}`;
+
     // Se espera la generación del PDF (antes era fire-and-forget) para poder devolver su nombre de
     // archivo al caller — lo necesita /factura/simple para que el bot de WhatsApp lo descargue apenas
     // responde la API, y de paso deja de tragarse en silencio un eventual error de JasperReports.
@@ -293,7 +297,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       empresaTelefono: usuario.empresa.telefono,
       empresaCiudad: usuario.empresa.ciudad,
       empresaCorreoElectronico: usuario.empresa.email,
-      facturaId: `${datos.establecimiento}-` + `${datos.caja}-` + formatNumberWithLeadingZeros(factura.numero_factura),
+      facturaId: numeroFacturaFormateada,
       condicionVenta: datos.condicionVenta,
       ruc: cliente.ruc,
       razonSocial: cliente.razon_social,
@@ -316,7 +320,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       plazoDescripcion: datos.plazoDescripcion
     });
 
-    return { ...factura, pdfNombre: `${facturaUuid}.pdf` };
+    return { ...factura, pdfNombre: `${facturaUuid}.pdf`, numeroFacturaFormateada };
 
   } catch (error) {
     console.log(error);

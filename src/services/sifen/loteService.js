@@ -8,6 +8,7 @@ const certificadoService = require("./certificadoService");
 const sifenClientService = require("./sifenClientService");
 const trazabilidadService = require("./trazabilidadService");
 const correoService = require("../correoService");
+const botService = require("../botService");
 const { interpretarCodigo, CATEGORIA } = require("../../utils/sifen/codigosRespuesta");
 const {
   extraerCodigoYMensaje,
@@ -237,12 +238,14 @@ const firmarDocumentoRecienCreado = async (tipoDoc, documentoId, client = prisma
  */
 const notificarResultadoDocumento = async (tipoDoc, documentoId, nuevoEstado, mensaje) => {
   const config = TIPOS_DOCUMENTO[tipoDoc];
+  let documento = null;
+  let contactos = null;
   try {
-    const documento = await config.modelo().findFirst({ where: { id: documentoId }, include: config.include });
+    documento = await config.modelo().findFirst({ where: { id: documentoId }, include: config.include });
     if (!documento) {
       return;
     }
-    const contactos = config.obtenerContactos(documento);
+    contactos = config.obtenerContactos(documento);
     if (nuevoEstado === "APROBADO") {
       await config.notificarAprobado(documento, contactos);
     } else if (nuevoEstado === "RECHAZADO") {
@@ -250,6 +253,24 @@ const notificarResultadoDocumento = async (tipoDoc, documentoId, nuevoEstado, me
     }
   } catch (error) {
     console.error(`[loteService] Error al notificar resultado de ${tipoDoc} id=${documentoId}:`, error.message);
+  }
+
+  // Documentos originados en el bot (WhatsApp) se reenvían al bot con el resultado final de SIFEN,
+  // para que le avise al cliente final — aislado de la notificación por correo de arriba (un fallo acá
+  // no debe impedir que ya se haya mandado, o se intente mandar, el mail; y viceversa).
+  if (documento && documento.fuente === "BOT" && contactos) {
+    try {
+      await botService.bulkUpdateDocumentos([
+        {
+          empresaId: contactos.empresa.id,
+          cdc: documento.cdc,
+          estadoSifen: nuevoEstado,
+          sifenEstadoMensaje: nuevoEstado === "RECHAZADO" ? mensaje || null : null,
+        },
+      ]);
+    } catch (error) {
+      console.error(`[loteService] Error al reenviar al bot el resultado de ${tipoDoc} id=${documentoId}:`, error.message);
+    }
   }
 };
 
@@ -429,14 +450,37 @@ const armarLotes = async () => {
  */
 const marcarLoteAgotado = async (lote, mensajeError) => {
   const modelo = lote.tipo_doc === "FACTURA" ? prisma.factura : prisma.notaCredito;
-  await modelo.updateMany({
-    where: { lote_id: lote.id, estado_sifen: { notIn: ["APROBADO", "RECHAZADO"] } },
-    data: { estado_sifen: "ERROR", sifen_estado_mensaje: mensajeError },
-  });
+  const whereAfectados = { lote_id: lote.id, estado_sifen: { notIn: ["APROBADO", "RECHAZADO"] } };
+
+  // Se lee antes del updateMany porque este último no devuelve las filas afectadas, y las necesitamos
+  // (cdc, fuente) para el reenvío al bot de abajo.
+  const afectados = await modelo.findMany({ where: whereAfectados, select: { cdc: true, fuente: true } });
+
+  await modelo.updateMany({ where: whereAfectados, data: { estado_sifen: "ERROR", sifen_estado_mensaje: mensajeError } });
   await prisma.lote.update({
     where: { id: lote.id },
     data: { estado: "AGOTADO", ultimo_error: mensajeError, proximo_intento_en: null },
   });
+
+  // Mismo reenvío al bot que `notificarResultadoDocumento`, pero para el caso de agotamiento de lote
+  // (sin mail asociado — un lote agotado no tiene un flujo de notificación por correo hoy, solo el log
+  // de `enviarLotesConstruidos`/`consultarLotes`). Aislado: un fallo acá no debe impedir que el lote y
+  // sus documentos ya hayan quedado marcados como ERROR arriba.
+  const documentosBot = afectados.filter((documento) => documento.fuente === "BOT");
+  if (documentosBot.length > 0) {
+    try {
+      await botService.bulkUpdateDocumentos(
+        documentosBot.map((documento) => ({
+          empresaId: lote.empresa_id,
+          cdc: documento.cdc,
+          estadoSifen: "ERROR",
+          sifenEstadoMensaje: mensajeError,
+        }))
+      );
+    } catch (error) {
+      console.error(`[loteService] Error al reenviar al bot el agotamiento del lote ${lote.id}:`, error.message);
+    }
+  }
 };
 
 /**
