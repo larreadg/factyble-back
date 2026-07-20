@@ -320,7 +320,13 @@ const emitirFactura = async (datos, datosUsuario) => {
       plazoDescripcion: datos.plazoDescripcion
     });
 
-    return { ...factura, pdfNombre: `${facturaUuid}.pdf`, numeroFacturaFormateada };
+    return {
+      ...factura,
+      pdfNombre: `${facturaUuid}.pdf`,
+      numeroFacturaFormateada,
+      clienteNombre: cliente.razon_social,
+      clienteDocumento: cliente.ruc,
+    };
 
   } catch (error) {
     console.log(error);

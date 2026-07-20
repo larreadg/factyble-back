@@ -285,7 +285,13 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       tipoDocumentoTop: 'KuDE de Nota de crédito Electrónica'
     });
 
-    return { ...notaDeCredito, pdfNombre: `${notaDeCreditoUuid}.pdf`, numeroNotaCreditoFormateada };
+    return {
+      ...notaDeCredito,
+      pdfNombre: `${notaDeCreditoUuid}.pdf`,
+      numeroNotaCreditoFormateada,
+      clienteNombre: factura.cliente_empresa.cliente.razon_social,
+      clienteDocumento: factura.cliente_empresa.cliente.ruc,
+    };
 
   } catch (error) {
     console.log(error);
