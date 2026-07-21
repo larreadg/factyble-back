@@ -9,6 +9,7 @@ const sifenClientService = require("./sifenClientService");
 const trazabilidadService = require("./trazabilidadService");
 const correoService = require("../correoService");
 const botService = require("../botService");
+const telegramService = require("../telegramService");
 const { interpretarCodigo, CATEGORIA } = require("../../utils/sifen/codigosRespuesta");
 const {
   extraerCodigoYMensaje,
@@ -69,6 +70,7 @@ const TIPOS_DOCUMENTO = {
       empresa: documento.caja.establecimiento.empresa,
       usuarioEmail: documento.usuario ? documento.usuario.email : null,
     }),
+    numeroDocumento: (documento) => documento.numero_factura,
     notificarAprobado: async (documento, { cliente, empresa }) =>
       correoService.enviarFactura({
         cdc: documento.cdc,
@@ -103,6 +105,7 @@ const TIPOS_DOCUMENTO = {
       empresa: documento.caja.establecimiento.empresa,
       usuarioEmail: documento.usuario ? documento.usuario.email : null,
     }),
+    numeroDocumento: (documento) => documento.numero_nota_credito,
     notificarAprobado: async (documento, { cliente, empresa }) =>
       correoService.enviarNotaDeCredito({
         cdc: documento.cdc,
@@ -127,6 +130,13 @@ const TIPOS_DOCUMENTO = {
 const generarDId = () => Date.now();
 
 const calcularBackoffSegundos = (intentos) => Math.min(BACKOFF_BASE_SEGUNDOS * 2 ** intentos, BACKOFF_CAP_SEGUNDOS);
+
+// Mismo criterio ya usado en `notificarAprobado` de arriba (RUC -> razón social, resto -> nombre y
+// apellido) — reutilizado acá para armar el mensaje de alerta a Telegram (`telegramService.js`).
+const formatearCliente = (cliente) => ({
+  nombre: cliente.tipo_identificacion === "RUC" ? cliente.razon_social : `${cliente.nombres} ${cliente.apellidos}`,
+  documento: cliente.tipo_identificacion === "RUC" ? cliente.ruc : cliente.documento,
+});
 
 /**
  * Firma un documento (Factura o NotaCredito) pendiente y persiste `xml_firmado` + `estado_sifen`
@@ -270,6 +280,26 @@ const notificarResultadoDocumento = async (tipoDoc, documentoId, nuevoEstado, me
       ]);
     } catch (error) {
       console.error(`[loteService] Error al reenviar al bot el resultado de ${tipoDoc} id=${documentoId}:`, error.message);
+    }
+  }
+
+  // Alerta al admin por Telegram cuando SIFEN rechaza el documento (definitivo, ya no reintentable) —
+  // aislado del resto: un fallo acá no debe impedir el mail ni el reenvío al bot de arriba, ni viceversa.
+  if (documento && nuevoEstado === "RECHAZADO" && contactos) {
+    try {
+      const clienteFmt = formatearCliente(contactos.cliente);
+      await telegramService.notificarDocumentoRechazado({
+        tipoDoc,
+        estado: "RECHAZADO",
+        numeroDocumento: config.numeroDocumento(documento),
+        cdc: documento.cdc,
+        empresaNombre: contactos.empresa.nombre_empresa,
+        clienteNombre: clienteFmt.nombre,
+        clienteDocumento: clienteFmt.documento,
+        motivo: mensaje || documento.sifen_estado_mensaje || "Sin detalle",
+      });
+    } catch (error) {
+      console.error(`[loteService] Error al notificar a Telegram el rechazo de ${tipoDoc} id=${documentoId}:`, error.message);
     }
   }
 };
@@ -449,12 +479,13 @@ const armarLotes = async () => {
  * @param {string} mensajeError
  */
 const marcarLoteAgotado = async (lote, mensajeError) => {
-  const modelo = lote.tipo_doc === "FACTURA" ? prisma.factura : prisma.notaCredito;
+  const config = TIPOS_DOCUMENTO[lote.tipo_doc];
+  const modelo = config.modelo();
   const whereAfectados = { lote_id: lote.id, estado_sifen: { notIn: ["APROBADO", "RECHAZADO"] } };
 
   // Se lee antes del updateMany porque este último no devuelve las filas afectadas, y las necesitamos
-  // (cdc, fuente) para el reenvío al bot de abajo.
-  const afectados = await modelo.findMany({ where: whereAfectados, select: { cdc: true, fuente: true } });
+  // (con el include completo) para armar la alerta a Telegram de abajo.
+  const afectados = await modelo.findMany({ where: whereAfectados, include: config.include });
 
   await modelo.updateMany({ where: whereAfectados, data: { estado_sifen: "ERROR", sifen_estado_mensaje: mensajeError } });
   await prisma.lote.update({
@@ -462,23 +493,26 @@ const marcarLoteAgotado = async (lote, mensajeError) => {
     data: { estado: "AGOTADO", ultimo_error: mensajeError, proximo_intento_en: null },
   });
 
-  // Mismo reenvío al bot que `notificarResultadoDocumento`, pero para el caso de agotamiento de lote
-  // (sin mail asociado — un lote agotado no tiene un flujo de notificación por correo hoy, solo el log
-  // de `enviarLotesConstruidos`/`consultarLotes`). Aislado: un fallo acá no debe impedir que el lote y
-  // sus documentos ya hayan quedado marcados como ERROR arriba.
-  const documentosBot = afectados.filter((documento) => documento.fuente === "BOT");
-  if (documentosBot.length > 0) {
+  // ERROR es un problema interno de Factyble (lote agotado por reintentos o rechazo de sobre), no un
+  // resultado de negocio que le incumba al cliente final — a diferencia de RECHAZADO, acá deliberadamente
+  // NO se reenvía a `botService` (WhatsApp del cliente). Solo se alerta al admin por Telegram, aislado
+  // por documento (un fallo de Telegram para uno no debe impedir el aviso de los demás).
+  for (const documento of afectados) {
     try {
-      await botService.bulkUpdateDocumentos(
-        documentosBot.map((documento) => ({
-          empresaId: lote.empresa_id,
-          cdc: documento.cdc,
-          estadoSifen: "ERROR",
-          sifenEstadoMensaje: mensajeError,
-        }))
-      );
+      const contactos = config.obtenerContactos(documento);
+      const clienteFmt = formatearCliente(contactos.cliente);
+      await telegramService.notificarDocumentoRechazado({
+        tipoDoc: lote.tipo_doc,
+        estado: "ERROR",
+        numeroDocumento: config.numeroDocumento(documento),
+        cdc: documento.cdc,
+        empresaNombre: contactos.empresa.nombre_empresa,
+        clienteNombre: clienteFmt.nombre,
+        clienteDocumento: clienteFmt.documento,
+        motivo: mensajeError,
+      });
     } catch (error) {
-      console.error(`[loteService] Error al reenviar al bot el agotamiento del lote ${lote.id}:`, error.message);
+      console.error(`[loteService] Error al notificar a Telegram el agotamiento del lote ${lote.id} (documento id=${documento.id}):`, error.message);
     }
   }
 };
