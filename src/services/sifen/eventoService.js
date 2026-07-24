@@ -5,6 +5,7 @@ const firmadorService = require("./firmadorService");
 const certificadoService = require("./certificadoService");
 const sifenClientService = require("./sifenClientService");
 const trazabilidadService = require("./trazabilidadService");
+const telegramService = require("../telegramService");
 const { interpretarCodigo, CATEGORIA } = require("../../utils/sifen/codigosRespuesta");
 const { extraerCodigoYMensaje, extraerProtocoloAutorizacion } = require("../../utils/sifen/respuestaSoap");
 const { esAprobado } = require("../../utils/sifen/estadoHistorico");
@@ -133,8 +134,21 @@ const cancelarDocumento = async (tipoDoc, documentoId, motivo) => {
 
       if (exitoso) {
         await config.modelo().update({ where: { id: documentoId }, data: { estado_sifen: "CANCELADO" } });
-      } else if (interpretacion.alertar) {
+      } else {
         console.error(`[eventoService] SIFEN rechazo la cancelacion de ${tipoDoc} id=${documentoId} (codigo ${interpretacion.codigo}): ${interpretacion.mensajeInterno} — SIFEN dijo: ${mensaje}`);
+        // A diferencia del resto del pipeline (loteService), acá se alerta siempre que SIFEN rechace
+        // la cancelación, no solo cuando `interpretacion.alertar` es true — es un evento síncrono
+        // disparado por un humano (admin) con la expectativa de que se ejecutó; que quede en un estado
+        // "cancelación intentada pero no efectiva" sin que nadie del equipo se entere (más allá de la
+        // respuesta HTTP que recibió quien lo pidió) es justamente el tipo de falla silenciosa a evitar.
+        try {
+          await telegramService.notificarFallaSistemica({
+            titulo: `SIFEN rechazó la cancelación de ${tipoDoc === "FACTURA" ? "Factura" : "Nota de Crédito"} id=${documentoId}`,
+            detalle: `CDC=${documento.cdc}. Código ${interpretacion.codigo}: ${interpretacion.mensajeInterno} — SIFEN dijo: ${mensaje}`,
+          });
+        } catch (errorTelegram) {
+          console.error(`[eventoService] Error al notificar a Telegram el rechazo de cancelacion de ${tipoDoc} id=${documentoId}:`, errorTelegram.message);
+        }
       }
 
       return {
@@ -162,6 +176,16 @@ const cancelarDocumento = async (tipoDoc, documentoId, motivo) => {
         where: { id: evento.id },
         data: { intentos_envio: { increment: 1 }, ultimo_error: error.message },
       });
+
+      try {
+        await telegramService.notificarFallaSistemica({
+          titulo: `Error al cancelar ${tipoDoc === "FACTURA" ? "Factura" : "Nota de Crédito"} id=${documentoId}`,
+          detalle: `CDC=${documento.cdc}. Falla de transporte/firma/certificado (evento id=${evento.id}): ${error.message}`,
+        });
+      } catch (errorTelegram) {
+        console.error(`[eventoService] Error al notificar a Telegram la falla de cancelacion de ${tipoDoc} id=${documentoId}:`, errorTelegram.message);
+      }
+
       throw error;
     }
   } catch (error) {

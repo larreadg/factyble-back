@@ -66,6 +66,26 @@ const notificarDocumentoRechazado = async ({
     });
 };
 
+/**
+ * Alerta al admin (grupo de Telegram) ante una falla que no es de un documento puntual sino del
+ * propio pipeline/infraestructura — un cron entero que explotó, un certificado vencido, un evento de
+ * cancelación rechazado. Mismo criterio de "best-effort" que `notificarDocumentoRechazado`: el caller
+ * siempre lo envuelve en su propio try/catch.
+ * @param {Object} datos
+ * @param {string} datos.titulo - Encabezado corto (p. ej. "Cron caído", "Certificado vencido")
+ * @param {string} datos.detalle - Texto libre con el detalle de la falla
+ */
+const notificarFallaSistemica = async ({ titulo, detalle }) => {
+    const lineas = [`🚨 <b>${escaparHtml(titulo)}</b>`, '', escaparHtml(detalle)];
+
+    await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: process.env.TELEGRAM_CHAT_ID,
+        text: lineas.join('\n'),
+        parse_mode: 'HTML',
+    });
+};
+
 module.exports = {
     notificarDocumentoRechazado,
+    notificarFallaSistemica,
 };

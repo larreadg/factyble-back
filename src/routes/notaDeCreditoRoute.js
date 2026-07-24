@@ -76,4 +76,11 @@ routes.post(
     notaDeCreditoController.reenviarNotaDeCredito
 )
 
+routes.post(
+    '/reintentar-sifen',
+    authJwt(['ADMIN']),
+    body('notaDeCreditoId', 'Parámetro notaDeCreditoId requerido').isInt({min: 1}),
+    notaDeCreditoController.reintentarEnvioSifen
+);
+
 module.exports = routes

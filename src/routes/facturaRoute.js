@@ -126,4 +126,11 @@ routes.post(
     facturaController.cancelarFacturaSimple
 );
 
+routes.post(
+    '/reintentar-sifen',
+    authJwt(['ADMIN']),
+    body('facturaId', 'Parámetro facturaId requerido').isInt({min: 1}),
+    facturaController.reintentarEnvioSifen
+);
+
 module.exports = routes;

@@ -479,9 +479,25 @@ const reenviarNotaDeCredito = async ({ email, notaDeCreditoId }) => {
   });
 };
 
+/**
+ * Reintenta manualmente el envío a SIFEN de una Nota de Crédito que quedó en `estado_sifen: ERROR` —
+ * ver `loteService.reintentarEnvioDocumento` para las reglas de negocio completas.
+ * @param {Object} datos
+ * @param {number} datos.notaDeCreditoId
+ * @param {Object} datosUsuario - `req.usuario`, para el scoping multi-tenant
+ */
+const reintentarEnvioSifen = async (datos, datosUsuario) => {
+  try {
+    return await loteService.reintentarEnvioDocumento("NOTA_CREDITO", datos.notaDeCreditoId, datosUsuario.empresaId);
+  } catch (error) {
+    ErrorApp.handleServiceError(error);
+  }
+};
+
 module.exports = {
   reenviarNotaDeCredito,
   emitirNotaDeCredito,
   getNotasDeCredito,
-  cancelarNotaDeCredito
+  cancelarNotaDeCredito,
+  reintentarEnvioSifen
 };

@@ -10,6 +10,9 @@ const { construirCdc } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
 const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
+const { buscarPorRuc } = require("./padronRucPersistenciaService");
+const { bloqueaEmision } = require("../utils/sifen/estadoPadronRuc");
+const { consultarCedula } = require("./cedulaService");
 
 // tipoDocumento SIFEN para el CDC (MIGRATION_PLAN.md §1.3) — 1=Factura, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_FACTURA = 1;
@@ -52,6 +55,34 @@ const emitirFactura = async (datos, datosUsuario) => {
 
     if (!usuario) {
       throw new ErrorApp("Usuario no encontrado", 404);
+    }
+
+    // Validar el RUC del receptor contra el padrón de contribuyentes antes de armar/emitir el DE
+    // (Manual Técnico SIFEN v150, validaciones D206b/c/d) — sin esto SIFEN rechaza el documento
+    // recién después de armado y enviado, con el RUC ya guardado como Cliente.
+    if (datos.situacionTributaria === "CONTRIBUYENTE") {
+      const rucBase = datos.ruc.includes("-") ? datos.ruc.split("-")[0] : datos.ruc;
+      const registroPadron = await buscarPorRuc(rucBase);
+
+      if (!registroPadron) {
+        throw new ErrorApp(`El RUC ${datos.ruc} no existe en el padrón de contribuyentes`, 404);
+      }
+
+      if (bloqueaEmision(registroPadron.estado)) {
+        throw new ErrorApp(`El RUC ${datos.ruc} se encuentra en estado "${registroPadron.estado}" y no puede recibir documentos electrónicos`, 400);
+      }
+    }
+
+    // Validar la cédula del receptor contra el registro de identificaciones antes de emitir —
+    // mismo motivo que la validación de RUC de arriba. Solo aplica a NO_CONTRIBUYENTE con
+    // documento tipo CEDULA: pasaporte/carné de residencia no tienen un registro local contra el
+    // que validar, y NO_DOMICILIADO es por definición un extranjero sin cédula paraguaya.
+    if (datos.situacionTributaria === "NO_CONTRIBUYENTE" && datos.tipoIdentificacion === "CEDULA") {
+      const datosCedula = await consultarCedula(datos.ruc);
+
+      if (!datosCedula) {
+        throw new ErrorApp(`La cédula ${datos.ruc} no existe en el registro de identificaciones`, 404);
+      }
     }
 
     //Buscar si existe cliente
@@ -577,11 +608,29 @@ const cancelarFactura = async (datos, datosUsuario) => {
 
 }
 
+/**
+ * Reintenta manualmente el envío a SIFEN de una Factura que quedó en `estado_sifen: ERROR` (agotó los
+ * reintentos automáticos del cron, típicamente por una caída/inestabilidad de SIFEN) — ver
+ * `loteService.reintentarEnvioDocumento` para las reglas de negocio completas (por qué es el mismo
+ * número/mismo documento, nunca uno nuevo, y el límite de 720h de transmisión extemporánea).
+ * @param {Object} datos
+ * @param {number} datos.facturaId
+ * @param {Object} datosUsuario - `req.usuario`, para el scoping multi-tenant
+ */
+const reintentarEnvioSifen = async (datos, datosUsuario) => {
+  try {
+    return await loteService.reintentarEnvioDocumento("FACTURA", datos.facturaId, datosUsuario.empresaId);
+  } catch (error) {
+    ErrorApp.handleServiceError(error);
+  }
+};
+
 module.exports = {
   emitirFactura,
   getFacturas,
   getFacturaById,
   getMontoTotalPorCdc,
   reenviarFactura,
-  cancelarFactura
+  cancelarFactura,
+  reintentarEnvioSifen
 };

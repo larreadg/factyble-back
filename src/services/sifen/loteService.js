@@ -49,6 +49,20 @@ const BACKOFF_CAP_SEGUNDOS = Number(process.env.SIFEN_LOTE_BACKOFF_CAP_SEGUNDOS)
 const MAX_INTENTOS_ENVIO = Number(process.env.SIFEN_LOTE_MAX_INTENTOS) || 10;
 const RED_SEGURIDAD_UMBRAL_MINUTOS = Number(process.env.SIFEN_RED_SEGURIDAD_UMBRAL_MINUTOS) || 120;
 
+// Límite de "transmisión extemporánea" del Manual Técnico SIFEN v150 §6.2: pasadas 720h (30 días)
+// desde la fecha de emisión real del documento, SIFEN rechaza el envío sin excepción — no tiene
+// sentido intentar un reenvío manual más allá de este punto, el número queda inevitablemente
+// "quemado" y requiere inutilización (no implementada) + un documento nuevo.
+const PLAZO_TRANSMISION_HORAS = Number(process.env.SIFEN_PLAZO_TRANSMISION_HORAS) || 720;
+
+// Tope de reintentos de firma (`firmarPendientes()`) — sin esto, un documento que nunca lograba
+// firmarse (certificado vencido, datos fiscales incompletos, bug de armado de XML) reintentaba cada 5
+// min para siempre, sin escalar nunca a `ERROR` ni alertar a nadie. Mismo criterio que
+// `SIFEN_LOTE_MAX_INTENTOS` para el envío. Seguro escalar a `ERROR` acá (a diferencia de una consulta
+// fallida): el documento todavía no se le envió nada a SIFEN, así que un reintento posterior vía
+// `reintentarEnvioDocumento()` nunca arriesga un duplicado.
+const FIRMA_MAX_INTENTOS = Number(process.env.SIFEN_FIRMA_MAX_INTENTOS) || 10;
+
 // Config por tipo de documento: parametriza toda la lógica de armado/envío/consulta, que es
 // idéntica entre Factura y NotaCredito salvo el modelo Prisma y el builder de XML a usar (mismo
 // patrón de paralelismo que ya tiene xmlBuilderService entre construirXmlFactura/construirXmlNotaCredito).
@@ -183,7 +197,13 @@ const firmarYPersistirDocumento = async (tipoDoc, documento, client = prisma) =>
     // solo cambia quién la calcula (ver docstring de `qrService.generarQr`).
     const documentoActualizado = await config.modelo(client).update({
       where: { id: documento.id },
-      data: { xml_firmado: xmlConQr, linkqr: resultadoQr.linkQr, estado_sifen: "FIRMADO", fecha_firma: new Date() },
+      data: {
+        xml_firmado: xmlConQr,
+        linkqr: resultadoQr.linkQr,
+        estado_sifen: "FIRMADO",
+        fecha_firma: new Date(),
+        intentos_firma: 0,
+      },
     });
 
     await trazabilidadService.registrarInteraccion({
@@ -235,6 +255,93 @@ const firmarDocumentoRecienCreado = async (tipoDoc, documentoId, client = prisma
 };
 
 /**
+ * Reintenta manualmente el envío a SIFEN de un documento que quedó en `ERROR` (agotó los reintentos
+ * automáticos de `enviarLotesConstruidos()`/`marcarLoteAgotado()` — ver docstring de esa función).
+ * Deliberadamente NO acepta documentos `RECHAZADO`: ese es un resultado de negocio (SIFEN evaluó el
+ * contenido y lo rechazó, p. ej. dato inválido), no un fallo técnico/de transporte — reenviar el mismo
+ * dato sin cambios repetiría el mismo rechazo, y hoy no existe forma de editar una Factura/NotaCredito
+ * ya creada. Alcance decidido con el usuario: solo `ERROR` por ahora.
+ *
+ * Resetea a `estado_sifen: GENERADO` (no reutiliza el `xml_firmado` existente) para que el próximo
+ * `firmarPendientes()` del cron reconstruya y refirme el documento desde cero. Dos motivos:
+ * 1) Refresca `fecha_firma`, uno de los dos relojes del plazo de transmisión de SIFEN (Manual Técnico
+ *    v150 §6.2: hasta 72h desde la firma para transmisión "normal") — reenviar el XML ya firmado hace
+ *    tiempo arriesga que SIFEN lo considere fuera de ese plazo aunque el reintento sea inmediato.
+ * 2) Si el motivo original del error era un bug de armado de XML ya corregido en `xmlBuilderService`,
+ *    el reintento lo incorpora en vez de reenviar los mismos bytes rotos.
+ * El CDC y el número de documento NUNCA cambian (`construirCdc` no se vuelve a invocar: `factura.cdc`/
+ * `notaCredito.cdc` ya están fijos desde la creación) — esto reintenta el mismo documento/mismo
+ * número, nunca uno nuevo. Un documento que no llegó a `APROBADO` nunca fue consumido por SIFEN, así
+ * que no hay problema de correlatividad en reusar el número.
+ *
+ * Rechaza el reintento si ya pasaron más de `SIFEN_PLAZO_TRANSMISION_HORAS` (default 720h/30 días —
+ * el límite de "transmisión extemporánea" del Manual Técnico) desde `fecha_creacion` (la fecha de
+ * emisión real, el otro reloj del plazo, que NO se puede refrescar): pasado ese punto SIFEN rechaza el
+ * envío sin importar qué se haga, y el único camino real es inutilizar el número (no implementado acá)
+ * y emitir un documento nuevo.
+ * @param {"FACTURA"|"NOTA_CREDITO"} tipoDoc
+ * @param {number} documentoId
+ * @param {number} empresaId - Scoping multi-tenant: solo se puede reintentar un documento de la propia empresa
+ * @returns {Promise<Object>} - El documento reseteado a `GENERADO`
+ */
+const reintentarEnvioDocumento = async (tipoDoc, documentoId, empresaId) => {
+  const config = TIPOS_DOCUMENTO[tipoDoc];
+  const documento = await config.modelo().findFirst({
+    where: { id: documentoId },
+    include: config.include,
+  });
+
+  if (!documento) {
+    throw new ErrorApp(`${tipoDoc} no encontrada`, 404);
+  }
+
+  const { empresa } = config.obtenerContactos(documento);
+  if (empresa.id !== empresaId) {
+    throw new ErrorApp(`${tipoDoc} no encontrada`, 404);
+  }
+
+  if (documento.estado_sifen !== "ERROR") {
+    throw new ErrorApp(
+      `Solo se puede reintentar un documento en estado ERROR (actual: ${documento.estado_sifen || "sin estado SIFEN"})`,
+      400
+    );
+  }
+
+  const horasDesdeEmision = (Date.now() - documento.fecha_creacion.getTime()) / (1000 * 60 * 60);
+  if (horasDesdeEmision > PLAZO_TRANSMISION_HORAS) {
+    throw new ErrorApp(
+      `No se puede reintentar: pasaron ${Math.floor(horasDesdeEmision)}h desde la emisión, supera el ` +
+        `plazo de transmisión de SIFEN (${PLAZO_TRANSMISION_HORAS}h) — este número ya no es reenviable, ` +
+        "requiere inutilizarlo ante SIFEN y emitir un documento nuevo.",
+      409
+    );
+  }
+
+  const documentoActualizado = await config.modelo().update({
+    where: { id: documento.id },
+    data: {
+      estado_sifen: "GENERADO",
+      lote_id: null,
+      sifen_cod_respuesta: null,
+      sifen_estado_mensaje: null,
+      sifen_num_transaccion: null,
+      fecha_respuesta_sifen: null,
+      // Reseteo defensivo: este documento ya pasó por FIRMADO/ENCOLADO alguna vez (llegó a ERROR
+      // después de eso), así que intentos_firma debería estar en 0 — pero si por algún motivo no lo
+      // está, un reintento manual siempre debe arrancar con el presupuesto completo de intentos.
+      intentos_firma: 0,
+    },
+  });
+
+  // No pasa por trazabilidadService: acá todavía no hubo ningún request/response real contra SIFEN
+  // (eso lo va a generar el próximo firmarPendientes()/enviarLotesConstruidos() del cron, que ya
+  // registran su propia trazabilidad) — esto es solo el reseteo local de estado que dispara ese reintento.
+  console.log(`[loteService] Reintento manual: ${tipoDoc} id=${documento.id} (empresa=${empresaId}) ERROR -> GENERADO`);
+
+  return documentoActualizado;
+};
+
+/**
  * Envía la notificación por correo (aprobación o rechazo) del resultado final de SIFEN para un
  * documento — reemplaza la lógica que antes vivía en `facturaService#checkFacturaStatus` (eliminado
  * en Fase 5), generalizada a Factura y NotaCredito vía `TIPOS_DOCUMENTO[tipoDoc].notificarAprobado`/
@@ -263,6 +370,19 @@ const notificarResultadoDocumento = async (tipoDoc, documentoId, nuevoEstado, me
     }
   } catch (error) {
     console.error(`[loteService] Error al notificar resultado de ${tipoDoc} id=${documentoId}:`, error.message);
+    // Si `contactos` no llegó a resolverse (findFirst/obtenerContactos fallaron, no el envío de mail en
+    // sí), los bloques de bot/Telegram de abajo no se van a ejecutar (dependen de `contactos`) — sin
+    // este aviso, un RECHAZADO/APROBADO real quedaría sin ninguna alerta (ni mail, ni bot, ni Telegram).
+    if (!contactos) {
+      try {
+        await telegramService.notificarFallaSistemica({
+          titulo: `No se pudo procesar el resultado de ${tipoDoc} id=${documentoId}`,
+          detalle: `Estado nuevo: ${nuevoEstado}. Error al obtener el documento/sus contactos: ${error.message}`,
+        });
+      } catch (errorTelegram) {
+        console.error(`[loteService] Error al notificar a Telegram la falla de notificarResultadoDocumento para ${tipoDoc} id=${documentoId}:`, errorTelegram.message);
+      }
+    }
   }
 
   // Documentos originados en el bot (WhatsApp) se reenvían al bot con el resultado final de SIFEN,
@@ -280,6 +400,14 @@ const notificarResultadoDocumento = async (tipoDoc, documentoId, nuevoEstado, me
       ]);
     } catch (error) {
       console.error(`[loteService] Error al reenviar al bot el resultado de ${tipoDoc} id=${documentoId}:`, error.message);
+      try {
+        await telegramService.notificarFallaSistemica({
+          titulo: `No se pudo avisar al bot (WhatsApp) el resultado de ${tipoDoc} id=${documentoId}`,
+          detalle: `CDC=${documento.cdc}, estado=${nuevoEstado}. El cliente final no recibió el aviso automático: ${error.message}`,
+        });
+      } catch (errorTelegram) {
+        console.error(`[loteService] Error al notificar a Telegram la falla de reenvio al bot para ${tipoDoc} id=${documentoId}:`, errorTelegram.message);
+      }
     }
   }
 
@@ -305,6 +433,37 @@ const notificarResultadoDocumento = async (tipoDoc, documentoId, nuevoEstado, me
 };
 
 /**
+ * Escala un documento a `ERROR` tras agotar `FIRMA_MAX_INTENTOS` reintentos de firma — mismo estado
+ * terminal y mismo criterio que `marcarLoteAgotado()`, pero para fallas *antes* de llegar a formar
+ * parte de un `Lote` (el documento nunca se le envió a SIFEN, así que un reintento posterior vía
+ * `reintentarEnvioDocumento()` es igual de seguro que para un lote agotado). Alerta por Telegram
+ * reusando el mismo formato que el resto del módulo, aislada en su propio try/catch.
+ * @param {"FACTURA"|"NOTA_CREDITO"} tipoDoc
+ * @param {Object} documento - Con el `include` de `TIPOS_DOCUMENTO[tipoDoc]` ya cargado
+ * @param {string} mensajeError
+ */
+const marcarFirmaAgotada = async (tipoDoc, documento, mensajeError) => {
+  const config = TIPOS_DOCUMENTO[tipoDoc];
+
+  try {
+    const contactos = config.obtenerContactos(documento);
+    const clienteFmt = formatearCliente(contactos.cliente);
+    await telegramService.notificarDocumentoRechazado({
+      tipoDoc,
+      estado: "ERROR",
+      numeroDocumento: config.numeroDocumento(documento),
+      cdc: documento.cdc,
+      empresaNombre: contactos.empresa.nombre_empresa,
+      clienteNombre: clienteFmt.nombre,
+      clienteDocumento: clienteFmt.documento,
+      motivo: mensajeError,
+    });
+  } catch (error) {
+    console.error(`[loteService] Error al notificar a Telegram el agotamiento de firma de ${tipoDoc} id=${documento.id}:`, error.message);
+  }
+};
+
+/**
  * Firma todos los documentos pendientes (sin lote asignado, sin firmar todavía), aislado por
  * documento — un error en uno no afecta a los demás (antipatrón Q).
  *
@@ -319,6 +478,9 @@ const notificarResultadoDocumento = async (tipoDoc, documentoId, nuevoEstado, me
  * problema real en la verificación ad-hoc de este módulo (miles de filas legacy sin certificado
  * asociado, todas fallando pero sin abortar el resto — el aislamiento por documento funcionó, pero el
  * alcance de la query estaba mal).
+ *
+ * Tope de reintentos vía `intentos_firma` (`FIRMA_MAX_INTENTOS`): al agotarse, escala a `ERROR` +
+ * alerta por Telegram (`marcarFirmaAgotada`) en vez de reintentar para siempre en silencio.
  * @returns {Promise<void>}
  */
 const firmarPendientes = async () => {
@@ -347,12 +509,26 @@ const firmarPendientes = async () => {
         await firmarYPersistirDocumento(tipoDoc, documento);
       } catch (error) {
         console.error(`[loteService] Error al firmar ${tipoDoc} id=${id}:`, error.message);
+
+        const previo = await config.modelo().findFirst({ where: { id }, select: { intentos_firma: true } });
+        const intentos = (previo?.intentos_firma || 0) + 1;
+
+        if (intentos >= FIRMA_MAX_INTENTOS) {
+          const documentoAgotado = await config.modelo().update({
+            where: { id },
+            data: { estado_sifen: "ERROR", intentos_firma: intentos, sifen_estado_mensaje: `Excedido el maximo de intentos de firma (${FIRMA_MAX_INTENTOS}): ${error.message}` },
+            include: config.include,
+          });
+          await marcarFirmaAgotada(tipoDoc, documentoAgotado, `Excedido el maximo de intentos de firma (${FIRMA_MAX_INTENTOS}): ${error.message}`);
+          continue;
+        }
+
         // Libera el claim (FIRMANDO -> GENERADO) para que la próxima pasada del cron reintente —
         // reintentar el armado es seguro (cómputo local, no una llamada a SIFEN), mismo criterio ya
         // documentado en este módulo para el resto del pipeline.
         await config.modelo().updateMany({
           where: { id, estado_sifen: "FIRMANDO" },
-          data: { estado_sifen: "GENERADO" },
+          data: { estado_sifen: "GENERADO", intentos_firma: intentos },
         });
       }
     }
@@ -822,6 +998,19 @@ const consultaIndividualRedDeSeguridad = async () => {
         await notificarResultadoDocumento(tipoDoc, documento.id, nuevoEstado, mensaje || interpretacion.mensajeInterno);
       } catch (error) {
         console.error(`[loteService] Error en consulta individual de red de seguridad para ${tipoDoc} id=${documento.id}:`, error.message);
+        // Este es el backstop de baja frecuencia (corre 1 vez por hora, ver docstring de la función):
+        // si un documento llega hasta acá y la consulta individual TAMBIÉN falla, es la señal más
+        // fuerte de que SIFEN está caído/inalcanzable de forma sostenida (no un timeout aislado) — a
+        // diferencia de `consultarLotes()` (cada 5 min, deliberadamente sin alerta acá para no spamear
+        // Telegram en cada corrida), acá sí se alerta, aislado en su propio try/catch.
+        try {
+          await telegramService.notificarFallaSistemica({
+            titulo: `Red de seguridad: no se pudo consultar ${tipoDoc} en SIFEN`,
+            detalle: `id=${documento.id}, CDC=${documento.cdc}. Lleva más de ${RED_SEGURIDAD_UMBRAL_MINUTOS} min en ENVIADO sin resolución y la consulta individual también falló: ${error.message}`,
+          });
+        } catch (errorTelegram) {
+          console.error(`[loteService] Error al notificar a Telegram la falla de red de seguridad para ${tipoDoc} id=${documento.id}:`, errorTelegram.message);
+        }
       }
     }
   }
@@ -833,4 +1022,5 @@ module.exports = {
   consultarLotes,
   consultaIndividualRedDeSeguridad,
   firmarDocumentoRecienCreado,
+  reintentarEnvioDocumento,
 };

@@ -99,6 +99,24 @@ const reenviarNotaDeCredito = async (req, res) => {
     }
 }
 
+const reintentarEnvioSifen = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const data = await notaDeCreditoService.reintentarEnvioSifen(req.body, req.usuario);
+
+        return res.status(200).send(Response.success(data, 'Reintento de envío a SIFEN encolado'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al reintentar el envío a SIFEN');
+
+        return res.status(code).send(Response.error(message, code));
+
+    }
+}
+
 const cancelarNotaDeCreditoSimple = async (req, res) => {
     try {
 
@@ -123,6 +141,7 @@ module.exports = {
     getNotasDeCredito,
     cancelarNotaDeCredito,
     cancelarNotaDeCreditoSimple,
-    reenviarNotaDeCredito
+    reenviarNotaDeCredito,
+    reintentarEnvioSifen
 }
 

@@ -3,10 +3,15 @@ const loteService = require('./sifen/loteService')
 const certificadoService = require('./sifen/certificadoService')
 const trazabilidadService = require('./sifen/trazabilidadService')
 const correoService = require('./correoService')
+const telegramService = require('./telegramService')
 
 /**
  * Ejecuta un job de cron con trazabilidad de inicio/fin/duración en consola — cada job sigue quedando
  * aislado en su propio try/catch (una falla acá nunca debe crashear el proceso ni bloquear otros jobs).
+ * Si el job entero explota (no ya un documento/lote aislado — eso lo maneja cada servicio por su
+ * cuenta — sino el job completo, p. ej. un bug o la base de datos caída), es el último punto antes de
+ * quedar completamente invisible: se alerta por Telegram además de loguear, aislado en su propio
+ * try/catch (si Telegram también falla, al menos queda el log).
  * @param {string} nombre
  * @param {() => Promise<void>} tarea
  */
@@ -18,6 +23,14 @@ const ejecutarJob = async (nombre, tarea) => {
         console.log(`[cronJobs] ${nombre}: fin (${Date.now() - inicio}ms)`)
     } catch (error) {
         console.error(`[cronJobs] ${nombre}: error tras ${Date.now() - inicio}ms —`, error.message)
+        try {
+            await telegramService.notificarFallaSistemica({
+                titulo: `Cron '${nombre}' falló`,
+                detalle: `El job completo terminó en error tras ${Date.now() - inicio}ms: ${error.message}`,
+            })
+        } catch (errorTelegram) {
+            console.error(`[cronJobs] Error al notificar a Telegram la falla del cron '${nombre}':`, errorTelegram.message)
+        }
     }
 }
 
@@ -43,8 +56,10 @@ const cronJobsSifen = () => {
     // alertaCertificadosPorVencer: recalcula estado y devuelve los certificados POR_VENCER/VENCIDO.
     // Siempre queda registrado en el log del servidor (no depende de que el correo esté configurado);
     // si `SIFEN_ALERTA_EMAIL` está seteada, además envía un correo al administrador (AUD-014,
-    // STATIC_AUDIT_FINDINGS.json — antes solo llegaba a console.warn). El envío de correo está aislado
-    // en su propio try/catch para no bloquear el resto del pipeline si el SMTP falla.
+    // STATIC_AUDIT_FINDINGS.json — antes solo llegaba a console.warn). Además se alerta por Telegram
+    // (un certificado vencido bloquea toda la emisión de la empresa — es de las fallas más graves del
+    // pipeline y antes no llegaba al grupo). Correo y Telegram están aislados cada uno en su propio
+    // try/catch para no bloquear el resto del pipeline ni depender uno del otro.
     cron.schedule('0 6 * * *', () => ejecutarJob('alertaCertificadosPorVencer', async () => {
         const porAlertar = await certificadoService.actualizarEstadosPorVencimiento()
         if (porAlertar.length > 0) {
@@ -59,6 +74,18 @@ const cronJobsSifen = () => {
                 }
             } else {
                 console.warn('[cronJobs] SIFEN_ALERTA_EMAIL no configurada — la alerta de certificados solo queda en el log')
+            }
+
+            try {
+                const detalle = porAlertar
+                    .map((c) => `empresa_id=${c.empresa_id}: ${c.estado} (vence ${c.fecha_vencimiento.toISOString().slice(0, 10)})`)
+                    .join('\n')
+                await telegramService.notificarFallaSistemica({
+                    titulo: `${porAlertar.length} certificado(s) por vencer o vencido(s)`,
+                    detalle,
+                })
+            } catch (errorTelegram) {
+                console.error('[cronJobs] Error al notificar a Telegram la alerta de certificados:', errorTelegram.message)
             }
         } else {
             console.log('[cronJobs] alertaCertificadosPorVencer: sin certificados por vencer o vencidos')

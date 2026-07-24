@@ -189,6 +189,12 @@ model Factura {
   fecha_firma           DateTime?
   fecha_envio_sifen     DateTime?
   fecha_respuesta_sifen DateTime?
+  // Contador de intentos fallidos de firma (firmarPendientes(), loteService.js) — sin tope antes de
+  // este campo, un documento que nunca lograba firmarse (certificado vencido, datos fiscales
+  // incompletos) reintentaba cada 5 min para siempre sin escalar a ERROR ni alertar. Nullable por
+  // convención de columnas nuevas sobre tablas con filas existentes, aunque el código siempre lo trata
+  // como 0 por default.
+  intentos_firma        Int?             @default(0)
   lote_id               Int?
   lote                  Lote?            @relation(fields: [lote_id], references: [id])
   eventos_sifen         EventoSifen[]
@@ -367,6 +373,8 @@ model NotaCredito {
   fecha_firma           DateTime?
   fecha_envio_sifen     DateTime?
   fecha_respuesta_sifen DateTime?
+  // Ver Factura.intentos_firma — mismo motivo y mismo criterio de nullable.
+  intentos_firma        Int?                 @default(0)
   lote_id               Int?
   lote                  Lote?                @relation(fields: [lote_id], references: [id])
   eventos_sifen         EventoSifen[]

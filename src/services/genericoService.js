@@ -1,7 +1,7 @@
-const axios = require('axios');
 const ErrorApp = require('../utils/error');
 const prisma = require('../prisma/cliente');
 const { buscarPorRuc } = require('./padronRucPersistenciaService');
+const { consultarCedula } = require('./cedulaService');
 
 const ESTADO_PADRON_RUC_VALIDO = 'ACTIVO';
 
@@ -53,15 +53,8 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
         }
 
         if(situacionTributaria == 'NO_CONTRIBUYENTE' || situacionTributaria == 'NO_DOMICILIADO'){
-            const { data } = await axios({
-                url: `${process.env.URL_CI}`,
-                params: {cedula: ruc},
-                auth: {
-                    username: process.env.USER_CI, 
-                    password: process.env.PW_CI
-                }
-            });
-            
+            const data = await consultarCedula(ruc);
+
             if(!data){
                 throw new ErrorApp('No se encontró datos', 404);
             }
