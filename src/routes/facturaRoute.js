@@ -129,7 +129,8 @@ routes.post(
 routes.post(
     '/reintentar-sifen',
     authJwt(['ADMIN']),
-    body('facturaId', 'Parámetro facturaId requerido').isInt({min: 1}),
+    body('caja').matches(/^\d{3}$/).withMessage('El parámetro caja debe tener exactamente 3 dígitos entre 001 y 999'),
+    body('factura', 'Parámetro factura requerido').isInt({min: 1}),
     facturaController.reintentarEnvioSifen
 );
 

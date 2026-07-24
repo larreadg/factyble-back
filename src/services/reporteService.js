@@ -16,9 +16,14 @@ const normalizarEstado = (documento) => {
   return "DESCONOCIDO";
 };
 
-// Una factura CANCELADA no representa facturación real: se excluye de los reportes monetarios
-// (facturación por período, top clientes), pero sí se cuenta en el reporte de facturas por estado.
-const estaCancelada = (documento) => normalizarEstado(documento) === "CANCELADO";
+// Una factura CANCELADA o RECHAZADA no representa facturación real: se excluyen de los reportes
+// monetarios (facturación por período, top clientes) y del total de facturas-x-estados. Siguen
+// apareciendo en el desglose por estado de facturas-x-estados (array `estados`) — solo se sacan del
+// conteo total/monetario, no se pierde visibilidad de cuántas se rechazaron/cancelaron.
+const esFacturaInvalida = (documento) => {
+  const estado = normalizarEstado(documento);
+  return estado === "CANCELADO" || estado === "RECHAZADO";
+};
 
 const construirRangoFechas = (desde, hasta) => {
   const rango = {};
@@ -55,10 +60,12 @@ const facturasPorEstados = async (desde, hasta, empresaId) => {
       .map(([estado, cantidad]) => ({ estado, cantidad }))
       .sort((a, b) => b.cantidad - a.cantidad);
 
+    const totalFacturas = facturas.filter((factura) => !esFacturaInvalida(factura)).length;
+
     return {
       desde: desde || null,
       hasta: hasta || null,
-      totalFacturas: facturas.length,
+      totalFacturas,
       estados,
     };
   } catch (error) {
@@ -84,7 +91,7 @@ const facturacionPorPeriodo = async (desde, hasta, empresaId) => {
       orderBy: { fecha_creacion: "asc" },
     });
 
-    const facturasValidas = facturas.filter((factura) => !estaCancelada(factura));
+    const facturasValidas = facturas.filter((factura) => !esFacturaInvalida(factura));
 
     const detallePorFecha = facturasValidas.reduce((acc, factura) => {
       const fecha = dayjs(factura.fecha_creacion).format("YYYY-MM-DD");
@@ -139,7 +146,7 @@ const topClientes = async (desde, hasta, limite = 10, empresaId) => {
       },
     });
 
-    const facturasValidas = facturas.filter((factura) => !estaCancelada(factura));
+    const facturasValidas = facturas.filter((factura) => !esFacturaInvalida(factura));
 
     const totalesPorCliente = facturasValidas.reduce((acc, factura) => {
       const { cliente_id, cliente } = factura.cliente_empresa;

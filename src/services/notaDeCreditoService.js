@@ -480,15 +480,34 @@ const reenviarNotaDeCredito = async ({ email, notaDeCreditoId }) => {
 };
 
 /**
- * Reintenta manualmente el envío a SIFEN de una Nota de Crédito que quedó en `estado_sifen: ERROR` —
- * ver `loteService.reintentarEnvioDocumento` para las reglas de negocio completas.
+ * Reintenta manualmente el envío a SIFEN de una Nota de Crédito que quedó en `estado_sifen: ERROR` o
+ * `RECHAZADO` — ver `loteService.reintentarEnvioDocumento` para las reglas de negocio completas.
+ *
+ * Se identifica el documento por caja + número de nota de crédito (no por id interno), mismo criterio
+ * que `facturaService.reintentarEnvioSifen`: `numero_nota_credito` no es único por sí solo, por eso el
+ * filtro va siempre `caja.codigo` + `caja.establecimiento.empresa_id` (scoping multi-tenant) + `numero_nota_credito`.
  * @param {Object} datos
- * @param {number} datos.notaDeCreditoId
+ * @param {string} datos.caja - Código de caja (3 dígitos), el punto de expedición SIFEN
+ * @param {number} datos.notaCredito - Número de nota de crédito (`numero_nota_credito`), no el id interno
  * @param {Object} datosUsuario - `req.usuario`, para el scoping multi-tenant
  */
 const reintentarEnvioSifen = async (datos, datosUsuario) => {
   try {
-    return await loteService.reintentarEnvioDocumento("NOTA_CREDITO", datos.notaDeCreditoId, datosUsuario.empresaId);
+    const notaDeCredito = await prisma.notaCredito.findFirst({
+      where: {
+        numero_nota_credito: datos.notaCredito,
+        caja: {
+          codigo: datos.caja,
+          establecimiento: { empresa_id: datosUsuario.empresaId },
+        },
+      },
+    });
+
+    if (!notaDeCredito) {
+      throw new ErrorApp('Nota de crédito no encontrada', 404);
+    }
+
+    return await loteService.reintentarEnvioDocumento("NOTA_CREDITO", notaDeCredito.id, datosUsuario.empresaId);
   } catch (error) {
     ErrorApp.handleServiceError(error);
   }

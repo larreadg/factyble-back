@@ -610,16 +610,38 @@ const cancelarFactura = async (datos, datosUsuario) => {
 
 /**
  * Reintenta manualmente el envío a SIFEN de una Factura que quedó en `estado_sifen: ERROR` (agotó los
- * reintentos automáticos del cron, típicamente por una caída/inestabilidad de SIFEN) — ver
- * `loteService.reintentarEnvioDocumento` para las reglas de negocio completas (por qué es el mismo
- * número/mismo documento, nunca uno nuevo, y el límite de 720h de transmisión extemporánea).
+ * reintentos automáticos del cron, típicamente por una caída/inestabilidad de SIFEN) o `RECHAZADO` (p. ej.
+ * un rechazo generado por una falla interna del motor de validaciones de SIFEN, no un rechazo de negocio
+ * real sobre el contenido) — ver `loteService.reintentarEnvioDocumento` para las reglas de negocio
+ * completas (por qué es el mismo número/mismo documento, nunca uno nuevo, el límite de 720h de
+ * transmisión extemporánea, y el criterio para cuándo reintentar un RECHAZADO es seguro).
+ *
+ * Se identifica el documento por caja + número de factura (no por id interno) porque es lo que el
+ * usuario tiene a mano cuando SIFEN rechaza/falla — el mismo criterio de búsqueda que usa `emitirFactura`
+ * para resolver caja. `numero_factura` no es único por sí solo (se repite entre cajas), por eso el
+ * filtro va siempre `caja.codigo` + `caja.establecimiento.empresa_id` (scoping multi-tenant) + `numero_factura`.
  * @param {Object} datos
- * @param {number} datos.facturaId
+ * @param {string} datos.caja - Código de caja (3 dígitos), el punto de expedición SIFEN
+ * @param {number} datos.factura - Número de factura (`numero_factura`), no el id interno
  * @param {Object} datosUsuario - `req.usuario`, para el scoping multi-tenant
  */
 const reintentarEnvioSifen = async (datos, datosUsuario) => {
   try {
-    return await loteService.reintentarEnvioDocumento("FACTURA", datos.facturaId, datosUsuario.empresaId);
+    const factura = await prisma.factura.findFirst({
+      where: {
+        numero_factura: datos.factura,
+        caja: {
+          codigo: datos.caja,
+          establecimiento: { empresa_id: datosUsuario.empresaId },
+        },
+      },
+    });
+
+    if (!factura) {
+      throw new ErrorApp('Factura no encontrada', 404);
+    }
+
+    return await loteService.reintentarEnvioDocumento("FACTURA", factura.id, datosUsuario.empresaId);
   } catch (error) {
     ErrorApp.handleServiceError(error);
   }

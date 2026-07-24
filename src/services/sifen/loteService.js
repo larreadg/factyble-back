@@ -256,11 +256,21 @@ const firmarDocumentoRecienCreado = async (tipoDoc, documentoId, client = prisma
 
 /**
  * Reintenta manualmente el envío a SIFEN de un documento que quedó en `ERROR` (agotó los reintentos
- * automáticos de `enviarLotesConstruidos()`/`marcarLoteAgotado()` — ver docstring de esa función).
- * Deliberadamente NO acepta documentos `RECHAZADO`: ese es un resultado de negocio (SIFEN evaluó el
- * contenido y lo rechazó, p. ej. dato inválido), no un fallo técnico/de transporte — reenviar el mismo
- * dato sin cambios repetiría el mismo rechazo, y hoy no existe forma de editar una Factura/NotaCredito
- * ya creada. Alcance decidido con el usuario: solo `ERROR` por ahora.
+ * automáticos de `enviarLotesConstruidos()`/`marcarLoteAgotado()` — ver docstring de esa función) o en
+ * `RECHAZADO`.
+ *
+ * También acepta `RECHAZADO` (ampliado respecto al alcance original de "solo ERROR"): en la práctica no
+ * todo RECHAZADO es un rechazo de negocio genuino sobre el contenido del documento. `interpretarCodigo()`
+ * (`codigosRespuesta.js`) clasifica como RECHAZADO por default cualquier código que no esté mapeado
+ * explícitamente como APROBADO/REINTENTABLE/INFORMATIVO — y una caída/inestabilidad del motor de
+ * validaciones de SIFEN puede devolver un código no documentado (p. ej. "Error Inesperado en
+ * validaciones... No se pudo evaluar" en vez del texto real de rechazo de la regla) que cae en ese
+ * default sin ser en realidad un rechazo de contenido. Reintentar el mismo documento (mismo CDC, mismos
+ * datos) es seguro en ese caso porque SIFEN nunca llegó a resolver la validación. Sigue siendo una acción
+ * manual gateada a ADMIN: si el RECHAZADO fue un rechazo de negocio real (dato inválido, p. ej. código
+ * 0142/0301/0420/0421), reintentar sin cambios va a repetir el mismo resultado — el operador que dispara
+ * el reintento es quien debe leer `sifen_estado_mensaje`/la trazabilidad y juzgar si tiene sentido antes
+ * de usarlo.
  *
  * Resetea a `estado_sifen: GENERADO` (no reutiliza el `xml_firmado` existente) para que el próximo
  * `firmarPendientes()` del cron reconstruya y refirme el documento desde cero. Dos motivos:
@@ -300,9 +310,9 @@ const reintentarEnvioDocumento = async (tipoDoc, documentoId, empresaId) => {
     throw new ErrorApp(`${tipoDoc} no encontrada`, 404);
   }
 
-  if (documento.estado_sifen !== "ERROR") {
+  if (documento.estado_sifen !== "ERROR" && documento.estado_sifen !== "RECHAZADO") {
     throw new ErrorApp(
-      `Solo se puede reintentar un documento en estado ERROR (actual: ${documento.estado_sifen || "sin estado SIFEN"})`,
+      `Solo se puede reintentar un documento en estado ERROR o RECHAZADO (actual: ${documento.estado_sifen || "sin estado SIFEN"})`,
       400
     );
   }

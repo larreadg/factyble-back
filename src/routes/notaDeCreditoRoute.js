@@ -79,7 +79,8 @@ routes.post(
 routes.post(
     '/reintentar-sifen',
     authJwt(['ADMIN']),
-    body('notaDeCreditoId', 'Parámetro notaDeCreditoId requerido').isInt({min: 1}),
+    body('caja').matches(/^\d{3}$/).withMessage('El parámetro caja debe tener exactamente 3 dígitos entre 001 y 999'),
+    body('notaCredito', 'Parámetro notaCredito requerido').isInt({min: 1}),
     notaDeCreditoController.reintentarEnvioSifen
 );
 
