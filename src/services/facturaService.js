@@ -6,7 +6,7 @@ const generarPdf = require("../utils/generarPdf");
 const { v4: uuidv4 } = require("uuid");
 const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
 const { enviarFactura } = require("./correoService");
-const { construirCdc } = require("../utils/sifen/cdc");
+const { construirCdc, calcularDigitoVerificador } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
 const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
@@ -61,7 +61,21 @@ const emitirFactura = async (datos, datosUsuario) => {
     // (Manual Técnico SIFEN v150, validaciones D206b/c/d) — sin esto SIFEN rechaza el documento
     // recién después de armado y enviado, con el RUC ya guardado como Cliente.
     if (datos.situacionTributaria === "CONTRIBUYENTE") {
-      const rucBase = datos.ruc.includes("-") ? datos.ruc.split("-")[0] : datos.ruc;
+      const [rucBase, dvInformado] = datos.ruc.includes("-") ? datos.ruc.split("-") : [datos.ruc, undefined];
+
+      if (!dvInformado) {
+        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: debe incluir el dígito verificador con el formato "NNNNNNN-D"`, 400);
+      }
+
+      if (!/^\d+$/.test(rucBase)) {
+        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: la parte numérica ("${rucBase}") debe contener solo dígitos`, 400);
+      }
+
+      const dvCalculado = calcularDigitoVerificador(rucBase);
+      if (String(dvCalculado) !== String(Number(dvInformado))) {
+        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: el dígito verificador informado ("${dvInformado}") no corresponde al RUC ${rucBase}. El dígito verificador correcto es ${dvCalculado} (${rucBase}-${dvCalculado})`, 400);
+      }
+
       const registroPadron = await buscarPorRuc(rucBase);
 
       if (!registroPadron) {
