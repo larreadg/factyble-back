@@ -6,7 +6,7 @@ const generarPdf = require("../utils/generarPdf");
 const { v4: uuidv4 } = require("uuid");
 const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
 const { enviarFactura } = require("./correoService");
-const { construirCdc, calcularDigitoVerificador } = require("../utils/sifen/cdc");
+const { construirCdc } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
 const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
@@ -61,25 +61,33 @@ const emitirFactura = async (datos, datosUsuario) => {
     // (Manual Técnico SIFEN v150, validaciones D206b/c/d) — sin esto SIFEN rechaza el documento
     // recién después de armado y enviado, con el RUC ya guardado como Cliente.
     if (datos.situacionTributaria === "CONTRIBUYENTE") {
-      const [rucBase, dvInformado] = datos.ruc.includes("-") ? datos.ruc.split("-") : [datos.ruc, undefined];
+      const [rucBaseRaw, dvInformado] = datos.ruc.includes("-") ? datos.ruc.split("-") : [datos.ruc, undefined];
 
       if (!dvInformado) {
         throw new ErrorApp(`El RUC ${datos.ruc} es inválido: debe incluir el dígito verificador con el formato "NNNNNNN-D"`, 400);
       }
 
-      if (!/^\d+$/.test(rucBase)) {
-        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: la parte numérica ("${rucBase}") debe contener solo dígitos`, 400);
+      if (!/^\d+$/.test(rucBaseRaw)) {
+        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: la parte numérica ("${rucBaseRaw}") debe contener solo dígitos`, 400);
       }
 
-      const dvCalculado = calcularDigitoVerificador(rucBase);
-      if (String(dvCalculado) !== String(Number(dvInformado))) {
-        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: el dígito verificador informado ("${dvInformado}") no corresponde al RUC ${rucBase}. El dígito verificador correcto es ${dvCalculado} (${rucBase}-${dvCalculado})`, 400);
-      }
+      // El padrón guarda el RUC como número crudo sin ceros a la izquierda; normalizamos la base
+      // recibida para que "018219823" matchee la fila "18219823". (?=\d) evita dejar la cadena vacía
+      // si la base fuese "0".
+      const rucBase = rucBaseRaw.replace(/^0+(?=\d)/, "");
 
+      // padron_ruc es la única autoridad del dígito verificador: NO calculamos por módulo 11, porque
+      // ese cálculo sugería un DV/RUC que puede no existir en el padrón real. Primero se verifica que
+      // el RUC exista, luego que el DV coincida con el de la tabla (Manual Técnico SIFEN v150,
+      // validaciones D206b/c/d).
       const registroPadron = await buscarPorRuc(rucBase);
 
       if (!registroPadron) {
-        throw new ErrorApp(`El RUC ${datos.ruc} no existe en el padrón de contribuyentes`, 404);
+        throw new ErrorApp(`El RUC ${datos.ruc} no existe en el padrón. Verificá el número con el cliente.`, 400);
+      }
+
+      if (String(dvInformado) !== String(registroPadron.digitoVerificador)) {
+        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: el dígito verificador informado ("${dvInformado}") no corresponde al RUC ${rucBase}. El dígito verificador correcto es ${registroPadron.digitoVerificador} (${rucBase}-${registroPadron.digitoVerificador})`, 400);
       }
 
       if (bloqueaEmision(registroPadron.estado)) {
