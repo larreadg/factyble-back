@@ -15,6 +15,14 @@ java.classpath.push(path.resolve(__dirname, "..", "resources/lib/commons-logging
 java.classpath.push(path.resolve(__dirname, "..", "resources/lib/commons-digester.jar"));
 java.classpath.push(path.resolve(__dirname, "..", "resources/lib/commons-beanutils.jar"));
 
+// Todos los parámetros del Factura.jrxml son java.lang.String. Si un valor llega null/undefined hay
+// que mandar "" y no dejar que se imprima "null" en el KUDE — ojo que String(null) === "null", por eso
+// no alcanza con String(...). Mismo criterio que generarPdfRecibo.js.
+const toStringValue = (value) => {
+  if (value === null || value === undefined) return "";
+  return String(value);
+};
+
 const generarQr = async (url, filename) => {
   return new Promise((resolve, reject) => {
     QRCode.toFile(path.resolve(PUBLIC_QR, filename), url, (err) => {
@@ -41,39 +49,39 @@ const generarPdf = async (datos) => {
       params.putSync("empresaLogo", path.resolve(LOGOS_DIR, datos.empresaLogo));
     }
     params.putSync("factyble",               FACTYBLE_LOGO);
-    params.putSync("empresaRuc",             String(datos.empresaRuc));
-    params.putSync("empresaTimbrado",        String(datos.empresaTimbrado));
-    params.putSync("empresaVigenteDesde",    datos.empresaVigenteDesde);
-    params.putSync("empresaNombre",          datos.empresaNombre);
-    params.putSync("empresaDireccion",       datos.empresaDireccion);
-    params.putSync("empresaTelefono",        String(datos.empresaTelefono));
-    params.putSync("empresaCiudad",          datos.empresaCiudad);
-    params.putSync("empresaCorreoElectronico", datos.empresaCorreoElectronico);
-    params.putSync("facturaId",              datos.facturaId);
+    params.putSync("empresaRuc",             toStringValue(datos.empresaRuc));
+    params.putSync("empresaTimbrado",        toStringValue(datos.empresaTimbrado));
+    params.putSync("empresaVigenteDesde",    toStringValue(datos.empresaVigenteDesde));
+    params.putSync("empresaNombre",          toStringValue(datos.empresaNombre));
+    params.putSync("empresaDireccion",       toStringValue(datos.empresaDireccion));
+    params.putSync("empresaTelefono",        toStringValue(datos.empresaTelefono));
+    params.putSync("empresaCiudad",          toStringValue(datos.empresaCiudad));
+    params.putSync("empresaCorreoElectronico", toStringValue(datos.empresaCorreoElectronico));
+    params.putSync("facturaId",              toStringValue(datos.facturaId));
     params.putSync("fechaHora",              dayjs().format("YYYY-MM-DD HH:mm:ss"));
-    params.putSync("condicionVenta",         datos.condicionVenta);
-    params.putSync("moneda",                 datos.moneda);
-    params.putSync("ruc",                    String(datos.ruc));
-    params.putSync("razonSocial",            datos.razonSocial);
-    params.putSync("correoElectronico",      datos.correoElectronico);
+    params.putSync("condicionVenta",         toStringValue(datos.condicionVenta));
+    params.putSync("moneda",                 toStringValue(datos.moneda));
+    params.putSync("ruc",                    toStringValue(datos.ruc));
+    params.putSync("razonSocial",            toStringValue(datos.razonSocial));
+    params.putSync("correoElectronico",      toStringValue(datos.correoElectronico));
     params.putSync("total",                  formatNumber(datos.total));
     params.putSync("totalIva",               formatNumber(datos.totalIva));
     params.putSync("totalIva5",              formatNumber(datos.totalIva5));
     params.putSync("totalIva10",             formatNumber(datos.totalIva10));
     params.putSync("totalExenta",            formatNumber(datos.totalExenta));
-    params.putSync("cdc",                    datos.cdc);
-    params.putSync("tipoDocumento",          datos.tipoDocumento);
-    params.putSync("tipoDocumentoTop",       datos.tipoDocumentoTop);
+    params.putSync("cdc",                    toStringValue(datos.cdc));
+    params.putSync("tipoDocumento",          toStringValue(datos.tipoDocumento));
+    params.putSync("tipoDocumentoTop",       toStringValue(datos.tipoDocumentoTop));
 
     // 3) Código de crédito condicional (si lo tienes en datos)
     if (datos.condicionVenta === "CREDITO") {
       if (datos.tipoCredito === "CUOTA") {
         params.putSync("tipoCredito",               "CUOTA");
-        params.putSync("creditoCuotaCantidad",      datos.cantidadCuota);
-        params.putSync("creditoCuotaPeriodicidad",  datos.periodicidad);
+        params.putSync("creditoCuotaCantidad",      toStringValue(datos.cantidadCuota));
+        params.putSync("creditoCuotaPeriodicidad",  toStringValue(datos.periodicidad));
       } else if (datos.tipoCredito === "A_PLAZO") {
         params.putSync("tipoCredito",               "A PLAZO");
-        params.putSync("creditoAPlazoDescripcion",  datos.plazoDescripcion);
+        params.putSync("creditoAPlazoDescripcion",  toStringValue(datos.plazoDescripcion));
       }
     }
 
@@ -89,7 +97,7 @@ const generarPdf = async (datos) => {
     const itemList = datos.items.map(item => {
       const map = java.newInstanceSync("java.util.HashMap");
       Object.entries(item).forEach(([k, v]) => {
-        map.putSync(k, v);
+        map.putSync(k, toStringValue(v));
       });
       return map;
     });
