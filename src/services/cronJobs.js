@@ -42,14 +42,21 @@ const ejecutarJob = async (nombre, tarea) => {
  * (`checkFacturaStatus`/`dbApiFacturacion.js`) se eliminó en el corte, junto con `apiFacturacionElectronica*`.
  */
 const cronJobsSifen = () => {
+    // armarYEnviarLotes y consultarLotes corren cada 2min 30s (150s). Un intervalo de 150s NO es
+    // expresable como patrón cron (los campos de segundos y minutos son independientes: los disparos
+    // caen en 00:00, 02:30, 05:00, 07:30… alternando segundos y sin avance fijo de minutos), por eso
+    // se usa setInterval en vez de cron.schedule. Cada tick sigue aislado en su propio try/catch vía
+    // ejecutarJob (antipatrón Q — una falla nunca crashea el proceso ni bloquea otros jobs).
+    const INTERVALO_EMISION_MS = 150000 // 2min 30s
+
     // armarYEnviarLotes: build + send, único camino de emisión — aislado por lote y por empresa
-    // dentro de loteService (antipatrón Q).
-    cron.schedule('*/5 * * * *', () => ejecutarJob('armarYEnviarLotes', async () => {
+    // dentro de loteService.
+    setInterval(() => ejecutarJob('armarYEnviarLotes', async () => {
         await loteService.armarLotes()
         await loteService.enviarLotesConstruidos()
-    }))
+    }), INTERVALO_EMISION_MS)
 
-    cron.schedule('*/5 * * * *', () => ejecutarJob('consultarLotes', () => loteService.consultarLotes()))
+    setInterval(() => ejecutarJob('consultarLotes', () => loteService.consultarLotes()), INTERVALO_EMISION_MS)
 
     cron.schedule('0 * * * *', () => ejecutarJob('consultaIndividualRedDeSeguridad', () => loteService.consultaIndividualRedDeSeguridad()))
 
