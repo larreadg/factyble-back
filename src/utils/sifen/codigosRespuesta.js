@@ -35,6 +35,12 @@ const CATEGORIA = {
   // No es un resultado final por sí solo (p. ej. lote encolado, todavía sin resolver) — no dispara
   // ninguna transición de estado en el documento/lote, solo se persiste para trazabilidad.
   INFORMATIVO: "INFORMATIVO",
+  // "CDC/DE duplicado" (1001/1002): SIFEN rechaza el ENVÍO, pero la propia descripción del manual dice
+  // "Ya fue AUTORIZADO otro documento…" — o sea el documento YA EXISTE como DTE en SIFEN. No es un
+  // rechazo de contenido: es la prueba de que reintentar el envío no corresponde. Debe disparar
+  // reconciliación por CDC (que resolverá a APROBADO), nunca `marcarLoteAgotado` ni un RECHAZADO
+  // terminal (MIGRATION_PLAN.md §reconciliación por CDC).
+  DUPLICADO: "DUPLICADO",
 };
 
 const CODIGOS_RESPUESTA = {
@@ -121,6 +127,27 @@ const CODIGOS_RESPUESTA = {
     categoria: CATEGORIA.APROBADO,
     alertar: false,
     mensajeInterno: "Evento registrado correctamente por SIFEN (p. ej. cancelación aprobada).",
+  },
+  // Nivel documento — validaciones de contenido del DE (Manual Técnico SIFEN v150, tabla de códigos de
+  // rechazo, entradas A002a/A002b). Confirmados contra la copia local `Manual Técnico Versión 150.md`
+  // (líneas 7691-7694). El manual los marca como rechazo ("R"), PERO su descripción es "Ya fue
+  // AUTORIZADO otro documento con coincidencia simultánea de los campos del CDC/Timbrado": el documento
+  // ya existe como DTE en SIFEN. Por eso se mapean a DUPLICADO (no RECHAZADO): un envío que choca con
+  // esto no debe matar el lote/documento, debe disparar reconciliación por CDC — que va a devolver
+  // APROBADO, sincronizando el estado real en vez de reintentar un envío que siempre volverá a duplicar.
+  "1001": {
+    categoria: CATEGORIA.DUPLICADO,
+    alertar: true,
+    mensajeInterno:
+      "CDC duplicado — SIFEN ya autorizó otro documento con el mismo CDC (el documento ya existe como " +
+      "DTE). No reenviar: reconciliar por CDC para sincronizar el estado real (APROBADO).",
+  },
+  "1002": {
+    categoria: CATEGORIA.DUPLICADO,
+    alertar: true,
+    mensajeInterno:
+      "Documento electrónico duplicado — SIFEN ya autorizó otro documento con coincidencia de los " +
+      "campos del timbrado (el documento ya existe como DTE). No reenviar: reconciliar por CDC.",
   },
 };
 

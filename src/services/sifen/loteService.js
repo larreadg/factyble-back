@@ -46,7 +46,20 @@ const LOTE_MAX_DOCUMENTOS = 50;
 
 const BACKOFF_BASE_SEGUNDOS = Number(process.env.SIFEN_LOTE_BACKOFF_BASE_SEGUNDOS) || 60;
 const BACKOFF_CAP_SEGUNDOS = Number(process.env.SIFEN_LOTE_BACKOFF_CAP_SEGUNDOS) || 3600;
+// `MAX_INTENTOS_ENVIO` ya NO condena el lote a ERROR (ver `MAX_HORAS_ENVIO`): pasó a ser solo el umbral
+// del aviso temprano one-shot — al cruzarlo (≈5h de fallas de transporte sostenidas) se alerta UNA vez
+// que SIFEN lleva rato inalcanzable, sin marcar ERROR.
 const MAX_INTENTOS_ENVIO = Number(process.env.SIFEN_LOTE_MAX_INTENTOS) || 10;
+
+// Presupuesto de TIEMPO (no de conteo) para reintentar el ENVÍO de un lote ante fallas de transporte
+// sostenidas (SIFEN caído/inalcanzable). Antes se condenaba por conteo (`MAX_INTENTOS_ENVIO`=10), lo que
+// mataba los lotes a las ~5h y generaba ERROR masivo + reenvío manual tras una caída larga (p. ej. un
+// fin de semana entero). Ahora se reintenta con backoff (cap 1h) hasta este límite; recién pasado eso se
+// marca ERROR para intervención manual. 96h (4 días) es un techo realista para una caída de SIFEN, muy
+// por debajo del plazo de transmisión de 720h (que sigue siendo el deadline duro para que el documento
+// sea reenviable, ver `PLAZO_TRANSMISION_HORAS`). Se mide desde `Lote.fecha_creacion` (cuándo se empezó
+// a intentar enviar este lote).
+const MAX_HORAS_ENVIO = Number(process.env.SIFEN_LOTE_MAX_HORAS_ENVIO) || 96;
 const RED_SEGURIDAD_UMBRAL_MINUTOS = Number(process.env.SIFEN_RED_SEGURIDAD_UMBRAL_MINUTOS) || 120;
 
 // Límite de "transmisión extemporánea" del Manual Técnico SIFEN v150 §6.2: pasadas 720h (30 días)
@@ -57,9 +70,11 @@ const PLAZO_TRANSMISION_HORAS = Number(process.env.SIFEN_PLAZO_TRANSMISION_HORAS
 
 // Tope de reintentos de firma (`firmarPendientes()`) — sin esto, un documento que nunca lograba
 // firmarse (certificado vencido, datos fiscales incompletos, bug de armado de XML) reintentaba cada 5
-// min para siempre, sin escalar nunca a `ERROR` ni alertar a nadie. Mismo criterio que
-// `SIFEN_LOTE_MAX_INTENTOS` para el envío. Seguro escalar a `ERROR` acá (a diferencia de una consulta
-// fallida): el documento todavía no se le envió nada a SIFEN, así que un reintento posterior vía
+// min para siempre, sin escalar nunca a `ERROR` ni alertar a nadie. A diferencia del ENVÍO (que ahora
+// se condena por TIEMPO, `MAX_HORAS_ENVIO`, porque un fallo de transporte es transitorio — SIFEN caído),
+// la firma se condena por CONTEO: es un cómputo local, no una llamada a SIFEN, así que un fallo
+// persistente es un problema de datos/certificado que no se resuelve reintentando. Seguro escalar a
+// `ERROR` acá: el documento todavía no se le envió nada a SIFEN, así que un reintento posterior vía
 // `reintentarEnvioDocumento()` nunca arriesga un duplicado.
 const FIRMA_MAX_INTENTOS = Number(process.env.SIFEN_FIRMA_MAX_INTENTOS) || 10;
 
@@ -281,8 +296,19 @@ const firmarDocumentoRecienCreado = async (tipoDoc, documentoId, client = prisma
  *    el reintento lo incorpora en vez de reenviar los mismos bytes rotos.
  * El CDC y el número de documento NUNCA cambian (`construirCdc` no se vuelve a invocar: `factura.cdc`/
  * `notaCredito.cdc` ya están fijos desde la creación) — esto reintenta el mismo documento/mismo
- * número, nunca uno nuevo. Un documento que no llegó a `APROBADO` nunca fue consumido por SIFEN, así
- * que no hay problema de correlatividad en reusar el número.
+ * número, nunca uno nuevo.
+ *
+ * **Antes de reenviar, consulta a SIFEN por CDC** (`reconciliarPorCdc`) — corrige el bug raíz de esta
+ * función (MIGRATION_PLAN.md §reconciliación por CDC): la premisa vieja era "un documento que no llegó
+ * a APROBADO nunca fue consumido por SIFEN, así que reusar el CDC es seguro", pero un documento pudo
+ * quedar en ERROR/RECHAZADO en nuestra base por una consulta de lote fallida/ambigua (p. ej.
+ * `dCodResLot` ausente) aunque SIFEN lo haya aprobado. Reenviar el mismo CDC en ese caso choca con
+ * "CDC duplicado" (1001) indefinidamente. Según lo que responda la consulta por CDC:
+ * - APROBADO: `reconciliarPorCdc` ya sincronizó `estado_sifen = APROBADO` — NO se reenvía nada, se
+ *   devuelve el documento ya corregido (el problema del operador queda resuelto).
+ * - INEXISTENTE (0420): SIFEN confirma que no lo tiene — seguro reenviar el mismo CDC (sigue el reset).
+ * - INDETERMINADO / falla de la consulta: no se puede verificar — se aborta el reintento (reenviar sin
+ *   confirmar arriesga un duplicado), el operador reintenta más tarde.
  *
  * Rechaza el reintento si ya pasaron más de `SIFEN_PLAZO_TRANSMISION_HORAS` (default 720h/30 días —
  * el límite de "transmisión extemporánea" del Manual Técnico) desde `fecha_creacion` (la fecha de
@@ -327,6 +353,36 @@ const reintentarEnvioDocumento = async (tipoDoc, documentoId, empresaId) => {
     );
   }
 
+  // Fuente de verdad antes de reenviar: ¿SIFEN ya tiene este CDC? (ver docstring). Solo un documento
+  // que SIFEN confirma como inexistente (0420) es seguro de reenviar sin arriesgar un "CDC duplicado".
+  let reconciliacion;
+  try {
+    reconciliacion = await reconciliarPorCdc(tipoDoc, documento);
+  } catch (error) {
+    throw new ErrorApp(
+      `No se pudo verificar el estado del ${tipoDoc} en SIFEN antes de reenviar (${error.message}). ` +
+        "Reintente más tarde: reenviar sin verificar arriesga un documento duplicado.",
+      503
+    );
+  }
+
+  if (reconciliacion === "APROBADO") {
+    // SIFEN ya lo tenía autorizado — `reconciliarPorCdc` ya sincronizó `estado_sifen = APROBADO` y
+    // notificó. No se reenvía nada: se devuelve el documento ya corregido.
+    console.log(`[loteService] Reintento manual: ${tipoDoc} id=${documento.id} (empresa=${empresaId}) ya estaba APROBADO en SIFEN — se sincronizó el estado, no se reenvía.`);
+    return config.modelo().findFirst({ where: { id: documento.id }, include: config.include });
+  }
+
+  if (reconciliacion === "INDETERMINADO") {
+    throw new ErrorApp(
+      `No se pudo determinar el estado del ${tipoDoc} en SIFEN (respuesta no concluyente). ` +
+        "Reintente más tarde: reenviar sin confirmar que SIFEN no lo tiene arriesga un documento duplicado.",
+      409
+    );
+  }
+
+  // reconciliacion === "INEXISTENTE": SIFEN confirma que no tiene el CDC — seguro reenviar el mismo
+  // documento/CDC. Se resetea a GENERADO para que el cron lo refirme y reencole.
   const documentoActualizado = await config.modelo().update({
     where: { id: documento.id },
     data: {
@@ -704,6 +760,107 @@ const marcarLoteAgotado = async (lote, mensajeError) => {
 };
 
 /**
+ * Registra un intento de envío fallido de un lote (falla de transporte al enviar, o SIFEN inalcanzable
+ * al reconciliar antes de reenviar) y decide el próximo paso — compartido por ambos caminos:
+ * - Si el lote lleva más de `MAX_HORAS_ENVIO` intentando (desde `fecha_creacion`), lo agota a ERROR
+ *   (intervención manual) — 96h/4 días es un techo realista de caída de SIFEN.
+ * - Si no, reprograma con backoff (cap 1h) para reintentar, y dispara el aviso temprano one-shot por
+ *   Telegram al cruzar `MAX_INTENTOS_ENVIO` (≈5h) — sin condenar.
+ * NO registra trazabilidad: cada caller registra la suya (ENVIO_LOTE en el envío; `reconciliarPorCdc`
+ * ya registra CONSULTA_DOCUMENTO en la reconciliación).
+ * @param {Object} lote
+ * @param {string} mensajeError
+ */
+const registrarFalloEnvio = async (lote, mensajeError) => {
+  const intentos = lote.intentos_envio + 1;
+
+  const horasIntentandoEnviar = (Date.now() - lote.fecha_creacion.getTime()) / (1000 * 60 * 60);
+  if (horasIntentandoEnviar > MAX_HORAS_ENVIO) {
+    await marcarLoteAgotado(
+      lote,
+      `El envío a SIFEN falló de forma sostenida por más de ${MAX_HORAS_ENVIO}h ` +
+        `(${Math.floor(horasIntentandoEnviar)}h, ${intentos} intentos): ${mensajeError}`
+    );
+    return;
+  }
+
+  // Aviso temprano one-shot: al cruzar `MAX_INTENTOS_ENVIO` (≈5h de fallas) se alerta UNA sola vez que
+  // SIFEN lleva rato inalcanzable, sin condenar el lote — para que ops lo vea bastante antes del corte
+  // de `MAX_HORAS_ENVIO`. Aislado en su propio try/catch (un fallo de Telegram no debe cortar el
+  // reintento). Se dispara con `===` para que ocurra exactamente una vez, no en cada intento posterior.
+  if (intentos === MAX_INTENTOS_ENVIO) {
+    try {
+      await telegramService.notificarFallaSistemica({
+        titulo: `Envío a SIFEN fallando de forma sostenida (lote ${lote.id})`,
+        detalle:
+          `El lote lleva ${intentos} intentos de envío fallidos (SIFEN inalcanzable/timeout). Se sigue ` +
+          `reintentando cada ~1h hasta ${MAX_HORAS_ENVIO}h desde su creación; pasado eso se marca ERROR ` +
+          `para intervención manual. Último error: ${mensajeError}`,
+      });
+    } catch (errorTelegram) {
+      console.error(`[loteService] Error al notificar a Telegram el envío sostenido fallido del lote ${lote.id}:`, errorTelegram.message);
+    }
+  }
+
+  // Libera el claim (ENVIANDO -> CONSTRUIDO) para que la próxima pasada del cron, una vez cumplido el
+  // backoff, pueda volver a tomar y reintentar este lote.
+  await prisma.lote.update({
+    where: { id: lote.id },
+    data: {
+      estado: "CONSTRUIDO",
+      intentos_envio: { increment: 1 },
+      proximo_intento_en: new Date(Date.now() + calcularBackoffSegundos(intentos) * 1000),
+      ultimo_error: mensajeError,
+    },
+  });
+};
+
+/**
+ * Reconciliación por CDC previa a un RE-envío (Opción B, MIGRATION_PLAN.md §reconciliación por CDC).
+ * Un fallo de transporte en un envío previo es ambiguo — SIFEN pudo haber recibido el lote y perderse
+ * la respuesta —, así que reenviar a ciegas arriesga un "CDC duplicado". Antes de reenviar, se consulta
+ * cada documento del lote por CDC (`reconciliarPorCdc`, que sincroniza a APROBADO los que SIFEN ya
+ * tiene) y se particiona:
+ * - `porEnviar`: SIFEN confirma que NO los tiene (0420) — es seguro reenviarlos.
+ * - `aprobados`: SIFEN ya los tiene autorizados — no se reenvían (ya quedaron en APROBADO).
+ * - `indeterminados`: la consulta no fue concluyente — no es seguro reenviar todavía.
+ * Propaga cualquier error de transporte (SIFEN inalcanzable durante la reconciliación) al caller, que
+ * lo trata como un intento de envío fallido.
+ * @param {Object} lote
+ * @returns {Promise<{porEnviar: Object[], aprobados: number, indeterminados: number}>}
+ */
+const reconciliarDocsAntesDeReenviar = async (lote) => {
+  const config = TIPOS_DOCUMENTO[lote.tipo_doc];
+  const documentos = await config.modelo().findMany({
+    where: { lote_id: lote.id },
+    include: { caja: { include: { establecimiento: { select: { empresa_id: true } } } } },
+  });
+
+  const porEnviar = [];
+  let aprobados = 0;
+  let indeterminados = 0;
+  for (const documento of documentos) {
+    // Los ya resueltos en una pasada anterior no se reconsultan ni reenvían.
+    if (documento.estado_sifen === "APROBADO") {
+      aprobados += 1;
+      continue;
+    }
+    if (documento.estado_sifen === "RECHAZADO") {
+      continue;
+    }
+    const resultado = await reconciliarPorCdc(lote.tipo_doc, documento);
+    if (resultado === "APROBADO") {
+      aprobados += 1;
+    } else if (resultado === "INEXISTENTE") {
+      porEnviar.push(documento);
+    } else {
+      indeterminados += 1;
+    }
+  }
+  return { porEnviar, aprobados, indeterminados };
+};
+
+/**
  * Envía a SIFEN los lotes ya construidos (`estado: CONSTRUIDO`) cuyo `proximo_intento_en` ya se
  * cumplió (o nunca se fijó, primer intento). Aislado por lote — el fallo de un lote (de cualquier
  * empresa) no bloquea el envío de los demás (antipatrón Q).
@@ -714,6 +871,11 @@ const marcarLoteAgotado = async (lote, mensajeError) => {
  * proceso) ya lo tomó primero. Sin este claim, dos ejecuciones podían enviar el mismo lote a SIFEN
  * dos veces antes de que la primera alcanzara a persistir su resultado (AUD-003,
  * STATIC_AUDIT_FINDINGS.json).
+ *
+ * **Reenvío a prueba de duplicados (Opción B):** en el PRIMER intento (`intentos_envio === 0`) no hubo
+ * envío previo, así que se envía el lote completo sin más. En un RE-intento se reconcilia primero por
+ * CDC (`reconciliarDocsAntesDeReenviar`) y se reenvían SOLO los documentos que SIFEN confirma que no
+ * tiene — nunca los que ya recibió, evitando el "CDC duplicado".
  * @returns {Promise<void>}
  */
 const enviarLotesConstruidos = async () => {
@@ -738,8 +900,48 @@ const enviarLotesConstruidos = async () => {
     }
 
     const config = TIPOS_DOCUMENTO[lote.tipo_doc];
-    const documentos = lote.tipo_doc === "FACTURA" ? lote.facturas : lote.notas_credito;
-    const xmls = documentos.map((d) => d.xml_firmado);
+
+    // Determinar qué documentos enviar (Opción B — reenvío a prueba de duplicados).
+    let documentosAEnviar;
+    if (lote.intentos_envio === 0) {
+      // Primer intento: no hubo envío previo, no hay riesgo de duplicado — se envía el lote completo.
+      documentosAEnviar = lote.tipo_doc === "FACTURA" ? lote.facturas : lote.notas_credito;
+    } else {
+      // Re-intento: un fallo de transporte previo es ambiguo (SIFEN pudo haber recibido el lote). Se
+      // reconcilia por CDC y se reenvían SOLO los que SIFEN confirma que no tiene.
+      let particion;
+      try {
+        particion = await reconciliarDocsAntesDeReenviar(lote);
+      } catch (error) {
+        // SIFEN inalcanzable durante la reconciliación → se trata como un intento de envío fallido.
+        console.error(`[loteService] Error al reconciliar lote ${lote.id} antes de reenviar:`, error.message);
+        await registrarFalloEnvio(lote, `No se pudo reconciliar por CDC antes de reenviar (SIFEN inalcanzable): ${error.message}`);
+        continue;
+      }
+
+      if (particion.indeterminados > 0) {
+        // Al menos un documento no tiene estado concluyente en SIFEN — no es seguro reenviar todavía
+        // (reenviar solo los inexistentes dejaría a los indeterminados sin resolver dentro del lote).
+        // Se reprograma con backoff y se reintenta cuando todos resuelvan.
+        console.warn(`[loteService] Lote ${lote.id}: ${particion.indeterminados} documento(s) sin estado concluyente en SIFEN — se pospone el reenvío.`);
+        await registrarFalloEnvio(lote, `Reconciliación por CDC: ${particion.indeterminados} documento(s) sin estado concluyente en SIFEN, se reintenta más tarde.`);
+        continue;
+      }
+
+      if (particion.porEnviar.length === 0) {
+        // Nada por enviar y sin indeterminados → todos los documentos ya están en SIFEN (aprobados).
+        // El lote terminó: pasa a CONSULTADO si ya no queda nada pendiente.
+        const pendientes = await config.modelo().count({ where: { lote_id: lote.id, estado_sifen: { in: ["ENVIADO", "ENCOLADO"] } } });
+        await prisma.lote.update({ where: { id: lote.id }, data: { estado: pendientes === 0 ? "CONSULTADO" : "ENVIADO" } });
+        console.log(`[loteService] Lote ${lote.id}: todos los documentos ya estaban aprobados en SIFEN (reconciliados) — no se reenvía nada.`);
+        continue;
+      }
+
+      documentosAEnviar = particion.porEnviar;
+    }
+
+    const xmls = documentosAEnviar.map((d) => d.xml_firmado);
+    const idsAEnviar = documentosAEnviar.map((d) => d.id);
     const id = generarDId();
 
     try {
@@ -786,16 +988,17 @@ const enviarLotesConstruidos = async () => {
           intentos_envio: { increment: 1 },
         },
       });
+      // Se marcan ENVIADO SOLO los documentos efectivamente enviados en esta pasada (`idsAEnviar`) — en
+      // un reenvío parcial, los ya reconciliados quedaron en APROBADO y no se deben pisar.
       await config.modelo().updateMany({
-        where: { lote_id: lote.id },
+        where: { id: { in: idsAEnviar } },
         data: { estado_sifen: "ENVIADO", fecha_envio_sifen: new Date() },
       });
     } catch (error) {
       // Falla de transporte (timeout/red/5xx) o certificado no disponible/vencido — siempre
-      // reintentable con backoff, a diferencia de un rechazo de negocio (ya manejado arriba).
-      const intentos = lote.intentos_envio + 1;
-      console.error(`[loteService] Error al enviar lote ${lote.id} (intento ${intentos}):`, error.message);
-
+      // reintentable, a diferencia de un rechazo de negocio (ya manejado arriba). El backoff, el aviso
+      // one-shot y el corte por tiempo (`MAX_HORAS_ENVIO`) los maneja `registrarFalloEnvio`.
+      console.error(`[loteService] Error al enviar lote ${lote.id} (intento ${lote.intentos_envio + 1}):`, error.message);
       await trazabilidadService.registrarInteraccion({
         entidadTipo: "LOTE",
         entidadId: lote.id,
@@ -804,23 +1007,7 @@ const enviarLotesConstruidos = async () => {
         response: null,
         exitoso: false,
       });
-
-      if (intentos >= MAX_INTENTOS_ENVIO) {
-        await marcarLoteAgotado(lote, `Excedido el maximo de intentos de envio (${MAX_INTENTOS_ENVIO}): ${error.message}`);
-        continue;
-      }
-
-      // Libera el claim (ENVIANDO -> CONSTRUIDO) para que la próxima pasada del cron, una vez cumplido
-      // el backoff, pueda volver a tomar y reintentar este lote.
-      await prisma.lote.update({
-        where: { id: lote.id },
-        data: {
-          estado: "CONSTRUIDO",
-          intentos_envio: { increment: 1 },
-          proximo_intento_en: new Date(Date.now() + calcularBackoffSegundos(intentos) * 1000),
-          ultimo_error: error.message,
-        },
-      });
+      await registrarFalloEnvio(lote, error.message);
     }
   }
 };
@@ -842,7 +1029,10 @@ const actualizarDocumentoPorResultado = async (tipoDoc, loteId, resultadoDocumen
     return;
   }
 
-  const nuevoEstado = interpretacion.categoria === CATEGORIA.APROBADO ? "APROBADO" : "RECHAZADO";
+  // DUPLICADO (1001/1002) cuenta como autorizado: SIFEN dice "ya fue autorizado otro documento con este
+  // CDC", o sea el documento ya existe como DTE — se sincroniza a APROBADO, nunca a RECHAZADO.
+  const documentoAutorizado = interpretacion.categoria === CATEGORIA.APROBADO || interpretacion.categoria === CATEGORIA.DUPLICADO;
+  const nuevoEstado = documentoAutorizado ? "APROBADO" : "RECHAZADO";
   const modelo = tipoDoc === "FACTURA" ? prisma.factura : prisma.notaCredito;
   const documentoPrevio = await modelo.findFirst({ where: { cdc, lote_id: loteId } });
   if (!documentoPrevio) {
@@ -865,6 +1055,102 @@ const actualizarDocumentoPorResultado = async (tipoDoc, loteId, resultadoDocumen
   }
 
   await notificarResultadoDocumento(tipoDoc, documentoPrevio.id, nuevoEstado, mensaje || interpretacion.mensajeInterno);
+};
+
+/**
+ * Consulta el estado real de un documento en SIFEN **por su CDC** (`sifenClientService.consulta`, WS
+ * siConsDE) — la fuente de verdad autoritativa — y sincroniza `estado_sifen` en consecuencia. NUNCA
+ * reenvía nada: solo lee y persiste el estado real, así que es seguro llamarla desde cualquier punto
+ * (consulta de lote ambigua, red de seguridad, reintento manual). Es el mecanismo que corrige la
+ * divergencia "SIFEN aprobó pero nuestra base quedó en ERROR/RECHAZADO" (MIGRATION_PLAN.md
+ * §reconciliación por CDC): un CDC que SIFEN ya tiene autorizado (0260/0422, o el "duplicado" 1001/1002
+ * que igual prueba que el documento existe) se sincroniza a APROBADO en vez de reenviarse.
+ *
+ * Deliberadamente **nunca marca RECHAZADO** desde acá: un DE rechazado en validación no queda
+ * consultable como DTE, así que SIFEN responde `0420` (CDC inexistente) tanto para un documento
+ * genuinamente rechazado como para uno que se perdió en tránsito. Ese caso es ambiguo y no se resuelve
+ * adivinando — se devuelve `INEXISTENTE` y decide el caller (para un reintento manual = seguro reenviar
+ * el mismo CDC; para un job de consulta = dejarlo como está y alertar).
+ *
+ * @param {"FACTURA"|"NOTA_CREDITO"} tipoDoc
+ * @param {Object} documento - Con al menos `id`, `cdc` y `caja.establecimiento.empresa_id` cargados
+ * @returns {Promise<"APROBADO"|"INEXISTENTE"|"INDETERMINADO">}
+ *   - APROBADO: SIFEN tiene el documento como DTE autorizado (se sincronizó `estado_sifen = APROBADO`).
+ *   - INEXISTENTE: SIFEN no tiene el CDC (0420) — no se tocó el estado; seguro reenviar el mismo CDC.
+ *   - INDETERMINADO: consulta no concluyente (0421 sin permiso, informativo, código desconocido/ausente,
+ *     SIFEN inestable) — no se tocó el estado.
+ */
+const reconciliarPorCdc = async (tipoDoc, documento) => {
+  const config = TIPOS_DOCUMENTO[tipoDoc];
+  const empresaId = documento.caja.establecimiento.empresa_id;
+  const certificado = await certificadoService.obtenerCertificadoActivo({ empresaId });
+  const respuesta = await sifenClientService.consulta({
+    id: generarDId(),
+    cdc: documento.cdc,
+    certificadoPath: certificado.archivo,
+    certificadoPassword: certificado.clave,
+  });
+
+  const { codigo, mensaje } = extraerCodigoYMensaje(respuesta);
+  const interpretacion = interpretarCodigo(codigo);
+  const documentoAutorizado = interpretacion.categoria === CATEGORIA.APROBADO || interpretacion.categoria === CATEGORIA.DUPLICADO;
+
+  await trazabilidadService.registrarInteraccion({
+    entidadTipo: config.entidadTipo,
+    entidadId: documento.id,
+    operacion: "CONSULTA_DOCUMENTO",
+    request: { cdc: documento.cdc },
+    response: respuesta,
+    codigoRespuesta: interpretacion.codigo,
+    exitoso: documentoAutorizado,
+  });
+
+  if (documentoAutorizado) {
+    await config.modelo().update({
+      where: { id: documento.id },
+      data: {
+        estado_sifen: "APROBADO",
+        sifen_cod_respuesta: interpretacion.codigo,
+        sifen_estado_mensaje: null,
+        // `undefined` => Prisma no toca la columna (no pisa un protocolo previo si esta respuesta no lo trae).
+        sifen_num_transaccion: extraerProtocoloAutorizacion(respuesta) || undefined,
+        fecha_respuesta_sifen: new Date(),
+      },
+    });
+    await notificarResultadoDocumento(tipoDoc, documento.id, "APROBADO", mensaje || interpretacion.mensajeInterno);
+    return "APROBADO";
+  }
+
+  if (interpretacion.codigo === "0420") {
+    return "INEXISTENTE";
+  }
+
+  if (interpretacion.alertar) {
+    console.error(`[loteService] reconciliarPorCdc: respuesta no concluyente de SIFEN para CDC=${documento.cdc} (codigo ${interpretacion.codigo}): ${interpretacion.mensajeInterno} — SIFEN dijo: ${mensaje}`);
+  }
+  return "INDETERMINADO";
+};
+
+/**
+ * Reconciliación por CDC de los documentos de un lote cuya `consultaLote` no devolvió un resultado
+ * concluyente por documento (respuesta de sobre ambigua — código ausente/desconocido, ver
+ * `consultarLotes`). Aislado por documento (antipatrón Q). Solo consulta/sincroniza, nunca reenvía.
+ * @param {Object} lote
+ */
+const reconciliarLotePorCdc = async (lote) => {
+  const config = TIPOS_DOCUMENTO[lote.tipo_doc];
+  // Solo los que siguen sin resolución final — evita reconsultar los ya APROBADO/RECHAZADO/ERROR.
+  const documentos = await config.modelo().findMany({
+    where: { lote_id: lote.id, estado_sifen: { in: ["ENVIADO", "ENCOLADO"] } },
+    include: { caja: { include: { establecimiento: { select: { empresa_id: true } } } } },
+  });
+  for (const documento of documentos) {
+    try {
+      await reconciliarPorCdc(lote.tipo_doc, documento);
+    } catch (error) {
+      console.error(`[loteService] Error al reconciliar por CDC ${config.entidadTipo} id=${documento.id} (lote ${lote.id}):`, error.message);
+    }
+  }
 };
 
 /**
@@ -919,10 +1205,21 @@ const consultarLotes = async () => {
         for (const resultadoDocumento of resultadosPorDocumento) {
           await actualizarDocumentoPorResultado(lote.tipo_doc, lote.id, resultadoDocumento);
         }
-      } else if (interpretacionLote.categoria === CATEGORIA.RECHAZADO) {
-        // Sin detalle por documento, pero el lote en sí resolvió a rechazado a nivel de sobre.
+      } else if (interpretacionLote.conocido && interpretacionLote.categoria === CATEGORIA.RECHAZADO) {
+        // Solo se agota el lote ante un rechazo de sobre con código CONOCIDO y explícito (p. ej. 0360
+        // "lote inexistente", 0363 "tipos mezclados") — un rechazo real de nivel sobre. Un código
+        // ausente/desconocido NO cae acá (ver el else de abajo): antes sí caía (interpretarCodigo(null)
+        // devuelve RECHAZADO por default) y `marcarLoteAgotado` condenaba a ERROR documentos que SIFEN
+        // podía tener aprobados — causa raíz del bug de "CDC duplicado" en el reintento
+        // (MIGRATION_PLAN.md §reconciliación por CDC).
         await marcarLoteAgotado(lote, `Lote rechazado en consulta (${interpretacionLote.codigo}): ${mensaje || interpretacionLote.mensajeInterno}`);
         continue;
+      } else {
+        // Respuesta ambigua: sobre sin desglose por documento y con código ausente (dCodResLot null),
+        // desconocido, o meramente informativo. NO se condena el lote por adivinar — se reconcilia cada
+        // documento por CDC (fuente de verdad autoritativa): los que SIFEN ya aprobó pasan a APROBADO,
+        // el resto queda como está (ENVIADO/ENCOLADO) para la próxima consulta o la red de seguridad.
+        await reconciliarLotePorCdc(lote);
       }
 
       const pendientes = await config.modelo().count({ where: { lote_id: lote.id, estado_sifen: { in: ["ENVIADO", "ENCOLADO"] } } });
@@ -946,77 +1243,68 @@ const consultarLotes = async () => {
 };
 
 /**
- * Red de seguridad (§3.4): documentos que quedaron en `ENVIADO` sin resolución por más de
- * `SIFEN_RED_SEGURIDAD_UMBRAL_MINUTOS` (default 120) — cubre el caso borde de una consulta de lote
- * que nunca resuelve (p. ej. el lote se perdió del lado de SIFEN). No reemplaza `consultarLotes`, es
- * un complemento de baja frecuencia (pensado para correr cada 1 hora).
+ * Red de seguridad (§3.4): documentos sin resolución final por más de `SIFEN_RED_SEGURIDAD_UMBRAL_MINUTOS`
+ * (default 120) desde su envío a SIFEN. Reconciliación por CDC (`reconciliarPorCdc`, la fuente de verdad
+ * autoritativa) — nunca reenvía, solo sincroniza el estado real. No reemplaza `consultarLotes`, es un
+ * complemento de baja frecuencia (pensado para correr cada 1 hora).
+ *
+ * Cubre tres poblaciones (todas acotadas a "efectivamente enviadas" — `fecha_envio_sifen` no nula — y
+ * dentro del plazo de transmisión de 720h):
+ * 1. `ENVIADO` estancado: una consulta de lote que nunca resolvió (p. ej. el lote se perdió del lado de
+ *    SIFEN, o SIFEN devuelve sobres ambiguos).
+ * 2. `ERROR` que **ya se había enviado**: típicamente condenado por una consulta de lote fallida/ambigua
+ *    aunque SIFEN lo tuviera aprobado (el bug raíz, MIGRATION_PLAN.md §reconciliación por CDC). Un ERROR
+ *    de firma-agotada nunca se envió (`fecha_envio_sifen` null), así que queda excluido y no se toca.
+ * 3. `RECHAZADO` que ya se había enviado: un RECHAZADO puede ser una mentira — un código no documentado
+ *    o una respuesta ambigua de SIFEN (p. ej. durante una caída) que `interpretarCodigo` cae a RECHAZADO
+ *    por default, aunque SIFEN haya terminado autorizando el documento. Cubrir esta población cierra la
+ *    misma clase de bug que (2) para el estado que en la práctica es el más común.
+ *
+ * Es **seguro** incluir ERROR/RECHAZADO: `reconciliarPorCdc` solo flipea a APROBADO ante prueba positiva
+ * (0422/0260/1001/1002); un rechazo/error genuino devuelve 0420 (inexistente) → no se toca el estado ni
+ * se notifica. Nunca reenvía: un documento que SIFEN realmente no tiene (0420) requiere reenvío manual
+ * (`reintentarEnvioDocumento`), no se reencola desde este cron.
  * @returns {Promise<void>}
  */
 const consultaIndividualRedDeSeguridad = async () => {
   const limite = new Date(Date.now() - RED_SEGURIDAD_UMBRAL_MINUTOS * 60 * 1000);
+  const limitePlazo = new Date(Date.now() - PLAZO_TRANSMISION_HORAS * 60 * 60 * 1000);
 
   for (const tipoDoc of Object.keys(TIPOS_DOCUMENTO)) {
     const config = TIPOS_DOCUMENTO[tipoDoc];
     const estancados = await config.modelo().findMany({
-      where: { estado_sifen: "ENVIADO", fecha_envio_sifen: { lte: limite } },
+      where: {
+        // Solo documentos efectivamente enviados a SIFEN y hace más del umbral (un ERROR de
+        // firma-agotada nunca se envió → fecha_envio_sifen null → excluido naturalmente).
+        fecha_envio_sifen: { not: null, lte: limite },
+        // Dentro del plazo de transmisión: pasado eso el CDC ya no importa, no se reconsulta más.
+        fecha_creacion: { gte: limitePlazo },
+        OR: [{ estado_sifen: "ENVIADO" }, { estado_sifen: "ERROR" }, { estado_sifen: "RECHAZADO" }],
+      },
       include: { caja: { include: { establecimiento: { select: { empresa_id: true } } } } },
     });
 
     for (const documento of estancados) {
+      const estadoPrevio = documento.estado_sifen;
       try {
-        const empresaId = documento.caja.establecimiento.empresa_id;
-        const certificado = await certificadoService.obtenerCertificadoActivo({ empresaId });
-        const respuesta = await sifenClientService.consulta({
-          id: generarDId(),
-          cdc: documento.cdc,
-          certificadoPath: certificado.archivo,
-          certificadoPassword: certificado.clave,
-        });
-
-        const { codigo, mensaje } = extraerCodigoYMensaje(respuesta);
-        const interpretacion = interpretarCodigo(codigo);
-
-        await trazabilidadService.registrarInteraccion({
-          entidadTipo: config.entidadTipo,
-          entidadId: documento.id,
-          operacion: "CONSULTA_DOCUMENTO",
-          request: { cdc: documento.cdc },
-          response: respuesta,
-          codigoRespuesta: interpretacion.codigo,
-          exitoso: interpretacion.categoria !== CATEGORIA.RECHAZADO,
-        });
-
-        if (interpretacion.categoria === CATEGORIA.INFORMATIVO) {
-          continue;
+        const resultado = await reconciliarPorCdc(tipoDoc, documento);
+        if (resultado === "APROBADO" && estadoPrevio !== "APROBADO") {
+          console.log(`[loteService] Red de seguridad: ${tipoDoc} id=${documento.id} (CDC=${documento.cdc}) estaba en ${estadoPrevio} pero SIFEN lo tiene APROBADO — estado recuperado.`);
         }
-
-        const nuevoEstado = interpretacion.categoria === CATEGORIA.APROBADO ? "APROBADO" : "RECHAZADO";
-        await config.modelo().update({
-          where: { id: documento.id },
-          data: {
-            estado_sifen: nuevoEstado,
-            sifen_cod_respuesta: interpretacion.codigo,
-            sifen_estado_mensaje: nuevoEstado === "RECHAZADO" ? mensaje || interpretacion.mensajeInterno : null,
-            fecha_respuesta_sifen: new Date(),
-          },
-        });
-
-        if (interpretacion.alertar) {
-          console.error(`[loteService] Red de seguridad: SIFEN respondio codigo ${interpretacion.codigo} para CDC=${documento.cdc}: ${interpretacion.mensajeInterno} — SIFEN dijo: ${mensaje}`);
-        }
-
-        await notificarResultadoDocumento(tipoDoc, documento.id, nuevoEstado, mensaje || interpretacion.mensajeInterno);
+        // INEXISTENTE/INDETERMINADO: no se condena ni se reenvía desde acá (reconciliarPorCdc ya loguea
+        // el detalle); el documento sigue visible en su estado actual para revisión manual. No se alerta
+        // a Telegram para no spamear cada hora un documento genuinamente atascado.
       } catch (error) {
         console.error(`[loteService] Error en consulta individual de red de seguridad para ${tipoDoc} id=${documento.id}:`, error.message);
         // Este es el backstop de baja frecuencia (corre 1 vez por hora, ver docstring de la función):
         // si un documento llega hasta acá y la consulta individual TAMBIÉN falla, es la señal más
         // fuerte de que SIFEN está caído/inalcanzable de forma sostenida (no un timeout aislado) — a
-        // diferencia de `consultarLotes()` (cada 5 min, deliberadamente sin alerta acá para no spamear
-        // Telegram en cada corrida), acá sí se alerta, aislado en su propio try/catch.
+        // diferencia de `consultarLotes()` (cada 2.5 min, deliberadamente sin alerta acá para no
+        // spamear Telegram en cada corrida), acá sí se alerta, aislado en su propio try/catch.
         try {
           await telegramService.notificarFallaSistemica({
             titulo: `Red de seguridad: no se pudo consultar ${tipoDoc} en SIFEN`,
-            detalle: `id=${documento.id}, CDC=${documento.cdc}. Lleva más de ${RED_SEGURIDAD_UMBRAL_MINUTOS} min en ENVIADO sin resolución y la consulta individual también falló: ${error.message}`,
+            detalle: `id=${documento.id}, CDC=${documento.cdc}, estado=${estadoPrevio}. Lleva más de ${RED_SEGURIDAD_UMBRAL_MINUTOS} min desde el envío sin resolución y la consulta individual también falló: ${error.message}`,
           });
         } catch (errorTelegram) {
           console.error(`[loteService] Error al notificar a Telegram la falla de red de seguridad para ${tipoDoc} id=${documento.id}:`, errorTelegram.message);
