@@ -48,8 +48,9 @@ const getNotasDeCredito = async (req, res) => {
         const page = parseInt(req.query.page) || 1
         const itemsPerPage = parseInt(req.query.itemsPerPage) || 10
         const filter = req.query.filter || null
+        const fields = req.query.fields || null
 
-        const data = await notaDeCreditoService.getNotasDeCredito(page, itemsPerPage, filter, Number(req.usuario.empresaId));
+        const data = await notaDeCreditoService.getNotasDeCredito(page, itemsPerPage, filter, Number(req.usuario.empresaId), fields);
 
         return res.status(200).send(Response.success(data, 'Notas de crédito obtenidas'));
 
@@ -68,8 +69,9 @@ const getNotaDeCreditoByIdExterno = async (req, res) => {
         if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
 
         const { id } = req.params;
+        const fields = req.query.fields || null;
 
-        const data = await notaDeCreditoService.getNotaDeCreditoByIdExterno(id, Number(req.usuario.empresaId));
+        const data = await notaDeCreditoService.getNotaDeCreditoByIdExterno(id, Number(req.usuario.empresaId), fields);
 
         return res.status(200).send(Response.success(data, 'Datos obtenidos'));
 

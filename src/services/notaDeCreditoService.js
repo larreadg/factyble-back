@@ -4,12 +4,27 @@ const ErrorApp = require("../utils/error");
 const { calcularImpuesto } = require("../utils/facturacion");
 const { v4: uuidv4 } = require("uuid");
 const generarPdf = require("../utils/generarPdf");
-const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
+const { formatNumber, formatNumeroDocumento } = require("../utils/format");
+const { separarCajaEstablecimiento } = require("../utils/documento");
+const { parsearFields, proyectar } = require("../utils/fields");
 const { enviarNotaDeCredito } = require("./correoService");
 const { construirCdc } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
 const { esAprobado, esCancelado, esRechazado } = require("../utils/sifen/estadoHistorico");
+
+// Lista cerrada de atributos de PRIMER NIVEL que el query param `fields` de los GET puede pedir para
+// una Nota de Crédito. Columnas escalares + relaciones incluidas por los GET (factura, eventos_sifen,
+// nota_credito_detalle, caja) + campos sintetizados en la respuesta (establecimiento).
+// Cualquier field fuera de esta lista => 400. Ver src/utils/fields.js.
+const CAMPOS_NOTA_CREDITO = [
+  "id", "numero_nota_credito", "factura_id", "nota_credito_uuid", "usuario_id",
+  "total_iva", "total", "cdc", "fuente", "id_externo", "xml", "linkqr", "sifen_estado",
+  "sifen_estado_mensaje", "xml_firmado", "estado_sifen", "sifen_cod_respuesta", "sifen_num_transaccion",
+  "fecha_firma", "fecha_envio_sifen", "fecha_respuesta_sifen", "intentos_firma", "lote_id",
+  "codigo_seguridad", "fecha_creacion", "fecha_modificacion", "caja_id",
+  "factura", "eventos_sifen", "nota_credito_detalle", "caja", "establecimiento",
+];
 
 // tipoDocumento SIFEN para el CDC (MIGRATION_PLAN.md §1.3) — 5=Nota de Credito, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_NOTA_CREDITO = 5;
@@ -254,8 +269,8 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     });
 
     // Mismo formato que el número impreso en el PDF (establecimiento-caja-numero, con el número
-    // rellenado a 7 dígitos) — se reutiliza acá para no duplicar el criterio de formateo.
-    const numeroNotaCreditoFormateada = `${datos.establecimiento}-${datos.caja}-${formatNumberWithLeadingZeros(notaDeCredito.numero_nota_credito)}`;
+    // rellenado a 7 dígitos) — se reutiliza el helper compartido para no duplicar el criterio de formateo.
+    const numeroNotaCreditoFormateada = formatNumeroDocumento(datos.establecimiento, datos.caja, notaDeCredito.numero_nota_credito);
 
     // Se espera la generación del PDF (antes era fire-and-forget) para poder devolver su nombre de
     // archivo al caller, mismo criterio que facturaService.emitirFactura.
@@ -318,9 +333,11 @@ const getNotasDeCredito = async (
   page = 1,
   itemsPerPage = 10,
   filter = null,
-  empresaId
+  empresaId,
+  fields = null
 ) => {
   try {
+    const campos = parsearFields(fields);
     const skip = (page - 1) * itemsPerPage;
     const take = itemsPerPage;
 
@@ -359,6 +376,12 @@ const getNotasDeCredito = async (
         include: {
           factura: true,
           eventos_sifen: true,
+          nota_credito_detalle: true,
+          caja: {
+            include: {
+              establecimiento: true,
+            },
+          },
         },
       });
 
@@ -392,6 +415,12 @@ const getNotasDeCredito = async (
           include: {
             factura: true,
             eventos_sifen: true,
+            nota_credito_detalle: true,
+            caja: {
+              include: {
+                establecimiento: true,
+              },
+            },
           },
         });
 
@@ -404,7 +433,18 @@ const getNotasDeCredito = async (
     }
 
     return {
-      items: notasCredito,
+      items: notasCredito.map((notaCredito) => proyectar({
+        ...notaCredito,
+        // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
+        // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
+        numero_nota_credito: formatNumeroDocumento(
+          notaCredito.caja?.establecimiento?.codigo,
+          notaCredito.caja?.codigo,
+          notaCredito.numero_nota_credito
+        ) ?? notaCredito.numero_nota_credito,
+        // Expone caja y establecimiento como campos hermanos del documento.
+        ...separarCajaEstablecimiento(notaCredito.caja),
+      }, campos)),
       page,
       itemsPerPage,
       totalItems,
@@ -526,8 +566,9 @@ const reintentarEnvioSifen = async (datos, datosUsuario) => {
 // Búsqueda por id_externo (identificador de correlación con un sistema externo) ACOTADA a la empresa
 // del usuario autenticado (usuario.empresa_id). id_externo no es único: si hubiera varias notas de
 // crédito con el mismo valor se devuelve la más reciente (orderBy id desc).
-const getNotaDeCreditoByIdExterno = async (idExterno, empresaId) => {
+const getNotaDeCreditoByIdExterno = async (idExterno, empresaId, fields = null) => {
   try {
+    const campos = parsearFields(fields);
     const notaDeCredito = await prisma.notaCredito.findFirst({
       where: {
         id_externo: idExterno,
@@ -537,6 +578,11 @@ const getNotaDeCreditoByIdExterno = async (idExterno, empresaId) => {
         factura: true,
         eventos_sifen: true,
         nota_credito_detalle: true,
+        caja: {
+          include: {
+            establecimiento: true,
+          },
+        },
       },
       orderBy: { id: "desc" },
     });
@@ -545,7 +591,18 @@ const getNotaDeCreditoByIdExterno = async (idExterno, empresaId) => {
       throw new ErrorApp(`Nota de crédito con id externo ${idExterno} no encontrada`, 404);
     }
 
-    return notaDeCredito;
+    return proyectar({
+      ...notaDeCredito,
+      // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
+      // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
+      numero_nota_credito: formatNumeroDocumento(
+        notaDeCredito.caja?.establecimiento?.codigo,
+        notaDeCredito.caja?.codigo,
+        notaDeCredito.numero_nota_credito
+      ) ?? notaDeCredito.numero_nota_credito,
+      // Expone caja y establecimiento como campos hermanos del documento.
+      ...separarCajaEstablecimiento(notaDeCredito.caja),
+    }, campos);
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al obtener datos de nota de crédito");
   }
@@ -557,5 +614,6 @@ module.exports = {
   getNotasDeCredito,
   getNotaDeCreditoByIdExterno,
   cancelarNotaDeCredito,
-  reintentarEnvioSifen
+  reintentarEnvioSifen,
+  CAMPOS_NOTA_CREDITO
 };

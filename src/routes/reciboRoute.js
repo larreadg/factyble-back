@@ -1,7 +1,9 @@
 const routes = require('express').Router();
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const reciboController = require('../controllers/reciboController');
 const { authJwt } = require('../middleware/authJwt');
+const { validarFields } = require('../utils/fields');
+const { CAMPOS_RECIBO } = require('../services/reciboService');
 
 const normalizarTipo = (tipo) =>
   String(tipo ?? '')
@@ -83,6 +85,7 @@ routes.post(
 routes.get(
   '/',
   authJwt(['ADMIN']),
+  query('fields').optional().isString().bail().custom(validarFields(CAMPOS_RECIBO)),
   reciboController.getRecibos
 );
 
@@ -90,6 +93,7 @@ routes.get(
   '/id-externo/:id',
   authJwt(['ADMIN']),
   param('id', 'Parametro :id requerido').isString().notEmpty().isLength({ max: 255 }),
+  query('fields').optional().isString().bail().custom(validarFields(CAMPOS_RECIBO)),
   reciboController.getReciboByIdExterno
 );
 

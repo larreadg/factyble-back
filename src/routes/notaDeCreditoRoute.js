@@ -2,6 +2,8 @@ const routes = require('express').Router();
 const notaDeCreditoController = require('../controllers/notaDeCreditoController');
 const { body, query, param } = require('express-validator');
 const { authJwt } = require('../middleware/authJwt');
+const { validarFields } = require('../utils/fields');
+const { CAMPOS_NOTA_CREDITO } = require('../services/notaDeCreditoService');
 
 routes.post(
     '/',
@@ -68,6 +70,7 @@ routes.post(
 routes.get(
     '/',
     authJwt(['ADMIN']),
+    query('fields').optional().isString().bail().custom(validarFields(CAMPOS_NOTA_CREDITO)),
     notaDeCreditoController.getNotasDeCredito
 )
 
@@ -75,6 +78,7 @@ routes.get(
     '/id-externo/:id',
     authJwt(['ADMIN']),
     param('id', 'Parámetro :id requerido').isString().notEmpty().isLength({ max: 255 }),
+    query('fields').optional().isString().bail().custom(validarFields(CAMPOS_NOTA_CREDITO)),
     notaDeCreditoController.getNotaDeCreditoByIdExterno
 )
 

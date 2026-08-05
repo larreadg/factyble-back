@@ -4,7 +4,9 @@ const ErrorApp = require("../utils/error");
 const { calcularImpuesto } = require("../utils/facturacion");
 const generarPdf = require("../utils/generarPdf");
 const { v4: uuidv4 } = require("uuid");
-const { formatNumber, formatNumberWithLeadingZeros } = require("../utils/format");
+const { formatNumber, formatNumeroDocumento } = require("../utils/format");
+const { separarCajaEstablecimiento } = require("../utils/documento");
+const { parsearFields, proyectar } = require("../utils/fields");
 const { enviarFactura } = require("./correoService");
 const { construirCdc } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
@@ -13,6 +15,19 @@ const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
 const { buscarPorRuc } = require("./padronRucPersistenciaService");
 const { bloqueaEmision } = require("../utils/sifen/estadoPadronRuc");
 const { consultarCedula } = require("./cedulaService");
+
+// Lista cerrada de atributos de PRIMER NIVEL que el query param `fields` de los GET puede pedir para
+// una Factura. Incluye las columnas escalares + las relaciones que los GET incluyen (detalles,
+// cliente_empresa, eventos_sifen, caja) + los campos sintetizados en la respuesta (establecimiento).
+// Cualquier field fuera de esta lista => 400. Ver src/utils/fields.js.
+const CAMPOS_FACTURA = [
+  "id", "numero_factura", "factura_uuid", "usuario_id", "cliente_empresa_id",
+  "fecha_creacion", "fecha_modificacion", "condicion_venta", "total_iva", "total", "cdc",
+  "fuente", "id_externo", "xml", "linkqr", "sifen_estado", "sifen_estado_mensaje", "xml_firmado",
+  "estado_sifen", "sifen_cod_respuesta", "sifen_num_transaccion", "fecha_firma", "fecha_envio_sifen",
+  "fecha_respuesta_sifen", "intentos_firma", "lote_id", "codigo_seguridad", "caja_id",
+  "detalles", "cliente_empresa", "eventos_sifen", "caja", "establecimiento",
+];
 
 // tipoDocumento SIFEN para el CDC (MIGRATION_PLAN.md §1.3) — 1=Factura, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_FACTURA = 1;
@@ -333,8 +348,8 @@ const emitirFactura = async (datos, datosUsuario) => {
     }
 
     // Mismo formato que el número impreso en el PDF (establecimiento-caja-numero, con el número
-    // rellenado a 7 dígitos) — se reutiliza acá para no duplicar el criterio de formateo.
-    const numeroFacturaFormateada = `${datos.establecimiento}-${datos.caja}-${formatNumberWithLeadingZeros(factura.numero_factura)}`;
+    // rellenado a 7 dígitos) — se reutiliza el helper compartido para no duplicar el criterio de formateo.
+    const numeroFacturaFormateada = formatNumeroDocumento(datos.establecimiento, datos.caja, factura.numero_factura);
 
     // Se espera la generación del PDF (antes era fire-and-forget) para poder devolver su nombre de
     // archivo al caller — lo necesita /factura/simple para que el bot de WhatsApp lo descargue apenas
@@ -398,8 +413,9 @@ const generarCodigoSeguridad = (length = 9) => {
   return result;
 };
 
-const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId) => {
+const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId, fields = null) => {
   try {
+    const campos = parsearFields(fields);
     const skip = (page - 1) * itemsPerPage;
     const take = itemsPerPage;
 
@@ -478,6 +494,11 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
           },
         },
         eventos_sifen: true,
+        caja: {
+          include: {
+            establecimiento: true,
+          },
+        },
       },
     });
 
@@ -490,7 +511,18 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
     });
 
     return {
-      items: facturas,
+      items: facturas.map((factura) => proyectar({
+        ...factura,
+        // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
+        // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
+        numero_factura: formatNumeroDocumento(
+          factura.caja?.establecimiento?.codigo,
+          factura.caja?.codigo,
+          factura.numero_factura
+        ) ?? factura.numero_factura,
+        // Expone caja y establecimiento como campos hermanos del documento.
+        ...separarCajaEstablecimiento(factura.caja),
+      }, campos)),
       page,
       itemsPerPage,
       totalItems,
@@ -501,8 +533,9 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
   }
 };
 
-const getFacturaById = async (id, empresaId) => {
+const getFacturaById = async (id, empresaId, fields = null) => {
   try {
+    const campos = parsearFields(fields);
     // Búsqueda EXACTA por id (no LIKE/contains) y ACOTADA a la empresa del usuario autenticado
     // (vía la relación usuario.empresa_id) — sin este filtro un ADMIN podría leer facturas de otra
     // empresa por id (IDOR).
@@ -516,6 +549,16 @@ const getFacturaById = async (id, empresaId) => {
       include: {
         detalles: true,
         eventos_sifen: true,
+        cliente_empresa: {
+          include: {
+            cliente: true,
+          },
+        },
+        caja: {
+          include: {
+            establecimiento: true,
+          },
+        },
       },
     });
 
@@ -523,7 +566,18 @@ const getFacturaById = async (id, empresaId) => {
       throw new ErrorApp(`Factura con ID ${id} no encontrado`, 404);
     }
 
-    return factura;
+    return proyectar({
+      ...factura,
+      // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
+      // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
+      numero_factura: formatNumeroDocumento(
+        factura.caja?.establecimiento?.codigo,
+        factura.caja?.codigo,
+        factura.numero_factura
+      ) ?? factura.numero_factura,
+      // Expone caja y establecimiento como campos hermanos del documento.
+      ...separarCajaEstablecimiento(factura.caja),
+    }, campos);
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al obtener datos de factura");
   }
@@ -532,8 +586,9 @@ const getFacturaById = async (id, empresaId) => {
 // Búsqueda por id_externo (identificador de correlación con un sistema externo) ACOTADA a la empresa
 // del usuario autenticado (usuario.empresa_id). id_externo no es único: si hubiera varias facturas con
 // el mismo valor se devuelve la más reciente (orderBy id desc).
-const getFacturaByIdExterno = async (idExterno, empresaId) => {
+const getFacturaByIdExterno = async (idExterno, empresaId, fields = null) => {
   try {
+    const campos = parsearFields(fields);
     const factura = await prisma.factura.findFirst({
       where: {
         id_externo: idExterno,
@@ -542,6 +597,16 @@ const getFacturaByIdExterno = async (idExterno, empresaId) => {
       include: {
         detalles: true,
         eventos_sifen: true,
+        cliente_empresa: {
+          include: {
+            cliente: true,
+          },
+        },
+        caja: {
+          include: {
+            establecimiento: true,
+          },
+        },
       },
       orderBy: { id: "desc" },
     });
@@ -550,7 +615,18 @@ const getFacturaByIdExterno = async (idExterno, empresaId) => {
       throw new ErrorApp(`Factura con id externo ${idExterno} no encontrada`, 404);
     }
 
-    return factura;
+    return proyectar({
+      ...factura,
+      // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
+      // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
+      numero_factura: formatNumeroDocumento(
+        factura.caja?.establecimiento?.codigo,
+        factura.caja?.codigo,
+        factura.numero_factura
+      ) ?? factura.numero_factura,
+      // Expone caja y establecimiento como campos hermanos del documento.
+      ...separarCajaEstablecimiento(factura.caja),
+    }, campos);
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al obtener datos de factura");
   }
@@ -716,5 +792,6 @@ module.exports = {
   getMontoTotalPorCdc,
   reenviarFactura,
   cancelarFactura,
-  reintentarEnvioSifen
+  reintentarEnvioSifen,
+  CAMPOS_FACTURA
 };

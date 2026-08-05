@@ -37,12 +37,14 @@ const getRecibos = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const itemsPerPage = parseInt(req.query.itemsPerPage) || 10;
     const filter = req.query.filter || null;
+    const fields = req.query.fields || null;
 
     const data = await reciboService.getRecibos(
       page,
       itemsPerPage,
       filter,
-      Number(req.usuario.empresaId)
+      Number(req.usuario.empresaId),
+      fields
     );
 
     return res.status(200).send(Response.success(data, 'Datos obtenidos'));
@@ -66,8 +68,9 @@ const getReciboByIdExterno = async (req, res) => {
     }
 
     const { id } = req.params;
+    const fields = req.query.fields || null;
 
-    const data = await reciboService.getReciboByIdExterno(id, Number(req.usuario.empresaId));
+    const data = await reciboService.getReciboByIdExterno(id, Number(req.usuario.empresaId), fields);
 
     return res.status(200).send(Response.success(data, 'Datos obtenidos'));
   } catch (error) {

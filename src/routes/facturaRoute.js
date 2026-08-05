@@ -1,7 +1,9 @@
 const routes = require('express').Router();
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const facturaController = require('../controllers/facturaController');
 const { authJwt } = require('../middleware/authJwt');
+const { validarFields } = require('../utils/fields');
+const { CAMPOS_FACTURA } = require('../services/facturaService');
 
 routes.post(
     '/',
@@ -104,6 +106,7 @@ routes.post(
 routes.get(
     '/',
     authJwt(['ADMIN']),
+    query('fields').optional().isString().bail().custom(validarFields(CAMPOS_FACTURA)),
     facturaController.getFacturas
 );
 
@@ -111,6 +114,7 @@ routes.get(
     '/:id',
     authJwt(['ADMIN']),
     param('id').isInt().withMessage('Parámetro :id requerido'),
+    query('fields').optional().isString().bail().custom(validarFields(CAMPOS_FACTURA)),
     facturaController.getFacturaById
 );
 
@@ -118,6 +122,7 @@ routes.get(
     '/id-externo/:id',
     authJwt(['ADMIN']),
     param('id', 'Parámetro :id requerido').isString().notEmpty().isLength({ max: 255 }),
+    query('fields').optional().isString().bail().custom(validarFields(CAMPOS_FACTURA)),
     facturaController.getFacturaByIdExterno
 );
 

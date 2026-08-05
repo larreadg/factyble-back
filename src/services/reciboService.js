@@ -4,9 +4,22 @@ const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
 const { NumerosALetras } = require("numero-a-letras");
 const { parseEntero } = require("../utils/number");
-const { formatNumberWithLeadingZeros } = require("../utils/format");
+const { formatNumeroDocumento } = require("../utils/format");
+const { separarCajaEstablecimiento } = require("../utils/documento");
+const { parsearFields, proyectar } = require("../utils/fields");
 const generarPdfRecibo = require("../utils/generarPdfRecibo");
 const { enviarRecibo } = require("./correoService");
+
+// Lista cerrada de atributos de PRIMER NIVEL que el query param `fields` de los GET puede pedir para
+// un Recibo. Columnas escalares + relaciones incluidas por los GET (cliente_empresa, facturas,
+// notas_credito, cheques, transferencias, caja) + campos sintetizados en la respuesta (establecimiento).
+// Cualquier field fuera de esta lista => 400. Ver src/utils/fields.js.
+const CAMPOS_RECIBO = [
+  "id", "numero_recibo", "recibo_uuid", "cliente_empresa_id", "usuario_id",
+  "total_efectivo", "total_cheques", "total_transferencias", "total", "total_letras", "concepto",
+  "id_externo", "fecha_emision", "fecha_creacion", "fecha_modificacion", "caja_id",
+  "cliente_empresa", "facturas", "notas_credito", "cheques", "transferencias", "caja", "establecimiento",
+];
 
 const isEmailValido = (email) => {
   if (!email) return false;
@@ -453,7 +466,7 @@ const emitirRecibo = async (datos, datosUsuario) => {
       return reciboCreado;
     });
 
-    const reciboId = `${datos.establecimiento}-${datos.caja}-${formatNumberWithLeadingZeros(recibo.numero_recibo)}`;
+    const reciboId = formatNumeroDocumento(datos.establecimiento, datos.caja, recibo.numero_recibo);
 
     await generarPdfRecibo({
       empresaLogo: usuario.empresa.logo,
@@ -521,8 +534,46 @@ const emitirRecibo = async (datos, datosUsuario) => {
   }
 };
 
-const getRecibos = async (page = 1, itemsPerPage = 10, filter = null, empresaId) => {
+// Formatea, con el mismo criterio del PDF (establecimiento-caja-numero, relleno a 7 dígitos), tanto el
+// número del recibo como los números de las facturas/notas de crédito imputadas. Cae al número crudo
+// cuando no se puede formatear (documentos legacy con caja_id NULL). Se centraliza acá porque getRecibos
+// y getReciboByIdExterno devuelven exactamente la misma forma.
+const formatearNumerosRecibo = (recibo) => ({
+  ...recibo,
+  numero_recibo: formatNumeroDocumento(
+    recibo.caja?.establecimiento?.codigo,
+    recibo.caja?.codigo,
+    recibo.numero_recibo
+  ) ?? recibo.numero_recibo,
+  // Expone caja y establecimiento como campos hermanos del documento.
+  ...separarCajaEstablecimiento(recibo.caja),
+  facturas: recibo.facturas.map((rf) => ({
+    ...rf,
+    factura: rf.factura && {
+      ...rf.factura,
+      numero_factura: formatNumeroDocumento(
+        rf.factura.caja?.establecimiento?.codigo,
+        rf.factura.caja?.codigo,
+        rf.factura.numero_factura
+      ) ?? rf.factura.numero_factura,
+    },
+  })),
+  notas_credito: recibo.notas_credito.map((rnc) => ({
+    ...rnc,
+    nota_credito: rnc.nota_credito && {
+      ...rnc.nota_credito,
+      numero_nota_credito: formatNumeroDocumento(
+        rnc.nota_credito.caja?.establecimiento?.codigo,
+        rnc.nota_credito.caja?.codigo,
+        rnc.nota_credito.numero_nota_credito
+      ) ?? rnc.nota_credito.numero_nota_credito,
+    },
+  })),
+});
+
+const getRecibos = async (page = 1, itemsPerPage = 10, filter = null, empresaId, fields = null) => {
   try {
+    const campos = parsearFields(fields);
     const skip = (page - 1) * itemsPerPage;
     const take = itemsPerPage;
 
@@ -598,6 +649,12 @@ const getRecibos = async (page = 1, itemsPerPage = 10, filter = null, empresaId)
                 total: true,
                 cdc: true,
                 sifen_estado: true,
+                caja: {
+                  select: {
+                    codigo: true,
+                    establecimiento: { select: { codigo: true } },
+                  },
+                },
               },
             },
           },
@@ -611,6 +668,12 @@ const getRecibos = async (page = 1, itemsPerPage = 10, filter = null, empresaId)
                 total: true,
                 cdc: true,
                 sifen_estado: true,
+                caja: {
+                  select: {
+                    codigo: true,
+                    establecimiento: { select: { codigo: true } },
+                  },
+                },
               },
             },
           },
@@ -630,7 +693,7 @@ const getRecibos = async (page = 1, itemsPerPage = 10, filter = null, empresaId)
     });
 
     return {
-      items: recibos,
+      items: recibos.map((recibo) => proyectar(formatearNumerosRecibo(recibo), campos)),
       page,
       itemsPerPage,
       totalItems,
@@ -644,8 +707,9 @@ const getRecibos = async (page = 1, itemsPerPage = 10, filter = null, empresaId)
 // del usuario autenticado (cliente_empresa.empresa_id). id_externo no es único: si hubiera varios
 // recibos con el mismo valor se devuelve el más reciente (orderBy id desc). Devuelve el mismo detalle
 // que getRecibos (documentos imputados, medios de pago y caja/establecimiento).
-const getReciboByIdExterno = async (idExterno, empresaId) => {
+const getReciboByIdExterno = async (idExterno, empresaId, fields = null) => {
   try {
+    const campos = parsearFields(fields);
     const recibo = await prisma.recibo.findFirst({
       where: {
         id_externo: idExterno,
@@ -667,6 +731,12 @@ const getReciboByIdExterno = async (idExterno, empresaId) => {
                 total: true,
                 cdc: true,
                 sifen_estado: true,
+                caja: {
+                  select: {
+                    codigo: true,
+                    establecimiento: { select: { codigo: true } },
+                  },
+                },
               },
             },
           },
@@ -680,6 +750,12 @@ const getReciboByIdExterno = async (idExterno, empresaId) => {
                 total: true,
                 cdc: true,
                 sifen_estado: true,
+                caja: {
+                  select: {
+                    codigo: true,
+                    establecimiento: { select: { codigo: true } },
+                  },
+                },
               },
             },
           },
@@ -698,7 +774,7 @@ const getReciboByIdExterno = async (idExterno, empresaId) => {
       throw new ErrorApp(`Recibo con id externo ${idExterno} no encontrado`, 404);
     }
 
-    return recibo;
+    return proyectar(formatearNumerosRecibo(recibo), campos);
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al obtener recibo");
   }
@@ -708,4 +784,5 @@ module.exports = {
   emitirRecibo,
   getRecibos,
   getReciboByIdExterno,
+  CAMPOS_RECIBO,
 };
