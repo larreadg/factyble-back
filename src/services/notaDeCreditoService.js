@@ -61,6 +61,10 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     const factura = await prisma.factura.findFirst({
       where: {
         cdc: datos.cdc,
+        // Acotado a la empresa del usuario autenticado (mismo criterio que getMontoTotalPorCdc): sin
+        // esto se podía emitir una NC contra una factura de otra empresa pasando su CDC, filtrando los
+        // datos del cliente ajeno y acreditando un documento que no es de la empresa (IDOR).
+        cliente_empresa: { empresa_id: datosUsuario.empresaId },
       },
       include: {
         cliente_empresa: {
@@ -207,6 +211,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
           cdc,
           estado_sifen: 'GENERADO',
           fuente: datos.fuente || 'APP',
+          id_externo: datos.idExterno || null,
           codigo_seguridad: codigoSeguridadAleatorio,
           numero_nota_credito: numeroNotaDeCredito,
           caja_id: caja.id,
@@ -446,11 +451,16 @@ const cancelarNotaDeCredito = async (datos, datosUsuario) => {
   }
 }
 
-const reenviarNotaDeCredito = async ({ email, notaDeCreditoId }) => {
+const reenviarNotaDeCredito = async ({ email, notaDeCreditoId, empresaId }) => {
   // No se filtra por estado_sifen en la query — ver mismo criterio que facturaService.reenviarFactura
   // (AUD-001, STATIC_AUDIT_FINDINGS.json). El chequeo dual lo hace esAprobado.
+  // Acotado a la empresa del usuario autenticado (usuario.empresa_id): sin esto se podía reenviar por
+  // email el KuDE/XML de una nota de crédito de otra empresa a una dirección arbitraria (IDOR + fuga).
   const notaDeCredito = await prisma.notaCredito.findFirst({
-    where: { id: notaDeCreditoId },
+    where: {
+      id: notaDeCreditoId,
+      usuario: { empresa_id: empresaId },
+    },
     include: {
       factura: {
         include: {
@@ -513,10 +523,39 @@ const reintentarEnvioSifen = async (datos, datosUsuario) => {
   }
 };
 
+// Búsqueda por id_externo (identificador de correlación con un sistema externo) ACOTADA a la empresa
+// del usuario autenticado (usuario.empresa_id). id_externo no es único: si hubiera varias notas de
+// crédito con el mismo valor se devuelve la más reciente (orderBy id desc).
+const getNotaDeCreditoByIdExterno = async (idExterno, empresaId) => {
+  try {
+    const notaDeCredito = await prisma.notaCredito.findFirst({
+      where: {
+        id_externo: idExterno,
+        usuario: { empresa_id: empresaId },
+      },
+      include: {
+        factura: true,
+        eventos_sifen: true,
+        nota_credito_detalle: true,
+      },
+      orderBy: { id: "desc" },
+    });
+
+    if (!notaDeCredito) {
+      throw new ErrorApp(`Nota de crédito con id externo ${idExterno} no encontrada`, 404);
+    }
+
+    return notaDeCredito;
+  } catch (error) {
+    ErrorApp.handleServiceError(error, "Error al obtener datos de nota de crédito");
+  }
+};
+
 module.exports = {
   reenviarNotaDeCredito,
   emitirNotaDeCredito,
   getNotasDeCredito,
+  getNotaDeCreditoByIdExterno,
   cancelarNotaDeCredito,
   reintentarEnvioSifen
 };

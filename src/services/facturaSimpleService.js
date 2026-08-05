@@ -4,26 +4,43 @@ const { calcularImpuesto } = require("../utils/facturacion");
 const facturaService = require("./facturaService");
 
 // Facturación simplificada para integraciones tipo bot (ver CLAUDE.md): el caller sólo manda datos del
-// cliente e items, y este service arma el payload que espera facturaService.emitirFactura, resolviendo
-// por su cuenta establecimiento/caja (siempre el primero de la empresa, no hay selección posible acá).
+// cliente e items, y este service arma el payload que espera facturaService.emitirFactura. El
+// establecimiento/caja son opcionales: si el caller manda sus códigos (datos.establecimiento/datos.caja)
+// se usan esos; si no vienen o vienen vacíos se cae al primero de la empresa (comportamiento histórico).
 const emitirFacturaSimple = async (datos, datosUsuario) => {
   try {
     const establecimiento = await prisma.establecimiento.findFirst({
-      where: { empresa_id: datosUsuario.empresaId },
+      where: {
+        empresa_id: datosUsuario.empresaId,
+        ...(datos.establecimiento ? { codigo: datos.establecimiento } : {}),
+      },
       orderBy: { id: "asc" },
     });
 
     if (!establecimiento) {
-      throw new ErrorApp("La empresa no tiene establecimientos configurados", 404);
+      throw new ErrorApp(
+        datos.establecimiento
+          ? `No se encontró el establecimiento con código ${datos.establecimiento}`
+          : "La empresa no tiene establecimientos configurados",
+        404
+      );
     }
 
     const caja = await prisma.caja.findFirst({
-      where: { establecimiento_id: establecimiento.id },
+      where: {
+        establecimiento_id: establecimiento.id,
+        ...(datos.caja ? { codigo: datos.caja } : {}),
+      },
       orderBy: { id: "asc" },
     });
 
     if (!caja) {
-      throw new ErrorApp("La empresa no tiene cajas configuradas", 404);
+      throw new ErrorApp(
+        datos.caja
+          ? `No se encontró la caja con código ${datos.caja} en el establecimiento ${establecimiento.codigo}`
+          : "La empresa no tiene cajas configuradas",
+        404
+      );
     }
 
     const items = datos.items.map((item) => {
@@ -56,6 +73,7 @@ const emitirFacturaSimple = async (datos, datosUsuario) => {
       items,
       establecimiento: establecimiento.codigo,
       caja: caja.codigo,
+      idExterno: datos.idExterno,
       fuente: "BOT",
     };
 

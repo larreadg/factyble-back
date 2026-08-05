@@ -56,7 +56,32 @@ const getRecibos = async (req, res) => {
   }
 };
 
+const getReciboByIdExterno = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res
+        .status(400)
+        .send(new Response('error', 400, errors.array(), 'Error de validacion'));
+    }
+
+    const { id } = req.params;
+
+    const data = await reciboService.getReciboByIdExterno(id, Number(req.usuario.empresaId));
+
+    return res.status(200).send(Response.success(data, 'Datos obtenidos'));
+  } catch (error) {
+    const { code, message } = ErrorApp.handleControllerError(
+      error,
+      'Error al obtener recibo'
+    );
+
+    return res.status(code).send(Response.error(message, code));
+  }
+};
+
 module.exports = {
   emitirRecibo,
   getRecibos,
+  getReciboByIdExterno,
 };

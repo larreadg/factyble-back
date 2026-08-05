@@ -173,6 +173,10 @@ model Factura {
   // tablas con filas existentes — el valor se fija siempre explícitamente desde el código, nunca por
   // default de columna, mismo criterio que estado_sifen.
   fuente                FuenteDocumento?
+  // Identificador de correlación con un sistema externo (opcional). Lo setea el emisor vía el parámetro
+  // idExterno del body de emisión; nullable por convención de columnas nuevas sobre tablas con filas
+  // existentes y porque no todo documento proviene de una integración externa.
+  id_externo            String?          @db.VarChar(255)
   // Legacy (API PHP) — congelado, no se le escribe más luego del corte, se dropea en el apagado (MIGRATION_PLAN.md §4.4)
   xml                   String?          @db.Text
   linkqr                String?          @db.Text
@@ -357,6 +361,10 @@ model NotaCredito {
   // sobre tablas con filas existentes — el valor se fija siempre explícitamente desde el código, nunca
   // por default de columna, mismo criterio que estado_sifen.
   fuente                FuenteDocumento?
+  // Identificador de correlación con un sistema externo (opcional). Lo setea el emisor vía el parámetro
+  // idExterno del body de emisión; nullable por convención de columnas nuevas sobre tablas con filas
+  // existentes y porque no toda nota de crédito proviene de una integración externa.
+  id_externo            String?              @db.VarChar(255)
   // Legacy (API PHP) — congelado, no se le escribe más luego del corte, se dropea en el apagado (MIGRATION_PLAN.md §4.4)
   xml                   String?              @db.Text
   linkqr                String?              @db.Text
@@ -422,6 +430,10 @@ model Recibo {
   total                Decimal               @db.Decimal(15, 2)
   total_letras         String                @db.VarChar(255)
   concepto             String?               @db.Text
+  // Identificador de correlación con un sistema externo (opcional). Lo setea el emisor vía el parámetro
+  // idExterno del body de emisión; nullable por convención de columnas nuevas sobre tablas con filas
+  // existentes y porque no todo recibo proviene de una integración externa.
+  id_externo           String?               @db.VarChar(255)
   fecha_emision        DateTime              @default(now())
   fecha_creacion       DateTime              @default(now())
   fecha_modificacion   DateTime              @updatedAt

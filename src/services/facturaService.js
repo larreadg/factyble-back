@@ -276,6 +276,7 @@ const emitirFactura = async (datos, datosUsuario) => {
           cdc,
           estado_sifen: 'GENERADO',
           fuente: datos.fuente || 'APP',
+          id_externo: datos.idExterno || null,
           codigo_seguridad: codigoSeguridadAleatorio,
           caja_id: caja.id
         },
@@ -500,11 +501,17 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
   }
 };
 
-const getFacturaById = async (id) => {
+const getFacturaById = async (id, empresaId) => {
   try {
+    // Búsqueda EXACTA por id (no LIKE/contains) y ACOTADA a la empresa del usuario autenticado
+    // (vía la relación usuario.empresa_id) — sin este filtro un ADMIN podría leer facturas de otra
+    // empresa por id (IDOR).
     const factura = await prisma.factura.findFirst({
       where: {
         id: Number(id),
+        usuario: {
+          empresa_id: empresaId,
+        },
       },
       include: {
         detalles: true,
@@ -514,6 +521,33 @@ const getFacturaById = async (id) => {
 
     if (!factura) {
       throw new ErrorApp(`Factura con ID ${id} no encontrado`, 404);
+    }
+
+    return factura;
+  } catch (error) {
+    ErrorApp.handleServiceError(error, "Error al obtener datos de factura");
+  }
+};
+
+// Búsqueda por id_externo (identificador de correlación con un sistema externo) ACOTADA a la empresa
+// del usuario autenticado (usuario.empresa_id). id_externo no es único: si hubiera varias facturas con
+// el mismo valor se devuelve la más reciente (orderBy id desc).
+const getFacturaByIdExterno = async (idExterno, empresaId) => {
+  try {
+    const factura = await prisma.factura.findFirst({
+      where: {
+        id_externo: idExterno,
+        usuario: { empresa_id: empresaId },
+      },
+      include: {
+        detalles: true,
+        eventos_sifen: true,
+      },
+      orderBy: { id: "desc" },
+    });
+
+    if (!factura) {
+      throw new ErrorApp(`Factura con id externo ${idExterno} no encontrada`, 404);
     }
 
     return factura;
@@ -546,12 +580,17 @@ const getMontoTotalPorCdc = async (cdc, empresaId) => {
   };
 };
 
-const reenviarFactura = async ({ email, facturaId }) => {
+const reenviarFactura = async ({ email, facturaId, empresaId }) => {
   // No se filtra por estado_sifen en la query: para una Factura histórica (emitida antes del corte a
   // este pipeline) ese campo es siempre NULL, y el dato real de aprobación vive en `sifen_estado`
   // (texto legacy) — el chequeo dual lo hace `esAprobado` (AUD-001, STATIC_AUDIT_FINDINGS.json).
+  // Acotado a la empresa del usuario autenticado (usuario.empresa_id): sin esto se podía reenviar por
+  // email el KuDE/XML de una factura de otra empresa a una dirección arbitraria (IDOR + fuga de datos).
   const factura = await prisma.factura.findFirst({
-    where: { id: facturaId },
+    where: {
+      id: facturaId,
+      usuario: { empresa_id: empresaId },
+    },
     include: {
       cliente_empresa: { include: { cliente: true, empresa: true } },
       usuario: true,
@@ -673,6 +712,7 @@ module.exports = {
   emitirFactura,
   getFacturas,
   getFacturaById,
+  getFacturaByIdExterno,
   getMontoTotalPorCdc,
   reenviarFactura,
   cancelarFactura,

@@ -1,5 +1,5 @@
 const routes = require('express').Router();
-const { body } = require('express-validator');
+const { body, param } = require('express-validator');
 const reciboController = require('../controllers/reciboController');
 const { authJwt } = require('../middleware/authJwt');
 
@@ -75,6 +75,8 @@ routes.post(
     }),
   body('razonSocial', 'Parametro razonSocial requerido').notEmpty().isString(),
   body('email', 'Parametro email requerido').isEmail(),
+  body('idExterno', 'Parametro idExterno invalido').optional({ checkFalsy: true })
+    .custom((v) => ['string', 'number'].includes(typeof v)).customSanitizer((v) => String(v)).isLength({ max: 255 }),
   reciboController.emitirRecibo
 );
 
@@ -82,6 +84,13 @@ routes.get(
   '/',
   authJwt(['ADMIN']),
   reciboController.getRecibos
+);
+
+routes.get(
+  '/id-externo/:id',
+  authJwt(['ADMIN']),
+  param('id', 'Parametro :id requerido').isString().notEmpty().isLength({ max: 255 }),
+  reciboController.getReciboByIdExterno
 );
 
 module.exports = routes;

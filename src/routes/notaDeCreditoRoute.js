@@ -31,6 +31,8 @@ routes.post(
         if(n < 1 || n > 999) return false
         return true
     }).withMessage('Parámetro caja inválido'),
+    body('idExterno', 'Parámetro idExterno inválido').optional({ checkFalsy: true })
+    .custom(v => ['string', 'number'].includes(typeof v)).customSanitizer(v => String(v)).isLength({ max: 255 }),
     notaDeCreditoController.emitirNotaDeCredito
 )
 
@@ -44,6 +46,22 @@ routes.post(
     body('items.*.precioUnitario', 'Parámetro precioUnitario dentro de items requerido').isNumeric(),
     body('items.*.descripcion', 'Parámetro descripcion dentro de items requerido').isString().notEmpty(),
     body('items.*.tasa', 'Parámetro tasa dentro de items requerido').isIn(['0%','5%','10%']),
+    body('establecimiento').optional({ checkFalsy: true }).matches(/^\d{3}$/)
+    .withMessage('El parámetro establecimiento debe tener exactamente 3 dígitos entre 001 y 999')
+    .custom(v => {
+        const n = parseInt(v, 10)
+        if(n < 1 || n > 999) return false
+        return true
+    }).withMessage('Parámetro establecimiento inválido'),
+    body('caja').optional({ checkFalsy: true }).matches(/^\d{3}$/)
+    .withMessage('El parámetro caja debe tener exactamente 3 dígitos entre 001 y 999')
+    .custom(v => {
+        const n = parseInt(v, 10)
+        if(n < 1 || n > 999) return false
+        return true
+    }).withMessage('Parámetro caja inválido'),
+    body('idExterno', 'Parámetro idExterno inválido').optional({ checkFalsy: true })
+    .custom(v => ['string', 'number'].includes(typeof v)).customSanitizer(v => String(v)).isLength({ max: 255 }),
     notaDeCreditoController.emitirNotaDeCreditoSimple
 )
 
@@ -51,6 +69,13 @@ routes.get(
     '/',
     authJwt(['ADMIN']),
     notaDeCreditoController.getNotasDeCredito
+)
+
+routes.get(
+    '/id-externo/:id',
+    authJwt(['ADMIN']),
+    param('id', 'Parámetro :id requerido').isString().notEmpty().isLength({ max: 255 }),
+    notaDeCreditoController.getNotaDeCreditoByIdExterno
 )
 
 routes.post(

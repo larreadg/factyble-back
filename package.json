@@ -5,8 +5,10 @@
   "main": "src\\index.js",
   "scripts": {
     "dev": "nodemon src/index.js",
+    "tunnel": "node scripts/tunnel.js",
     "start": "node src/index.js",
     "create:superadmin": "node scripts/createSuperAdmin.js",
+    "pass:cambiar": "node scripts/cambiarPassword.js",
     "db:limpiar": "node scripts/limpiarBd.js",
     "import:padron-ruc": "node scripts/importarPadronRuc.js",
     "test": "echo \"Error: no test specified\" && exit 1"

@@ -240,6 +240,12 @@ const emitirRecibo = async (datos, datosUsuario) => {
       (d) => d.tipoDocumento === "NOTA_CREDITO"
     );
 
+    // Acotado a la CAJA del recibo (caja.id), no solo a la empresa: `numero_factura` es único por caja,
+    // no por empresa (se repite entre cajas — ver reintentarEnvioSifen). El input solo trae el número,
+    // sin establecimiento/caja por documento, así que la caja del recibo es el único desambiguador; sin
+    // este filtro, en una empresa con varias cajas la búsqueda podía traer más de una factura con el
+    // mismo número (rechazo espurio) o imputar el pago a la factura equivocada. caja_id ya implica la
+    // empresa (caja -> establecimiento -> empresa); se mantiene el filtro de empresa como defensa extra.
     const facturasDb =
       facturasNormalizadas.length > 0
         ? await prisma.factura.findMany({
@@ -247,6 +253,7 @@ const emitirRecibo = async (datos, datosUsuario) => {
               numero_factura: {
                 in: facturasNormalizadas.map((f) => f.numeroDocumentoNumerico),
               },
+              caja_id: caja.id,
               cliente_empresa: {
                 empresa_id: usuario.empresa_id,
               },
@@ -267,6 +274,8 @@ const emitirRecibo = async (datos, datosUsuario) => {
       }
     }
 
+    // Mismo criterio que las facturas: `numero_nota_credito` es único por caja, no por empresa, y el
+    // input solo trae el número — se acota a la caja del recibo (caja.id) para evitar ambigüedad.
     const notasCreditoDb =
       notasCreditoNormalizadas.length > 0
         ? await prisma.notaCredito.findMany({
@@ -274,6 +283,7 @@ const emitirRecibo = async (datos, datosUsuario) => {
               numero_nota_credito: {
                 in: notasCreditoNormalizadas.map((n) => n.numeroDocumentoNumerico),
               },
+              caja_id: caja.id,
               factura: {
                 cliente_empresa: {
                   empresa_id: usuario.empresa_id,
@@ -385,6 +395,7 @@ const emitirRecibo = async (datos, datosUsuario) => {
           total: totalReciboString,
           total_letras: totalLetras,
           concepto: datos.concepto,
+          id_externo: datos.idExterno || null,
           caja_id: caja.id,
         },
       });
@@ -629,7 +640,72 @@ const getRecibos = async (page = 1, itemsPerPage = 10, filter = null, empresaId)
   }
 };
 
+// Búsqueda por id_externo (identificador de correlación con un sistema externo) ACOTADA a la empresa
+// del usuario autenticado (cliente_empresa.empresa_id). id_externo no es único: si hubiera varios
+// recibos con el mismo valor se devuelve el más reciente (orderBy id desc). Devuelve el mismo detalle
+// que getRecibos (documentos imputados, medios de pago y caja/establecimiento).
+const getReciboByIdExterno = async (idExterno, empresaId) => {
+  try {
+    const recibo = await prisma.recibo.findFirst({
+      where: {
+        id_externo: idExterno,
+        cliente_empresa: { empresa_id: empresaId },
+      },
+      orderBy: { id: "desc" },
+      include: {
+        cliente_empresa: {
+          include: {
+            cliente: true,
+          },
+        },
+        facturas: {
+          include: {
+            factura: {
+              select: {
+                id: true,
+                numero_factura: true,
+                total: true,
+                cdc: true,
+                sifen_estado: true,
+              },
+            },
+          },
+        },
+        notas_credito: {
+          include: {
+            nota_credito: {
+              select: {
+                id: true,
+                numero_nota_credito: true,
+                total: true,
+                cdc: true,
+                sifen_estado: true,
+              },
+            },
+          },
+        },
+        cheques: true,
+        transferencias: true,
+        caja: {
+          include: {
+            establecimiento: true,
+          },
+        },
+      },
+    });
+
+    if (!recibo) {
+      throw new ErrorApp(`Recibo con id externo ${idExterno} no encontrado`, 404);
+    }
+
+    return recibo;
+  } catch (error) {
+    ErrorApp.handleServiceError(error, "Error al obtener recibo");
+  }
+};
+
 module.exports = {
   emitirRecibo,
   getRecibos,
+  getReciboByIdExterno,
 };
