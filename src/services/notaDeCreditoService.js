@@ -1,7 +1,7 @@
 const dayjs = require("dayjs");
 const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
-const { calcularImpuesto } = require("../utils/facturacion");
+const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = require("../utils/facturacion");
 const { v4: uuidv4 } = require("uuid");
 const generarPdf = require("../utils/generarPdf");
 const { formatNumber, formatNumeroDocumento } = require("../utils/format");
@@ -102,23 +102,20 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       throw new ErrorApp('La factura aún no se ha aprobado', 400)
     }
 
-    // Verificar cálculos
+    // Calcular totales en el backend a partir de cantidad, precio unitario y tasa de cada item.
+    // El caller ya no envía total/totalIva ni impuesto/total por item (mismo criterio que /nota-credito/simple):
+    // se computan acá y se asignan sobre cada item para el detalle y el PDF.
     let total = 0;
     let totalIva = 0;
+    let totalExenta = 0;
     let totalIva5 = 0;
     let totalIva10 = 0;
-    let totalExenta = 0;
 
     datos.items.forEach((e) => {
-      const impuesto = calcularImpuesto(e.cantidad, e.precioUnitario, e.tasa);
-      if (Number(e.impuesto) != impuesto) {
-        throw new ErrorApp("Datos proporcionados incorrectos", 400);
-      }
+      e.impuesto = calcularImpuesto(e.cantidad, e.precioUnitario, e.tasa);
+      e.total = calcularTotalItem(e.cantidad, e.precioUnitario);
 
-      if (Number(e.total) != Number(e.cantidad) * Number(e.precioUnitario)) {
-        throw new ErrorApp("Datos proporcionados incorrectos", 400);
-      }
-
+      // Desglose por tasa para el pie del KuDE (mismo criterio que antes de mover el cálculo al backend).
       if (e.tasa == "0%") {
         totalExenta += e.impuesto;
       } else if (e.tasa == "5%") {
@@ -127,13 +124,12 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
         totalIva10 += e.impuesto;
       }
 
-      total += Number(e.total);
-      totalIva += Number(e.impuesto);
+      total += e.total;
+      totalIva += e.impuesto;
     });
 
-    if (total != Number(datos.total) || totalIva != Number(datos.totalIva)) {
-      throw new ErrorApp("Datos proporcionados incorrectos", 400);
-    }
+    datos.total = total;
+    datos.totalIva = totalIva;
 
     // Buscar si ya hay nota de crédito vigente (no cancelada/rechazada) para la factura dada. No se
     // filtra por estado_sifen en la query (mismo motivo que el guard de arriba: para una NotaCredito
@@ -442,6 +438,8 @@ const getNotasDeCredito = async (
           notaCredito.caja?.codigo,
           notaCredito.numero_nota_credito
         ) ?? notaCredito.numero_nota_credito,
+        // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar el contrato.
+        detalles: normalizarCantidadDetalles(notaCredito.detalles),
         // Expone caja y establecimiento como campos hermanos del documento.
         ...separarCajaEstablecimiento(notaCredito.caja),
       }, campos)),
@@ -600,6 +598,8 @@ const getNotaDeCreditoByIdExterno = async (idExterno, empresaId, fields = null) 
         notaDeCredito.caja?.codigo,
         notaDeCredito.numero_nota_credito
       ) ?? notaDeCredito.numero_nota_credito,
+      // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar el contrato.
+      detalles: normalizarCantidadDetalles(notaDeCredito.detalles),
       // Expone caja y establecimiento como campos hermanos del documento.
       ...separarCajaEstablecimiento(notaDeCredito.caja),
     }, campos);

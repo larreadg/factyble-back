@@ -11,5 +11,6 @@ routes.use('/empresa', require('./empresaRoute'))
 routes.use('/geografia', require('./geografiaRoute'))
 routes.use('/rucs', require('./padronRucRoute'))
 routes.use('/reportes', require('./reporteRoute'))
+routes.use('/docs', require('./docsRoute'))
 
 module.exports = routes;

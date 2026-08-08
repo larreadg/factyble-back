@@ -1,7 +1,7 @@
 const dayjs = require("dayjs");
 const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
-const { calcularImpuesto } = require("../utils/facturacion");
+const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = require("../utils/facturacion");
 const generarPdf = require("../utils/generarPdf");
 const { v4: uuidv4 } = require("uuid");
 const { formatNumber, formatNumeroDocumento } = require("../utils/format");
@@ -12,7 +12,7 @@ const { construirCdc } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
 const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
-const { buscarPorRuc } = require("./padronRucPersistenciaService");
+const { buscarPorRucConFallback } = require("./padronRucPersistenciaService");
 const { bloqueaEmision } = require("../utils/sifen/estadoPadronRuc");
 const { consultarCedula } = require("./cedulaService");
 
@@ -94,8 +94,9 @@ const emitirFactura = async (datos, datosUsuario) => {
       // padron_ruc es la única autoridad del dígito verificador: NO calculamos por módulo 11, porque
       // ese cálculo sugería un DV/RUC que puede no existir en el padrón real. Primero se verifica que
       // el RUC exista, luego que el DV coincida con el de la tabla (Manual Técnico SIFEN v150,
-      // validaciones D206b/c/d).
-      const registroPadron = await buscarPorRuc(rucBase);
+      // validaciones D206b/c/d). Si no está en el padrón local, se consulta el servicio externo
+      // (ruc.com.py) y, si existe allí, se inserta en padron_ruc para continuar el flujo normal.
+      const registroPadron = await buscarPorRucConFallback(rucBase);
 
       if (!registroPadron) {
         throw new ErrorApp(`El RUC ${datos.ruc} no existe en el padrón. Verificá el número con el cliente.`, 400);
@@ -195,23 +196,20 @@ const emitirFactura = async (datos, datosUsuario) => {
       });
     }
 
-    //Verificar cálculos
+    //Calcular totales en el backend a partir de cantidad, precio unitario y tasa de cada item.
+    //El caller ya no envía total/totalIva ni impuesto/total por item (mismo criterio que /factura/simple):
+    //se computan acá y se asignan sobre cada item para el detalle y el PDF.
     let total = 0;
     let totalIva = 0;
+    let totalExenta = 0;
     let totalIva5 = 0;
     let totalIva10 = 0;
-    let totalExenta = 0;
 
     datos.items.forEach((e) => {
-      const impuesto = calcularImpuesto(e.cantidad, e.precioUnitario, e.tasa);
-      if (Number(e.impuesto) != impuesto) {
-        throw new ErrorApp("Datos proporcionados incorrectos", 400);
-      }
+      e.impuesto = calcularImpuesto(e.cantidad, e.precioUnitario, e.tasa);
+      e.total = calcularTotalItem(e.cantidad, e.precioUnitario);
 
-      if (Number(e.total) != Number(e.cantidad) * Number(e.precioUnitario)) {
-        throw new ErrorApp("Datos proporcionados incorrectos", 400);
-      }
-
+      // Desglose por tasa para el pie del KuDE (mismo criterio que antes de mover el cálculo al backend).
       if (e.tasa == "0%") {
         totalExenta += e.impuesto;
       } else if (e.tasa == "5%") {
@@ -220,13 +218,12 @@ const emitirFactura = async (datos, datosUsuario) => {
         totalIva10 += e.impuesto;
       }
 
-      total += Number(e.total);
-      totalIva += Number(e.impuesto);
+      total += e.total;
+      totalIva += e.impuesto;
     });
 
-    if (total != Number(datos.total) || totalIva != Number(datos.totalIva)) {
-      throw new ErrorApp("Datos proporcionados incorrectos", 400);
-    }
+    datos.total = total;
+    datos.totalIva = totalIva;
 
     //Datos adicionales
     const facturaUuid = uuidv4();
@@ -520,6 +517,8 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
           factura.caja?.codigo,
           factura.numero_factura
         ) ?? factura.numero_factura,
+        // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar el contrato.
+        detalles: normalizarCantidadDetalles(factura.detalles),
         // Expone caja y establecimiento como campos hermanos del documento.
         ...separarCajaEstablecimiento(factura.caja),
       }, campos)),

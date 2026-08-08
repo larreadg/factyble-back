@@ -8,7 +8,62 @@
 const calcularImpuesto = (cantidad, precioUnitario, tasa) => {
     const iva = calcularConstanteIVA(tasa)
     if(iva === 0) return 0
-    return Math.round(calcularPrecio(cantidad, precioUnitario) / iva)
+    return Math.round(calcularTotalItem(cantidad, precioUnitario) / iva)
+}
+
+/**
+ * Máximo de decimales aceptados en la cantidad por ítem.
+ * SIFEN limita el campo E711 (dCantProSer) a "N 1-10p(0-4)": hasta 4 decimales
+ * (Manual Técnico v150, campo E711). No enviar más: el XSD lo rechaza.
+ */
+const CANTIDAD_MAX_DECIMALES = 4
+
+/**
+ * Valor máximo de cantidad admisible: columna Decimal(10,4) => 6 enteros + 4 decimales,
+ * que coincide con el largo total máximo de SIFEN (10 dígitos).
+ */
+const CANTIDAD_MAX = 999999.9999
+
+/**
+ * Valida una cantidad de ítem: numérica, mayor a 0, sin exceder el máximo ni la
+ * cantidad de decimales que acepta SIFEN. Usada por los validadores de rutas.
+ * @param {number|string} value
+ * @returns {boolean}
+ */
+const validarCantidad = (value) => {
+    if (value === null || value === undefined || value === '') return false
+    const n = Number(value)
+    if (!Number.isFinite(n) || n <= 0 || n > CANTIDAD_MAX) return false
+    const decimales = (String(value).split('.')[1] || '').length
+    if (decimales > CANTIDAD_MAX_DECIMALES) return false
+    return true
+}
+
+/**
+ * Total bruto por ítem en guaraníes (moneda PYG, sin decimales). Se redondea a entero
+ * igual que lo hace la librería xmlgen para PYG (pygDecimals=0), de modo que el total
+ * almacenado/impreso coincida con el que envía SIFEN aunque la cantidad tenga decimales.
+ * @param {number|string} cantidad
+ * @param {number|string} precioUnitario
+ * @returns {number} - Total por ítem redondeado a guaraní entero
+ */
+const calcularTotalItem = (cantidad, precioUnitario) => {
+    return Math.round(calcularPrecio(cantidad, precioUnitario))
+}
+
+/**
+ * Normaliza `cantidad` a número en un array de detalles leídos de la DB.
+ * La columna es Decimal(10,4): Prisma la devuelve como Prisma.Decimal, que al serializarse
+ * a JSON queda como string ("5"). Este mapeo la vuelve number ("5" -> 5, "5.34" -> 5.34) para
+ * conservar el contrato histórico de los GET (cantidad siempre número), incluidas facturas viejas.
+ * @param {Array<Object>} detalles
+ * @returns {Array<Object>}
+ */
+const normalizarCantidadDetalles = (detalles) => {
+    if (!Array.isArray(detalles)) return detalles
+    return detalles.map((d) =>
+        d && d.cantidad != null ? { ...d, cantidad: Number(d.cantidad) } : d
+    )
 }
 
 /**
@@ -69,5 +124,10 @@ function calcularTotalGeneralIva(items) {
 }
 
 module.exports = {
-    calcularImpuesto
+    calcularImpuesto,
+    calcularTotalItem,
+    validarCantidad,
+    normalizarCantidadDetalles,
+    CANTIDAD_MAX_DECIMALES,
+    CANTIDAD_MAX
 }

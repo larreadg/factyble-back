@@ -4,19 +4,16 @@ const { body, query, param } = require('express-validator');
 const { authJwt } = require('../middleware/authJwt');
 const { validarFields } = require('../utils/fields');
 const { CAMPOS_NOTA_CREDITO } = require('../services/notaDeCreditoService');
+const { validarCantidad } = require('../utils/facturacion');
 
 routes.post(
     '/',
     authJwt(['ADMIN']),
     body('cdc', 'Parámetro cdc requerido').notEmpty().isString(),
-    body('totalIva', 'Parámetro totalIva requerido').isNumeric(),
-    body('total', 'Parámetro total requerido').isNumeric(),
     body('items', 'Parámetro items requerido').isArray({min: 1}),
     body('items.*', 'Parámetros item requerido Object').isObject(),
-    body('items.*.cantidad', 'Parámetro cantidad[number] dentro de items requerido').isInt(),
+    body('items.*.cantidad', 'Parámetro cantidad debe ser numérico > 0, máx 4 decimales').custom(validarCantidad),
     body('items.*.precioUnitario', 'Parámetro precioUnitario dentro de items requerido').isNumeric(),
-    body('items.*.impuesto', 'Parámetro impuesto dentro de items requerido').isNumeric(),
-    body('items.*.total', 'Parámetro total dentro de items requerido').isNumeric(),
     body('items.*.descripcion', 'Parámetro descripcion dentro de items requerido').isString().notEmpty(),
     body('items.*.tasa', 'Parámetro tasa dentro de items requerido').isIn(['0%','5%','10%']),
     body('establecimiento').matches(/^\d{3}$/)
@@ -44,7 +41,7 @@ routes.post(
     body('cdc', 'Parámetro cdc requerido').notEmpty().isString(),
     body('items', 'Parámetro items requerido').isArray({min: 1}),
     body('items.*', 'Parámetros item requerido Object').isObject(),
-    body('items.*.cantidad', 'Parámetro cantidad[number] dentro de items requerido').isInt(),
+    body('items.*.cantidad', 'Parámetro cantidad debe ser numérico > 0, máx 4 decimales').custom(validarCantidad),
     body('items.*.precioUnitario', 'Parámetro precioUnitario dentro de items requerido').isNumeric(),
     body('items.*.descripcion', 'Parámetro descripcion dentro de items requerido').isString().notEmpty(),
     body('items.*.tasa', 'Parámetro tasa dentro de items requerido').isIn(['0%','5%','10%']),

@@ -1,6 +1,6 @@
 const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
-const { calcularImpuesto } = require("../utils/facturacion");
+const { calcularImpuesto, calcularTotalItem } = require("../utils/facturacion");
 const notaDeCreditoService = require("./notaDeCreditoService");
 
 // Nota de crédito simplificada para integraciones tipo bot (ver CLAUDE.md, mismo criterio que
@@ -48,7 +48,7 @@ const emitirNotaDeCreditoSimple = async (datos, datosUsuario) => {
 
     const items = datos.items.map((item) => {
       const impuesto = calcularImpuesto(item.cantidad, item.precioUnitario, item.tasa);
-      const total = Number(item.cantidad) * Number(item.precioUnitario);
+      const total = calcularTotalItem(item.cantidad, item.precioUnitario);
       return {
         cantidad: item.cantidad,
         precioUnitario: item.precioUnitario,

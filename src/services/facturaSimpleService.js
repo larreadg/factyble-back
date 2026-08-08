@@ -1,6 +1,6 @@
 const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
-const { calcularImpuesto } = require("../utils/facturacion");
+const { calcularImpuesto, calcularTotalItem } = require("../utils/facturacion");
 const facturaService = require("./facturaService");
 
 // Facturación simplificada para integraciones tipo bot (ver CLAUDE.md): el caller sólo manda datos del
@@ -45,7 +45,7 @@ const emitirFacturaSimple = async (datos, datosUsuario) => {
 
     const items = datos.items.map((item) => {
       const impuesto = calcularImpuesto(item.cantidad, item.precioUnitario, item.tasa);
-      const total = Number(item.cantidad) * Number(item.precioUnitario);
+      const total = calcularTotalItem(item.cantidad, item.precioUnitario);
       return {
         cantidad: item.cantidad,
         precioUnitario: item.precioUnitario,
@@ -65,7 +65,7 @@ const emitirFacturaSimple = async (datos, datosUsuario) => {
       ruc: datos.personaDocumento,
       razonSocial: datos.personaNombre,
       direccion: "",
-      email: "",
+      email: datos.personaEmail || "",
       pais: "",
       condicionVenta: datos.condicionVenta,
       total,

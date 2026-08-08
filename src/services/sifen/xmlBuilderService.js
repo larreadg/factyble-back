@@ -244,7 +244,9 @@ const mapearItem = (detalle) => {
     codigo: CODIGO_ITEM_DEFAULT,
     descripcion: detalle.descripcion,
     unidadMedida: UNIDAD_MEDIDA_DEFAULT,
-    cantidad: detalle.cantidad,
+    // cantidad viene como Prisma.Decimal (columna Decimal(10,4)); xmlgen espera número.
+    // SIFEN admite hasta 4 decimales en E711 (dCantProSer) — ver validarCantidad/schema.
+    cantidad: Number(detalle.cantidad),
     precioUnitario: detalle.precio_unitario,
     ivaTipo: tasa.ivaTipo,
     iva: tasa.iva,

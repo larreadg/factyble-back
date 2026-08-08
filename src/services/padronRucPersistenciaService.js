@@ -1,6 +1,7 @@
 const { Prisma } = require('@prisma/client');
 const prisma = require('../prisma/cliente');
 const ErrorApp = require('../utils/error');
+const { consultarRucExterno } = require('./padronRucConsultaExternaService');
 
 /**
  * Error de infraestructura (DB caída, timeout, etc.), distinto de un error de datos de un
@@ -66,8 +67,34 @@ const buscarPorRuc = async (ruc) => {
     };
 };
 
+/**
+ * Igual que `buscarPorRuc`, pero si el RUC no está en el padrón local consulta el servicio externo
+ * (ruc.com.py) como fallback: si allí existe, lo persiste en `padron_ruc` (upsert vía `guardarLote`,
+ * el mismo camino que la importación masiva) y lo devuelve en el formato de `buscarPorRuc`, de modo
+ * que la próxima búsqueda ya lo resuelve local sin llamada de red. Devuelve `null` sólo si tampoco
+ * existe en el servicio externo.
+ *
+ * A diferencia de `buscarPorRuc` (lectura pura), esta función puede hacer I/O de red y de escritura,
+ * por eso es una función aparte y explícita en vez de cambiar el contrato de `buscarPorRuc`.
+ *
+ * @param {string} ruc - RUC BASE (sin DV ni ceros a la izquierda), ya normalizado por el caller
+ * @returns {Promise<{ruc: string, razonSocial: string, digitoVerificador: string, rucAnterior: string|null, estado: string}|null>}
+ */
+const buscarPorRucConFallback = async (ruc) => {
+    const local = await buscarPorRuc(ruc);
+    if (local) return local;
+
+    const externo = await consultarRucExterno(ruc);
+    if (!externo) return null;
+
+    await guardarLote([externo]);
+
+    return externo;
+};
+
 module.exports = {
     guardarLote,
     buscarPorRuc,
+    buscarPorRucConFallback,
     ErrorInfraestructuraPadronRuc
 };

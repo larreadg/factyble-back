@@ -224,7 +224,7 @@ model FacturaDetalle {
   id                 Int      @id @default(autoincrement())
   factura            Factura  @relation(fields: [id_factura], references: [id])
   id_factura         Int
-  cantidad           Int
+  cantidad           Decimal  @db.Decimal(10, 4)
   precio_unitario    Float
   tasa               Tasa
   impuesto           Float
@@ -403,7 +403,7 @@ model NotaCredito {
 model NotaCreditoDetalle {
   id                 Int         @id @default(autoincrement())
   nota_credito_id    Int
-  cantidad           Int
+  cantidad           Decimal     @db.Decimal(10, 4)
   precio_unitario    Float
   tasa               Tasa
   impuesto           Float

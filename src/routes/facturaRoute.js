@@ -4,6 +4,7 @@ const facturaController = require('../controllers/facturaController');
 const { authJwt } = require('../middleware/authJwt');
 const { validarFields } = require('../utils/fields');
 const { CAMPOS_FACTURA } = require('../services/facturaService');
+const { validarCantidad } = require('../utils/facturacion');
 
 routes.post(
     '/',
@@ -13,17 +14,13 @@ routes.post(
     body('situacionTributaria', 'Parámetro situacionTributaria requerido').notEmpty().isIn([
         'CONTRIBUYENTE','NO_CONTRIBUYENTE','NO_DOMICILIADO'
     ]),
-    body('total', 'Parámetro total requerido').isNumeric(),
-    body('totalIva', 'Parámetro totalIva requerido').isNumeric(),
     body('condicionVenta', 'Parámetro condicionVenta requerido').isIn(['CONTADO', 'CREDITO']),
     body('direccion', 'Parámetro direccion requerido').optional().isString(),
     body('email', 'Parámetro email requerido').isEmail(),
     body('items', 'Parámetro items requerido').isArray({min: 1}),
     body('items.*', 'Parámetros item requerido Object').isObject(),
-    body('items.*.cantidad', 'Parámetro cantidad[number] dentro de items requerido').isInt(),
+    body('items.*.cantidad', 'Parámetro cantidad debe ser numérico > 0, máx 4 decimales').custom(validarCantidad),
     body('items.*.precioUnitario', 'Parámetro precioUnitario dentro de items requerido').isNumeric(),
-    body('items.*.impuesto', 'Parámetro impuesto dentro de items requerido').isNumeric(),
-    body('items.*.total', 'Parámetro total dentro de items requerido').isNumeric(),
     body('items.*.descripcion', 'Parámetro descripcion dentro de items requerido').isString().notEmpty(),
     body('items.*.tasa', 'Parámetro tasa dentro de items requerido').isIn(['0%','5%','10%']),
     body('tipoCredito', 'Parámetro tipoCredito requerido').custom((tipoCredito, { req: { body }}) => {
@@ -77,10 +74,11 @@ routes.post(
     ]),
     body('personaDocumento', 'Parámetro personaDocumento requerido').notEmpty().isString(),
     body('personaNombre', 'Parámetro personaNombre requerido').notEmpty().isString(),
+    body('personaEmail', 'Parámetro personaEmail inválido').optional({ checkFalsy: true }).isEmail(),
     body('condicionVenta', 'Parámetro condicionVenta requerido').notEmpty().isIn(['CONTADO', 'CREDITO']),
     body('items', 'Parámetro items requerido').isArray({min: 1}),
     body('items.*', 'Parámetros item requerido Object').isObject(),
-    body('items.*.cantidad', 'Parámetro cantidad[number] dentro de items requerido').isInt(),
+    body('items.*.cantidad', 'Parámetro cantidad debe ser numérico > 0, máx 4 decimales').custom(validarCantidad),
     body('items.*.precioUnitario', 'Parámetro precioUnitario dentro de items requerido').isNumeric(),
     body('items.*.descripcion', 'Parámetro descripcion dentro de items requerido').isString().notEmpty(),
     body('items.*.tasa', 'Parámetro tasa dentro de items requerido').isIn(['0%','5%','10%']),
