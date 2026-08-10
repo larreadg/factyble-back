@@ -1029,11 +1029,35 @@ const actualizarDocumentoPorResultado = async (tipoDoc, loteId, resultadoDocumen
     return;
   }
 
-  // DUPLICADO (1001/1002) cuenta como autorizado: SIFEN dice "ya fue autorizado otro documento con este
-  // CDC", o sea el documento ya existe como DTE — se sincroniza a APROBADO, nunca a RECHAZADO.
-  const documentoAutorizado = interpretacion.categoria === CATEGORIA.APROBADO || interpretacion.categoria === CATEGORIA.DUPLICADO;
-  const nuevoEstado = documentoAutorizado ? "APROBADO" : "RECHAZADO";
-  const modelo = tipoDoc === "FACTURA" ? prisma.factura : prisma.notaCredito;
+  const config = TIPOS_DOCUMENTO[tipoDoc];
+  const modelo = config.modelo();
+
+  // DUPLICADO (1001/1002) NO prueba que ESTE CDC exista como DTE: SIFEN dice "ya fue autorizado OTRO
+  // documento con coincidencia de los campos del timbrado" — ese "otro" puede ser un CDC distinto (p. ej.
+  // una emisión previa del mismo número de timbrado por el flujo legacy). Confiar en el 1002 del lote y
+  // marcar APROBADO a ciegas fue un bug real de producción (factura id=39): un CDC que nunca existió en
+  // SIFEN quedó APROBADO y se dejó cancelar, y SIFEN respondió 4002 "CDC no existente". Por eso un
+  // DUPLICADO NO se resuelve acá: dispara la reconciliación por CDC (siConsDE, fuente de verdad
+  // autoritativa), que distingue 0422 (existe -> APROBADO) de 0420 (no existe -> se deja como está para
+  // la próxima consulta/red de seguridad). Es exactamente lo que ya documentaba codigosRespuesta.js
+  // (categoría DUPLICADO) y MIGRATION_PLAN.md §reconciliación por CDC — este atajo lo contradecía.
+  if (interpretacion.categoria === CATEGORIA.DUPLICADO) {
+    const documentoDuplicado = await modelo.findFirst({ where: { cdc, lote_id: loteId }, include: config.include });
+    if (!documentoDuplicado) {
+      return;
+    }
+    try {
+      await reconciliarPorCdc(tipoDoc, documentoDuplicado);
+    } catch (error) {
+      console.error(
+        `[loteService] Error al reconciliar por CDC ${config.entidadTipo} id=${documentoDuplicado.id} ` +
+          `(lote ${loteId}) tras DUPLICADO (${interpretacion.codigo}): ${error.message}`
+      );
+    }
+    return;
+  }
+
+  const nuevoEstado = interpretacion.categoria === CATEGORIA.APROBADO ? "APROBADO" : "RECHAZADO";
   const documentoPrevio = await modelo.findFirst({ where: { cdc, lote_id: loteId } });
   if (!documentoPrevio) {
     return;

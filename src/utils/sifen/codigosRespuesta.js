@@ -128,6 +128,46 @@ const CODIGOS_RESPUESTA = {
     alertar: false,
     mensajeInterno: "Evento registrado correctamente por SIFEN (p. ej. cancelación aprobada).",
   },
+  // Rechazos de la validación de eventos de cancelación (Manual §11.6.1, tabla "Reglas de validación
+  // para cancelación" — todos marcados "R"). Confirmados contra la copia local `Manual Técnico Versión
+  // 150.md` (líneas 6528-6554), no adivinados. Son terminales para el evento (la cancelación no se
+  // registró), por eso RECHAZADO + alertar.
+  "4000": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno: "Cancelación rechazada: la versión del formato del evento no corresponde a la vigente (GDE005).",
+  },
+  "4001": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Cancelación rechazada: CDC inválido (GEC002) — no cumple la estructura de 44 caracteres " +
+      "(longitud, orden de campos, fecha o dígito verificador).",
+  },
+  // El equivalente de 0420 pero en el WS de eventos: el CDC no está aprobado como DTE en SIFEN. Que
+  // aparezca al cancelar es la señal de que el documento nunca existió realmente como DTE (aunque
+  // localmente figurara APROBADO) — el caso que destapó el bug del DUPLICADO en `actualizarDocumentoPorResultado`.
+  "4002": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Cancelación rechazada: CDC no existente en SIFEN (GEC002a) — el documento no se encuentra " +
+      "aprobado como DTE. Si localmente figuraba APROBADO, el estado estaba divergente: reconciliar por CDC.",
+  },
+  "4003": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Cancelación rechazada: el DTE ya tiene registrado el mismo evento solicitado (GEC002b, duplicidad) " +
+      "— la cancelación previa ya fue aceptada, no reintentar.",
+  },
+  "4004": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Cancelación rechazada: el último evento del receptor sobre el CDC es una confirmación parcial o " +
+      "total (GEC002c) — el emisor ya no puede cancelar.",
+  },
   // Nivel documento — validaciones de contenido del DE (Manual Técnico SIFEN v150, tabla de códigos de
   // rechazo, entradas A002a/A002b). Confirmados contra la copia local `Manual Técnico Versión 150.md`
   // (líneas 7691-7694). El manual los marca como rechazo ("R"), PERO su descripción es "Ya fue

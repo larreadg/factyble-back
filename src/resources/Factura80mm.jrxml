@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Versión 80 mm basada en Factura.jrxml. Diseñada para impresión térmica, sin logo del emisor/cliente. -->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xmlns:jr="http://jasperreports.sourceforge.net/jasperreports/components"
+              xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd http://jasperreports.sourceforge.net/jasperreports/components http://jasperreports.sourceforge.net/xsd/components.xsd"
+              name="Factura80mm"
+              pageWidth="227"
+              pageHeight="842"
+              columnWidth="217"
+              leftMargin="5"
+              rightMargin="5"
+              topMargin="5"
+              bottomMargin="5"
+              isIgnorePagination="true"
+              uuid="4fcdcf1a-9d24-4c3d-90b6-23ac4c2b47d8">
+
+    <property name="com.jaspersoft.studio.data.defaultdataadapter" value="One Empty Record"/>
+
+    <style name="TicketHeader" mode="Transparent" forecolor="#000000"/>
+    <style name="TicketCell">
+        <box>
+            <bottomPen lineWidth="0.25" lineColor="#777777"/>
+        </box>
+    </style>
+
+    <subDataset name="dsItemsFactura " uuid="b2bb52c2-bf09-4c88-969a-8185c10c99bf">
+        <property name="com.jaspersoft.studio.data.defaultdataadapter" value="One Empty Record"/>
+        <queryString><![CDATA[]]></queryString>
+        <field name="cantidad" class="java.lang.String"/>
+        <field name="descripcion" class="java.lang.String"/>
+        <field name="precioUnitario" class="java.lang.String"/>
+        <field name="exentas" class="java.lang.String"/>
+        <field name="iva5" class="java.lang.String"/>
+        <field name="iva10" class="java.lang.String"/>
+    </subDataset>
+
+    <!-- Se conservan exactamente los mismos parámetros de entrada del diseño original. -->
+    <parameter name="empresaLogo" class="java.lang.String"/>
+    <parameter name="facturaId" class="java.lang.String"/>
+    <parameter name="ds" class="net.sf.jasperreports.engine.data.JRBeanArrayDataSource"/>
+    <parameter name="fechaHora" class="java.lang.String"/>
+    <parameter name="condicionVenta" class="java.lang.String"/>
+    <parameter name="moneda" class="java.lang.String"/>
+    <parameter name="ruc" class="java.lang.String"/>
+    <parameter name="razonSocial" class="java.lang.String"/>
+    <parameter name="correoElectronico" class="java.lang.String"/>
+    <parameter name="total" class="java.lang.String"/>
+    <parameter name="totalIva" class="java.lang.String"/>
+    <parameter name="totalIva5" class="java.lang.String"/>
+    <parameter name="totalIva10" class="java.lang.String"/>
+    <parameter name="qr" class="java.lang.String"/>
+    <parameter name="cdc" class="java.lang.String"/>
+    <parameter name="empresaRuc" class="java.lang.String"/>
+    <parameter name="empresaTimbrado" class="java.lang.String"/>
+    <parameter name="empresaVigenteDesde" class="java.lang.String"/>
+    <parameter name="empresaNombre" class="java.lang.String"/>
+    <parameter name="empresaDireccion" class="java.lang.String"/>
+    <parameter name="empresaCorreoElectronico" class="java.lang.String"/>
+    <parameter name="empresaCiudad" class="java.lang.String"/>
+    <parameter name="empresaTelefono" class="java.lang.String"/>
+    <parameter name="tipoDocumento" class="java.lang.String"/>
+    <parameter name="tipoDocumentoTop" class="java.lang.String"/>
+    <parameter name="tipoCredito" class="java.lang.String"/>
+    <parameter name="creditoCuotaCantidad" class="java.lang.String"/>
+    <parameter name="creditoCuotaPeriodicidad" class="java.lang.String"/>
+    <parameter name="creditoAPlazoDescripcion" class="java.lang.String"/>
+    <parameter name="factyble" class="java.lang.String"/>
+
+    <queryString><![CDATA[]]></queryString>
+
+    <!-- CONTADO -->
+    <group name="grpContado80">
+        <groupExpression><![CDATA[$P{condicionVenta}]]></groupExpression>
+        <groupHeader>
+            <band height="74">
+                <printWhenExpression><![CDATA[$P{condicionVenta} != null && $P{condicionVenta}.equals("CONTADO")]]></printWhenExpression>
+
+                <line><reportElement x="0" y="2" width="217" height="1"/></line>
+                <staticText><reportElement x="0" y="6" width="53" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Fecha/hora:]]></text></staticText>
+                <textField><reportElement x="53" y="6" width="164" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{fechaHora}]]></textFieldExpression></textField>
+
+                <staticText><reportElement x="0" y="19" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[RUC/CI:]]></text></staticText>
+                <textField><reportElement x="40" y="19" width="177" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{ruc}]]></textFieldExpression></textField>
+
+                <staticText><reportElement x="0" y="32" width="48" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Cliente:]]></text></staticText>
+                <textField textAdjust="StretchHeight"><reportElement x="40" y="32" width="177" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{razonSocial}]]></textFieldExpression></textField>
+
+                <staticText><reportElement x="0" y="45" width="52" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Condición:]]></text></staticText>
+                <textField><reportElement x="52" y="45" width="65" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{condicionVenta}]]></textFieldExpression></textField>
+                <staticText><reportElement x="118" y="45" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Moneda:]]></text></staticText>
+                <textField><reportElement x="158" y="45" width="59" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{moneda}]]></textFieldExpression></textField>
+
+                <staticText><reportElement x="0" y="58" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Email:]]></text></staticText>
+                <textField textAdjust="StretchHeight"><reportElement x="40" y="58" width="177" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{correoElectronico}]]></textFieldExpression></textField>
+                <line><reportElement x="0" y="72" width="217" height="1"/></line>
+            </band>
+        </groupHeader>
+    </group>
+
+    <!-- CRÉDITO / CUOTA -->
+    <group name="grpCreditoCuota80">
+        <groupExpression><![CDATA[$P{condicionVenta}]]></groupExpression>
+        <groupHeader>
+            <band height="100">
+                <printWhenExpression><![CDATA[$P{condicionVenta} != null && $P{condicionVenta}.equals("CREDITO") && $P{tipoCredito} != null && $P{tipoCredito}.equals("CUOTA")]]></printWhenExpression>
+
+                <line><reportElement x="0" y="2" width="217" height="1"/></line>
+                <staticText><reportElement x="0" y="6" width="53" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Fecha/hora:]]></text></staticText>
+                <textField><reportElement x="53" y="6" width="164" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{fechaHora}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="19" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[RUC/CI:]]></text></staticText>
+                <textField><reportElement x="40" y="19" width="177" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{ruc}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="32" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Cliente:]]></text></staticText>
+                <textField textAdjust="StretchHeight"><reportElement x="40" y="32" width="177" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{razonSocial}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="45" width="52" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Condición:]]></text></staticText>
+                <textField><reportElement x="52" y="45" width="65" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{condicionVenta}]]></textFieldExpression></textField>
+                <staticText><reportElement x="118" y="45" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Moneda:]]></text></staticText>
+                <textField><reportElement x="158" y="45" width="59" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{moneda}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="58" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Email:]]></text></staticText>
+                <textField textAdjust="StretchHeight"><reportElement x="40" y="58" width="177" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{correoElectronico}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="71" width="53" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Crédito:]]></text></staticText>
+                <staticText><reportElement x="53" y="71" width="45" height="12"/><textElement><font size="7"/></textElement><text><![CDATA[CUOTA]]></text></staticText>
+                <staticText><reportElement x="98" y="71" width="38" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Cuotas:]]></text></staticText>
+                <textField><reportElement x="136" y="71" width="30" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{creditoCuotaCantidad}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="84" width="62" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Periodicidad:]]></text></staticText>
+                <textField><reportElement x="62" y="84" width="155" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{creditoCuotaPeriodicidad}]]></textFieldExpression></textField>
+                <line><reportElement x="0" y="98" width="217" height="1"/></line>
+            </band>
+        </groupHeader>
+    </group>
+
+    <!-- CRÉDITO / A PLAZO -->
+    <group name="grpCreditoPlazo80">
+        <groupExpression><![CDATA[$P{condicionVenta}]]></groupExpression>
+        <groupHeader>
+            <band height="110">
+                <printWhenExpression><![CDATA[$P{condicionVenta} != null && $P{condicionVenta}.equals("CREDITO") && $P{tipoCredito} != null && $P{tipoCredito}.equals("A PLAZO")]]></printWhenExpression>
+
+                <line><reportElement x="0" y="2" width="217" height="1"/></line>
+                <staticText><reportElement x="0" y="6" width="53" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Fecha/hora:]]></text></staticText>
+                <textField><reportElement x="53" y="6" width="164" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{fechaHora}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="19" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[RUC/CI:]]></text></staticText>
+                <textField><reportElement x="40" y="19" width="177" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{ruc}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="32" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Cliente:]]></text></staticText>
+                <textField textAdjust="StretchHeight"><reportElement x="40" y="32" width="177" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{razonSocial}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="45" width="52" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Condición:]]></text></staticText>
+                <textField><reportElement x="52" y="45" width="65" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{condicionVenta}]]></textFieldExpression></textField>
+                <staticText><reportElement x="118" y="45" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Moneda:]]></text></staticText>
+                <textField><reportElement x="158" y="45" width="59" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{moneda}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="58" width="40" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Email:]]></text></staticText>
+                <textField textAdjust="StretchHeight"><reportElement x="40" y="58" width="177" height="12"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{correoElectronico}]]></textFieldExpression></textField>
+                <staticText><reportElement x="0" y="71" width="53" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Crédito:]]></text></staticText>
+                <staticText><reportElement x="53" y="71" width="70" height="12"/><textElement><font size="7"/></textElement><text><![CDATA[A PLAZO]]></text></staticText>
+                <staticText><reportElement x="0" y="84" width="62" height="12"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[Descripción:]]></text></staticText>
+                <textField textAdjust="StretchHeight"><reportElement x="62" y="84" width="155" height="22"/><textElement><font size="7"/></textElement><textFieldExpression><![CDATA[$P{creditoAPlazoDescripcion}]]></textFieldExpression></textField>
+                <line><reportElement x="0" y="108" width="217" height="1"/></line>
+            </band>
+        </groupHeader>
+    </group>
+
+    <title>
+        <band height="134">
+            <textField>
+                <reportElement x="0" y="0" width="217" height="13"/>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$P{tipoDocumentoTop}]]></textFieldExpression>
+            </textField>
+            <line><reportElement x="0" y="15" width="217" height="1"/></line>
+
+            <textField textAdjust="StretchHeight">
+                <reportElement x="0" y="19" width="217" height="16"/>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="10" isBold="true"/></textElement>
+                <textFieldExpression><![CDATA[$P{empresaNombre}]]></textFieldExpression>
+            </textField>
+            <textField textAdjust="StretchHeight">
+                <reportElement x="0" y="36" width="217" height="13"/>
+                <textElement textAlignment="Center"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$P{empresaDireccion}]]></textFieldExpression>
+            </textField>
+            <textField>
+                <reportElement x="0" y="50" width="217" height="12"/>
+                <textElement textAlignment="Center"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[(($P{empresaCiudad} == null ? "" : $P{empresaCiudad}) + (($P{empresaTelefono} == null || $P{empresaTelefono}.trim().isEmpty()) ? "" : "  Tel: " + $P{empresaTelefono}))]]></textFieldExpression>
+            </textField>
+            <textField>
+                <reportElement x="0" y="63" width="217" height="12"/>
+                <textElement textAlignment="Center"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$P{empresaCorreoElectronico}]]></textFieldExpression>
+            </textField>
+
+            <textField>
+                <reportElement x="0" y="77" width="217" height="12"/>
+                <textElement textAlignment="Center"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA["RUC: " + ($P{empresaRuc} == null ? "" : $P{empresaRuc}) + "   Timbrado: " + ($P{empresaTimbrado} == null ? "" : $P{empresaTimbrado})]]></textFieldExpression>
+            </textField>
+            <textField>
+                <reportElement x="0" y="90" width="217" height="12"/>
+                <textElement textAlignment="Center"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA["Vigente desde: " + ($P{empresaVigenteDesde} == null ? "" : $P{empresaVigenteDesde})]]></textFieldExpression>
+            </textField>
+
+            <textField>
+                <reportElement x="0" y="104" width="217" height="17"/>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="11" isBold="true"/></textElement>
+                <textFieldExpression><![CDATA[$P{tipoDocumento}]]></textFieldExpression>
+            </textField>
+            <textField>
+                <reportElement x="0" y="121" width="217" height="13"/>
+                <textElement textAlignment="Center"><font size="8" isBold="true"/></textElement>
+                <textFieldExpression><![CDATA[$P{facturaId}]]></textFieldExpression>
+            </textField>
+        </band>
+    </title>
+
+    <detail>
+        <band height="42">
+            <componentElement>
+                <reportElement x="0" y="2" width="217" height="40"/>
+                <jr:table>
+                    <datasetRun subDataset="dsItemsFactura ">
+                        <dataSourceExpression><![CDATA[$P{ds}]]></dataSourceExpression>
+                    </datasetRun>
+
+                    <jr:column width="18">
+                        <jr:columnHeader style="TicketHeader" height="18">
+                            <staticText><reportElement x="0" y="0" width="18" height="18" mode="Transparent" forecolor="#000000"/><textElement textAlignment="Center" verticalAlignment="Middle"><font size="5.5" isBold="true"/></textElement><text><![CDATA[CANT]]></text></staticText>
+                        </jr:columnHeader>
+                        <jr:detailCell style="TicketCell" height="20">
+                            <textField textAdjust="StretchHeight"><reportElement x="0" y="0" width="18" height="20"/><textElement textAlignment="Center" verticalAlignment="Top"><font size="6"/></textElement><textFieldExpression><![CDATA[$F{cantidad}]]></textFieldExpression></textField>
+                        </jr:detailCell>
+                    </jr:column>
+
+                    <jr:column width="83">
+                        <jr:columnHeader style="TicketHeader" height="18">
+                            <staticText><reportElement x="0" y="0" width="83" height="18" mode="Transparent" forecolor="#000000"/><textElement verticalAlignment="Middle"><font size="5.5" isBold="true"/><paragraph leftIndent="2"/></textElement><text><![CDATA[DESCRIPCIÓN]]></text></staticText>
+                        </jr:columnHeader>
+                        <jr:detailCell style="TicketCell" height="20">
+                            <textField textAdjust="StretchHeight"><reportElement x="0" y="0" width="83" height="20"/><textElement><font size="6"/><paragraph leftIndent="2" rightIndent="1"/></textElement><textFieldExpression><![CDATA[$F{descripcion}]]></textFieldExpression></textField>
+                        </jr:detailCell>
+                    </jr:column>
+
+                    <jr:column width="32">
+                        <jr:columnHeader style="TicketHeader" height="18">
+                            <staticText><reportElement x="0" y="0" width="32" height="18" mode="Transparent" forecolor="#000000"/><textElement textAlignment="Right" verticalAlignment="Middle"><font size="5.5" isBold="true"/><paragraph rightIndent="1"/></textElement><text><![CDATA[P.UNIT]]></text></staticText>
+                        </jr:columnHeader>
+                        <jr:detailCell style="TicketCell" height="20">
+                            <textField textAdjust="StretchHeight"><reportElement x="0" y="0" width="32" height="20"/><textElement textAlignment="Right"><font size="6"/><paragraph rightIndent="1"/></textElement><textFieldExpression><![CDATA[$F{precioUnitario}]]></textFieldExpression></textField>
+                        </jr:detailCell>
+                    </jr:column>
+
+                    <jr:column width="28">
+                        <jr:columnHeader style="TicketHeader" height="18">
+                            <staticText><reportElement x="0" y="0" width="28" height="18" mode="Transparent" forecolor="#000000"/><textElement textAlignment="Right" verticalAlignment="Middle"><font size="5" isBold="true"/><paragraph rightIndent="1"/></textElement><text><![CDATA[EX]]></text></staticText>
+                        </jr:columnHeader>
+                        <jr:detailCell style="TicketCell" height="20">
+                            <textField textAdjust="StretchHeight"><reportElement x="0" y="0" width="28" height="20"/><textElement textAlignment="Right"><font size="6"/><paragraph rightIndent="1"/></textElement><textFieldExpression><![CDATA[$F{exentas}]]></textFieldExpression></textField>
+                        </jr:detailCell>
+                    </jr:column>
+
+                    <jr:column width="28">
+                        <jr:columnHeader style="TicketHeader" height="18">
+                            <staticText><reportElement x="0" y="0" width="28" height="18" mode="Transparent" forecolor="#000000"/><textElement textAlignment="Right" verticalAlignment="Middle"><font size="5" isBold="true"/><paragraph rightIndent="1"/></textElement><text><![CDATA[5%]]></text></staticText>
+                        </jr:columnHeader>
+                        <jr:detailCell style="TicketCell" height="20">
+                            <textField textAdjust="StretchHeight"><reportElement x="0" y="0" width="28" height="20"/><textElement textAlignment="Right"><font size="6"/><paragraph rightIndent="1"/></textElement><textFieldExpression><![CDATA[$F{iva5}]]></textFieldExpression></textField>
+                        </jr:detailCell>
+                    </jr:column>
+
+                    <jr:column width="28">
+                        <jr:columnHeader style="TicketHeader" height="18">
+                            <staticText><reportElement x="0" y="0" width="28" height="18" mode="Transparent" forecolor="#000000"/><textElement textAlignment="Right" verticalAlignment="Middle"><font size="5" isBold="true"/><paragraph rightIndent="1"/></textElement><text><![CDATA[10%]]></text></staticText>
+                        </jr:columnHeader>
+                        <jr:detailCell style="TicketCell" height="20">
+                            <textField textAdjust="StretchHeight"><reportElement x="0" y="0" width="28" height="20"/><textElement textAlignment="Right"><font size="6"/><paragraph rightIndent="1"/></textElement><textFieldExpression><![CDATA[$F{iva10}]]></textFieldExpression></textField>
+                        </jr:detailCell>
+                    </jr:column>
+                </jr:table>
+            </componentElement>
+        </band>
+    </detail>
+
+    <summary>
+        <band height="330" splitType="Stretch">
+            <line><reportElement x="0" y="3" width="217" height="1"/></line>
+
+            <staticText><reportElement x="0" y="7" width="130" height="18"/><textElement verticalAlignment="Middle"><font size="9" isBold="true"/></textElement><text><![CDATA[TOTAL:]]></text></staticText>
+            <textField><reportElement x="130" y="7" width="87" height="18"/><textElement textAlignment="Right" verticalAlignment="Middle"><font size="10" isBold="true"/></textElement><textFieldExpression><![CDATA[$P{total}]]></textFieldExpression></textField>
+
+            <staticText><reportElement x="0" y="27" width="62" height="13"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[IVA 5%:]]></text></staticText>
+            <textField><reportElement x="62" y="27" width="46" height="13"/><textElement textAlignment="Right"><font size="7"/></textElement><textFieldExpression><![CDATA[$P{totalIva5}]]></textFieldExpression></textField>
+            <staticText><reportElement x="110" y="27" width="55" height="13"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[IVA 10%:]]></text></staticText>
+            <textField><reportElement x="165" y="27" width="52" height="13"/><textElement textAlignment="Right"><font size="7"/></textElement><textFieldExpression><![CDATA[$P{totalIva10}]]></textFieldExpression></textField>
+
+            <staticText><reportElement x="0" y="41" width="130" height="13"/><textElement><font size="7" isBold="true"/></textElement><text><![CDATA[TOTAL IVA:]]></text></staticText>
+            <textField><reportElement x="130" y="41" width="87" height="13"/><textElement textAlignment="Right"><font size="7" isBold="true"/></textElement><textFieldExpression><![CDATA[$P{totalIva}]]></textFieldExpression></textField>
+
+            <line><reportElement x="0" y="57" width="217" height="1"/></line>
+
+            <staticText>
+                <reportElement x="0" y="62" width="217" height="24"/>
+                <textElement textAlignment="Center"><font size="6.5"/></textElement>
+                <text><![CDATA[Consulte la validez de esta Factura Electrónica con el número de CDC impreso en:]]></text>
+            </staticText>
+            <staticText>
+                <reportElement x="0" y="87" width="217" height="12"/>
+                <textElement textAlignment="Center"><font size="6.5" isBold="true"/></textElement>
+                <text><![CDATA[https://ekuatia.set.gov.py/consultas/]]></text>
+            </staticText>
+
+            <image onErrorType="Blank" scaleImage="RetainShape">
+                <reportElement x="48" y="104" width="120" height="120"/>
+                <imageExpression><![CDATA[$P{qr}]]></imageExpression>
+            </image>
+
+            <staticText><reportElement x="0" y="228" width="217" height="11"/><textElement textAlignment="Center"><font size="6" isBold="true"/></textElement><text><![CDATA[CDC]]></text></staticText>
+            <textField textAdjust="StretchHeight">
+                <reportElement x="4" y="240" width="209" height="26"/>
+                <textElement textAlignment="Center"><font size="6" isBold="true"/></textElement>
+                <textFieldExpression><![CDATA[$P{cdc}]]></textFieldExpression>
+            </textField>
+
+            <staticText>
+                <reportElement x="0" y="269" width="217" height="22"/>
+                <textElement textAlignment="Center"><font size="6"/></textElement>
+                <text><![CDATA[ESTE DOCUMENTO ES UNA REPRESENTACIÓN GRÁFICA DE UN DOCUMENTO ELECTRÓNICO (XML)]]></text>
+            </staticText>
+            <staticText>
+                <reportElement x="0" y="293" width="217" height="12"/>
+                <textElement textAlignment="Center"><font size="6" isBold="true"/></textElement>
+                <text><![CDATA[Información de interés del facturador electrónico emisor]]></text>
+            </staticText>
+            <staticText>
+                <reportElement x="0" y="306" width="217" height="24"/>
+                <textElement textAlignment="Center"><font size="5.5"/></textElement>
+                <text><![CDATA[Si su documento electrónico presenta algún error, podrá solicitar la modificación dentro de las 72 horas siguientes a la emisión de este comprobante.]]></text>
+            </staticText>
+        </band>
+    </summary>
+</jasperReport>
