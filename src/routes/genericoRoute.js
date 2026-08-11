@@ -4,6 +4,11 @@ const genericoController = require('../controllers/genericoController');
 const { authJwt } = require('../middleware/authJwt');
 
 routes.get(
+    '/ping',
+    genericoController.ping
+);
+
+routes.get(
     '/buscar',
     authJwt(),
     query('ruc').notEmpty().withMessage('Parámetro ruc requerido'),

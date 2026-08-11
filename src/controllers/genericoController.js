@@ -23,6 +23,18 @@ const getDatosByRuc = async (req, res) => {
     }
 }
 
+const ping = async (req, res) => {
+
+    const data = {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    };
+
+    return res.status(200).send(Response.success(data, 'API disponible'));
+}
+
 module.exports = {
-    getDatosByRuc
+    getDatosByRuc,
+    ping
 }

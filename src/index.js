@@ -12,7 +12,12 @@ app.use(cors())
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended : false }))
 
-cronJobs()
+// Los cronjobs SIFEN sólo corren en producción. Si ENTORNO es 'desa' o no está definido, no se registran.
+if (process.env.ENTORNO === 'prod') {
+    cronJobs()
+} else {
+    console.log(`Cronjobs deshabilitados (ENTORNO=${process.env.ENTORNO || 'no definido'})`)
+}
 
 app.use('/public', express.static(path.join(__dirname, '..', 'public')))
 app.use(routes)
