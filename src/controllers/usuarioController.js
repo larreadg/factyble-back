@@ -26,6 +26,43 @@ const authenticateUsuario = async (req, res) => {
     }
 }
 
+const generarApiKey = async (req, res) => {
+
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const apiKey = await usuarioService.generarApiKey(req.body);
+
+        return res.status(200).send(Response.success({ apiKey }, 'API key generada'));
+
+    } catch (error) {
+
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al generar api key');
+
+        return res.status(code).send(Response.error(message, code));
+
+    }
+}
+
+const revocarApiKey = async (req, res) => {
+
+    try {
+
+        const data = await usuarioService.revocarApiKey({ usuarioId: Number(req.usuario.id) });
+
+        return res.status(200).send(Response.success(data, 'API key revocada'));
+
+    } catch (error) {
+
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al revocar api key');
+
+        return res.status(code).send(Response.error(message, code));
+
+    }
+}
+
 const register = async (req, res) => {
 
     try {
@@ -66,6 +103,8 @@ const getCajasEstablecimientosByUsuarioId = async (req, res) => {
 
 module.exports = {
     authenticateUsuario,
+    generarApiKey,
+    revocarApiKey,
     register,
     getCajasEstablecimientosByUsuarioId,
 }

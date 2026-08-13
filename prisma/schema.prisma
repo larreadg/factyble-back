@@ -21,6 +21,9 @@ model Usuario {
   documento          String        @db.VarChar(20)
   telefono           String        @db.VarChar(20)
   password           String        @db.VarChar(100)
+  // JWT sin expiración firmado por la API, usado como API key vía header x-api-key.
+  // Nullable: se genera on-demand vía POST /usuario/authenticate/api-key, no existe al crear el usuario.
+  api_key            String?       @db.Text
   activo             Boolean       @default(true) @db.TinyInt
   fecha_creacion     DateTime      @default(now())
   fecha_modificacion DateTime      @updatedAt

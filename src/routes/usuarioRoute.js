@@ -25,6 +25,19 @@ routes.post(
 )
 
 routes.post(
+    '/authenticate/api-key',
+    body('usuario').notEmpty().withMessage('El email o usuario es obligatorio'),
+    body('password').notEmpty().withMessage('La contraseña es obligatoria'),
+    usuarioController.generarApiKey
+)
+
+routes.delete(
+    '/api-key',
+    authJwt(),
+    usuarioController.revocarApiKey
+)
+
+routes.post(
     '/register',
     body('email').isEmail().withMessage('Parámetro email requerito'),
     body('password', 'Parámetro password requerido').isString().notEmpty(),

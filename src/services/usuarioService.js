@@ -79,6 +79,90 @@ const authenticateUsuario = async ({ usuario, password, captcha, source } = {}) 
 
 }
 
+/**
+ * Autentica al usuario y genera (o regenera) un JWT sin expiración que se persiste
+ * en usuario.api_key. Al regenerar, el api key anterior queda invalidado porque el
+ * middleware exige que el x-api-key coincida con el valor guardado.
+ * @param {String} usuario
+ * @param {String} password
+ * @returns {Promise<String>} el api key (JWT sin expiración)
+ */
+const generarApiKey = async ({ usuario, password } = {}) => {
+
+    try {
+
+        const user = await prisma.usuario.findFirst({
+            where: {
+                email: usuario
+            },
+            include: {
+                roles: {
+                    include: {
+                        rol: true
+                    }
+                },
+                empresa: true
+            }
+        });
+
+        if(!user){
+            throw new ErrorApp('Error al autenticar usuario', 401);
+        }
+
+        const match = await comparePassword(password, user.password);
+
+        if(!match){
+            throw new ErrorApp('Error al autenticar usuario', 401);
+        }
+
+        const tokenPayload = {
+            id: user.id,
+            email: user.email,
+            documento: user.documento,
+            telefono: user.telefono,
+            empresaId: user.empresa_id,
+            empresaNombre: user.empresa ? user.empresa.nombre_empresa : null,
+            empresaRuc: user.empresa ? user.empresa.ruc : null,
+            roles: user.roles.map(r => r.rol.nombre)
+        }
+
+        const apiKey = generateToken(tokenPayload, { sinExpiracion: true });
+
+        await prisma.usuario.update({
+            where: { id: user.id },
+            data: { api_key: apiKey }
+        });
+
+        return apiKey;
+
+    } catch (error) {
+        ErrorApp.handleServiceError(error, 'Error al generar api key');
+    }
+
+}
+
+/**
+ * Revoca el api key del usuario seteando usuario.api_key a null. Como el middleware exige
+ * que el x-api-key coincida con el valor guardado, el api key anterior deja de ser válido.
+ * @param {Number} usuarioId
+ */
+const revocarApiKey = async ({ usuarioId } = {}) => {
+
+    try {
+
+        await prisma.usuario.update({
+            where: { id: usuarioId },
+            data: { api_key: null }
+        });
+
+        return { revocada: true };
+
+    } catch (error) {
+        ErrorApp.handleServiceError(error, 'Error al revocar api key');
+    }
+
+}
+
 const register = async ({ nombres, apellidos, email, documento, telefono, password, empresaId, roles } = {}) => {
 
     try {
@@ -181,6 +265,8 @@ const getCajasEstablecimientosByUsuarioId = async ({ usuarioId }) => {
 
 module.exports = {
     authenticateUsuario,
+    generarApiKey,
+    revocarApiKey,
     register,
     getCajasEstablecimientosByUsuarioId
 }
