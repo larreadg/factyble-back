@@ -4,14 +4,14 @@ const { encrypt, decrypt } = require("../../utils/crypto");
 const firmadorService = require("./firmadorService");
 
 /**
- * CRUD de `Certificado` (MIGRATION_PLAN.md §3.2), chequeo de vencimiento proactivo (causa
- * raíz documentada del error 0142 — v1/v2 nunca lo chequean, ver §1.4) y selección del
+ * CRUD de `Certificado`, chequeo de vencimiento proactivo (causa
+ * raíz documentada del error 0142 — v1/v2 nunca lo chequean) y selección del
  * certificado activo por empresa. La contraseña del .p12 se cifra a nivel aplicación
  * (`utils/crypto.js`, AES-256-GCM) antes de persistirse en `Certificado.clave` — nunca
  * texto plano (antipatrón J).
  *
  * "Un certificado activo a la vez por empresa" NO está garantizado por constraint de BD
- * (MySQL no tiene índice único parcial, ver MIGRATION_PLAN.md §2.2) — se enforza acá,
+ * (MySQL no tiene índice único parcial) — se enforza acá,
  * desactivando el certificado activo anterior dentro de la misma `prisma.$transaction`
  * en la que se activa el nuevo.
  */

@@ -7,7 +7,7 @@
  * existe, y case-insensitive) recorriendo el objeto completo, robusto ante variaciones de namespace.
  *
  * Nombres de campo confirmados contra una respuesta real de `consultaLote` (round-trip contra SIFEN
- * test, ver info2.json de auditoría / MIGRATION_PLAN.md, corrigió el spike #3 que estaba pendiente):
+ * test, ver info2.json de auditoría, corrigió el spike #3 que estaba pendiente):
  * el nodo por-documento se llama `gResProcLote` (**sin** "De" final, a diferencia de lo que se había
  * asumido inicialmente), el código/mensaje a nivel de sobre/lote de una respuesta de `consultaLote`
  * vienen en `dCodResLot`/`dMsgResLot` (no `dCodRes`/`dMsgRes`, que a ese nivel son los del *documento*,
@@ -28,7 +28,7 @@
  * — pensado para que, al extraer el código a nivel de sobre/lote de una respuesta de `consultaLote`,
  * la búsqueda nunca pueda terminar devolviendo el código de un documento individual anidado dentro de
  * `gResProcLoteDe`, sin importar el namespace/anidamiento real (todavía no confirmado contra una
- * respuesta real de SIFEN, ver spike #3 en MIGRATION_PLAN.md). No cambia el comportamiento para
+ * respuesta real de SIFEN, ver spike #3). No cambia el comportamiento para
  * llamadas que no pasan esta opción.
  * @param {*} obj - Objeto (o valor) donde buscar
  * @param {string} sufijo - Sufijo de nombre de tag a buscar (case-insensitive), p. ej. "dCodRes"

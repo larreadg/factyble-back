@@ -15,7 +15,18 @@ const adjuntoLogoFactyble = () => ({
     contentDisposition: 'inline',
 })
 
+// Un receptor puede no tener email: facturas innominadas (consumidor final no identificado, sin
+// destinatario) y facturas simples emitidas sin `personaEmail`. En esos casos se omite el envío en vez
+// de dejar que nodemailer falle con "No recipients defined" (que igual se traga el try/catch del
+// llamador, pero ensucia los logs con un error que no es tal). Chequeo mínimo de formato de email.
+const esEmailEnviable = (email) => typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+
 const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, emailEmpresa, xmlFirmado }) => {
+
+    if (!esEmailEnviable(email)) {
+        console.log(`Factura Nro. ${nroFactura} sin email de destinatario válido — se omite el envío por correo`)
+        return
+    }
 
     let filePath = path.join(__dirname, '..', 'resources', 'facturaTemplate.html')
     let html = fs.readFileSync(filePath, {encoding:'utf-8'})
@@ -45,7 +56,7 @@ const enviarFactura = async ({ email, cdc, cliente, uuid, nroFactura, empresa, e
     ]
 
     // El XML firmado vive en la BD (`xml_firmado`), no en un archivo servido por la API PHP legacy
-    // (antipatrón F, MIGRATION_PLAN.md §2.2) — se recibe ya como contenido, sin fetch por HTTP.
+    // (antipatrón F) — se recibe ya como contenido, sin fetch por HTTP.
     // Puede venir vacío para una Factura histórica (emitida antes del corte, sin xml_firmado propio —
     // AUD-001, STATIC_AUDIT_FINDINGS.json): en ese caso se manda el mail sin adjuntar el XML en vez de
     // fallar el envío completo (antes, `Buffer.from(undefined)` tiraba directo).
@@ -105,6 +116,11 @@ const enviarErrorFactura = async ({ email, nroFactura, errorFactura, empresa }) 
 
 const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito, empresa, emailEmpresa, xmlFirmado }) => {
 
+    if (!esEmailEnviable(email)) {
+        console.log(`Nota de crédito Nro. ${nroNotaDeCredito} sin email de destinatario válido — se omite el envío por correo`)
+        return
+    }
+
     let filePath = path.join(__dirname, '..', 'resources', 'notaDeCreditoTemplate.html')
     let html = fs.readFileSync(filePath, {encoding:'utf-8'})
     let pdfPath = path.join(__dirname, '..', '..', 'public', `${uuid}.pdf`)
@@ -133,7 +149,7 @@ const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito
     ]
 
     // El XML firmado vive en la BD (`xml_firmado`), no en un archivo servido por la API PHP legacy
-    // (antipatrón F, MIGRATION_PLAN.md §2.2) — se recibe ya como contenido, sin fetch por HTTP.
+    // (antipatrón F) — se recibe ya como contenido, sin fetch por HTTP.
     // Puede venir vacío para una Nota de Crédito histórica (AUD-001, STATIC_AUDIT_FINDINGS.json): en
     // ese caso se manda el mail sin adjuntar el XML en vez de fallar el envío completo.
     if (xmlFirmado) {
@@ -233,7 +249,7 @@ const enviarErrorNotaDeCredito = async ({ email, nroNotaDeCredito, errorNotaDeCr
 
 /**
  * Alerta interna (no es un mail a un cliente) para el job `alertaCertificadosPorVencer`
- * (`cronJobs.js`, MIGRATION_PLAN.md §3.4) — antes solo quedaba en `console.warn` (AUD-014,
+ * (`cronJobs.js`) — antes solo quedaba en `console.warn` (AUD-014,
  * STATIC_AUDIT_FINDINGS.json). Envía a `destinatario` (configurable vía `SIFEN_ALERTA_EMAIL`, ver
  * `.env.example`) el listado de certificados en estado `POR_VENCER`/`VENCIDO`. No usa un template
  * HTML de archivo (a diferencia de `enviarFactura`/etc.) porque es un mail técnico/operativo, no

@@ -70,7 +70,12 @@ model Empresa {
   email                     String             @db.VarChar(255)
   ciudad                    String             @db.VarChar(100)
   logo                      String?            @db.VarChar(255)
-  // Datos fiscales SIFEN (gap analysis MIGRATION_PLAN.md §2.2) — nullable: se backfillean antes del corte, no existen hoy
+  // Nombre base de la plantilla de PDF de factura/nota de crédito (Factura, Factura80mm o
+  // FacturaBN — ver utils/plantillasPdf.js). Nullable: las empresas existentes no lo tienen y
+  // caen a la default histórica (FacturaBN) al imprimir; no se puede agregar NOT NULL a una tabla
+  // con filas de producción sin default/backfill.
+  plantilla_pdf             String?            @db.VarChar(50)
+  // Datos fiscales SIFEN — nullable: se backfillean antes del corte, no existen hoy
   ruc_sin_dv                String?            @db.VarChar(15)
   digito_verificador        String?            @db.VarChar(1)
   tipo_contribuyente        TipoContribuyente?
@@ -101,6 +106,10 @@ enum TipoIdentificacion {
   PASAPORTE
   IDENTIFICACION_TRIBUTARIA
   RUC
+  // Receptor innominado (consumidor final no identificado). Mapea a SIFEN iTipIDRec=5
+  // ("Innominado"): dNumIDRec=0 y dNomRec="Sin Nombre". Se emite con situacion_tributaria
+  // NO_CONTRIBUYENTE (iNatRec=2, iTiOpe=2 B2C). Agregado additivamente al enum.
+  INNOMINADO
 }
 
 enum SituacionTributaria {
@@ -180,7 +189,7 @@ model Factura {
   // idExterno del body de emisión; nullable por convención de columnas nuevas sobre tablas con filas
   // existentes y porque no todo documento proviene de una integración externa.
   id_externo            String?          @db.VarChar(255)
-  // Legacy (API PHP) — congelado, no se le escribe más luego del corte, se dropea en el apagado (MIGRATION_PLAN.md §4.4)
+  // Legacy (API PHP) — congelado, no se le escribe más luego del corte, se dropea en el apagado
   xml                   String?          @db.Text
   linkqr                String?          @db.Text
   sifen_estado          String?          @db.Text
@@ -188,7 +197,7 @@ model Factura {
   // estado_sifen pasa a RECHAZADO/ERROR — decisión explícita de no sumar un campo nuevo dado que ya
   // existía este, aunque venga del bloque legacy. sifen_cod_respuesta guarda el código asociado.
   sifen_estado_mensaje  String?          @db.Text
-  // Pipeline nativo SIFEN (MIGRATION_PLAN.md §2.2) — nullable hasta el corte, los escribe el nuevo pipeline desde Fase 2
+  // Pipeline nativo SIFEN — nullable hasta el corte, los escribe el nuevo pipeline desde Fase 2
   xml_firmado           String?          @db.MediumText
   estado_sifen          EstadoSifen?
   sifen_cod_respuesta   String?          @db.VarChar(10)
@@ -368,7 +377,7 @@ model NotaCredito {
   // idExterno del body de emisión; nullable por convención de columnas nuevas sobre tablas con filas
   // existentes y porque no toda nota de crédito proviene de una integración externa.
   id_externo            String?              @db.VarChar(255)
-  // Legacy (API PHP) — congelado, no se le escribe más luego del corte, se dropea en el apagado (MIGRATION_PLAN.md §4.4)
+  // Legacy (API PHP) — congelado, no se le escribe más luego del corte, se dropea en el apagado
   xml                   String?              @db.Text
   linkqr                String?              @db.Text
   sifen_estado          String?              @db.Text
@@ -376,7 +385,7 @@ model NotaCredito {
   // estado_sifen pasa a RECHAZADO/ERROR — decisión explícita de no sumar un campo nuevo dado que ya
   // existía este, aunque venga del bloque legacy. sifen_cod_respuesta guarda el código asociado.
   sifen_estado_mensaje  String?              @db.Text
-  // Pipeline nativo SIFEN (MIGRATION_PLAN.md §2.2) — nullable hasta el corte, los escribe el nuevo pipeline desde Fase 2
+  // Pipeline nativo SIFEN — nullable hasta el corte, los escribe el nuevo pipeline desde Fase 2
   xml_firmado           String?              @db.MediumText
   estado_sifen          EstadoSifen?
   sifen_cod_respuesta   String?              @db.VarChar(10)
@@ -520,7 +529,7 @@ model SecuenciaNotaCredito {
 }
 
 // ============================================================================
-// Dominio SIFEN (MIGRATION_PLAN.md — absorción de factyble-api)
+// Dominio SIFEN (absorción de factyble-api)
 // ============================================================================
 
 enum EstadoSifen {
@@ -634,7 +643,7 @@ model EventoSifen {
   nota_credito_id         Int?
   nota_credito            NotaCredito?    @relation(fields: [nota_credito_id], references: [id])
   // Payload específico del tipo de evento (rango/timbrado para inactivación, RUC/nombre para nominación, etc.)
-  // — JSON en vez de columnas dispersas nulleable, ver antipatrón V en MIGRATION_PLAN.md
+  // — JSON en vez de columnas dispersas nulleable (antipatrón V)
   datos_evento            Json?
   motivo                  String?         @db.Text
   secuencia_sifen         String?         @db.VarChar(50)

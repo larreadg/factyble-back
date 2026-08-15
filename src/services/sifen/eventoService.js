@@ -11,7 +11,7 @@ const { extraerCodigoYMensaje, extraerProtocoloAutorizacion } = require("../../u
 const { esAprobado } = require("../../utils/sifen/estadoHistorico");
 
 /**
- * Eventos SIFEN (MIGRATION_PLAN.md §3.1/§3.2) — solo Cancelación implementada (Decisión cerrada,
+ * Eventos SIFEN — solo Cancelación implementada (Decisión cerrada,
  * alcance de eventos). Camino **síncrono** contra `evento.wsdl`, no pasa por `loteService` (SIFEN no
  * ofrece envío de eventos por lote).
  *
@@ -47,7 +47,7 @@ const generarDId = () => Date.now();
  * El registro `EventoSifen` se crea *antes* de llamar a SIFEN (con el XML sin firmar todavía) y se va
  * completando a medida que avanza el pipeline — así, si el proceso se cae a mitad de camino, queda un
  * registro consultable de que hubo un intento de cancelación, en vez de una llamada "fantasma" que no
- * dejó rastro (mismo espíritu que el antipatrón P documentado en MIGRATION_PLAN.md).
+ * dejó rastro (mismo espíritu que el antipatrón P).
  * @param {"FACTURA"|"NOTA_CREDITO"} tipoDoc
  * @param {number} documentoId - Id de la Factura o NotaCredito a cancelar
  * @param {string} motivo - Motivo de la cancelación (5 a 500 caracteres, exigido por SIFEN)

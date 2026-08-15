@@ -3,8 +3,8 @@ const ErrorApp = require("./error");
 
 /**
  * Cifrado simétrico reversible de secretos a nivel aplicación (p. ej. la contraseña de un
- * certificado .p12 en `certificadoService.js`, ver MIGRATION_PLAN.md §2.2/§3.2 — antipatrón J
- * de la API PHP legacy: contraseña de certificado en texto plano en BD).
+ * certificado .p12 en `certificadoService.js` — antipatrón J de la API PHP legacy:
+ * contraseña de certificado en texto plano en BD).
  * AES-256-GCM: la clave (`CERT_ENCRYPTION_KEY`, 32 bytes en hex, generada con
  * `crypto.randomBytes(32).toString('hex')`) vive solo en variable de entorno, nunca en BD.
  */

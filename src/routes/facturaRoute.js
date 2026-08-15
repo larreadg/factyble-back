@@ -6,17 +6,23 @@ const { validarFields } = require('../utils/fields');
 const { CAMPOS_FACTURA } = require('../services/facturaService');
 const { validarCantidad } = require('../utils/facturacion');
 
+// Para una factura innominada (consumidor final no identificado) los datos del receptor no aplican:
+// el receptor se emite como "Sin Nombre" (SIFEN iTipIDRec=5). Cuando `innominado` es true se omiten las
+// validaciones de ruc/razonSocial/situacionTributaria/email.
+const noInnominado = (value, { req }) => req.body.innominado !== true;
+
 routes.post(
     '/',
     authJwt(['ADMIN']),
-    body('ruc', 'Parámetro ruc requerido').notEmpty().isString(),
-    body('razonSocial', 'Parámetro razonSocial requerido').notEmpty().isString(),
-    body('situacionTributaria', 'Parámetro situacionTributaria requerido').notEmpty().isIn([
+    body('innominado', 'Parámetro innominado debe ser booleano').optional().isBoolean({ strict: true }),
+    body('ruc', 'Parámetro ruc requerido').if(noInnominado).notEmpty().isString(),
+    body('razonSocial', 'Parámetro razonSocial requerido').if(noInnominado).notEmpty().isString(),
+    body('situacionTributaria', 'Parámetro situacionTributaria requerido').if(noInnominado).notEmpty().isIn([
         'CONTRIBUYENTE','NO_CONTRIBUYENTE','NO_DOMICILIADO'
     ]),
     body('condicionVenta', 'Parámetro condicionVenta requerido').isIn(['CONTADO', 'CREDITO']),
     body('direccion', 'Parámetro direccion requerido').optional().isString(),
-    body('email', 'Parámetro email requerido').isEmail(),
+    body('email', 'Parámetro email requerido').if(noInnominado).isEmail(),
     body('items', 'Parámetro items requerido').isArray({min: 1}),
     body('items.*', 'Parámetros item requerido Object').isObject(),
     body('items.*.cantidad', 'Parámetro cantidad debe ser numérico > 0, máx 4 decimales').custom(validarCantidad),
@@ -69,11 +75,12 @@ routes.post(
 routes.post(
     '/simple',
     authJwt(['ADMIN']),
-    body('situacionTributaria', 'Parámetro situacionTributaria requerido').notEmpty().isIn([
+    body('innominado', 'Parámetro innominado debe ser booleano').optional().isBoolean({ strict: true }),
+    body('situacionTributaria', 'Parámetro situacionTributaria requerido').if(noInnominado).notEmpty().isIn([
         'CONTRIBUYENTE','NO_CONTRIBUYENTE'
     ]),
-    body('personaDocumento', 'Parámetro personaDocumento requerido').notEmpty().isString(),
-    body('personaNombre', 'Parámetro personaNombre requerido').notEmpty().isString(),
+    body('personaDocumento', 'Parámetro personaDocumento requerido').if(noInnominado).notEmpty().isString(),
+    body('personaNombre', 'Parámetro personaNombre requerido').if(noInnominado).notEmpty().isString(),
     body('personaEmail', 'Parámetro personaEmail inválido').optional({ checkFalsy: true }).isEmail(),
     body('condicionVenta', 'Parámetro condicionVenta requerido').notEmpty().isIn(['CONTADO', 'CREDITO']),
     body('items', 'Parámetro items requerido').isArray({min: 1}),

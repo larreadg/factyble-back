@@ -2,7 +2,7 @@ const prisma = require("../../prisma/cliente");
 const ErrorApp = require("../../utils/error");
 
 /**
- * Trazabilidad request/response de toda interacción con SIFEN (MIGRATION_PLAN.md §3.2/§3.5) —
+ * Trazabilidad request/response de toda interacción con SIFEN —
  * v1/v2 no tienen ningún registro de esto, lo que hace imposible diagnosticar después del hecho
  * un rechazo como el error 0142. `registrarInteraccion` es la función central: ningún llamado a
  * SIFEN (`sifenClientService.recibeLote/evento/consultaLote/consulta/consultaRuc`, ni la firma vía

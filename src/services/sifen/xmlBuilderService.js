@@ -15,7 +15,7 @@ dayjs.extend(timezone);
 // offset -03:00 real, sin depender de las reglas de DST históricas de la entrada de Asunción.
 const ZONA_HORARIA_FACTURACION = "America/Argentina/Buenos_Aires";
 
-const VERSION_FORMATO = 150; // dVerFor, plantilla siRecepDE_v150.xsd (ver MIGRATION_PLAN.md §1.2)
+const VERSION_FORMATO = 150; // dVerFor, plantilla siRecepDE_v150.xsd
 const TIPO_DOCUMENTO_FACTURA = 1;
 const TIPO_DOCUMENTO_NOTA_CREDITO = 5;
 const TIPO_EMISION_NORMAL = 1; // 2=Contingencia, fuera de alcance (ver Decisiones cerradas)
@@ -41,7 +41,7 @@ const MOTIVO_NOTA_CREDITO_DEFAULT = 1; // "Devolución y Ajuste de precios"
 
 // Factura no registra plazo de crédito real (sin fecha de vencimiento ni cuotas en el schema).
 // Se informa un plazo fijo en días como default documentado, vía condicion.credito.tipo=1 (Plazo,
-// no Cuota) para no inventar datos de cuotas que no existen — ver nota en MIGRATION_PLAN.md.
+// no Cuota) para no inventar datos de cuotas que no existen.
 const PLAZO_CREDITO_DIAS_DEFAULT = "30";
 
 const TIPO_CONTRIBUYENTE_SIFEN = { FISICA: 1, JURIDICA: 2 };
@@ -52,11 +52,16 @@ const TIPO_DOCUMENTO_RECEPTOR_SIFEN = {
   PASAPORTE: 2,
   CARNE_DE_RESIDENCIA: 4,
   IDENTIFICACION_TRIBUTARIA: 9,
+  INNOMINADO: 5,
 };
 
+// Nombre fijo del receptor innominado (dNomRec). Ver mapearClienteInnominado para por qué es
+// obligatorio pasarlo explícitamente.
+const RAZON_SOCIAL_INNOMINADO = "Sin Nombre";
+
 // Cliente no distingue Física/Jurídica (sin campo en el schema). Se asume Jurídica por defecto para
-// receptores contribuyentes (perfil B2B típico de facturación con RUC) — documentado como gap, ver
-// MIGRATION_PLAN.md. Si se necesita precisión, agregar Cliente.tipo_contribuyente.
+// receptores contribuyentes (perfil B2B típico de facturación con RUC) — documentado como gap.
+// Si se necesita precisión, agregar Cliente.tipo_contribuyente.
 const TIPO_CONTRIBUYENTE_CLIENTE_DEFAULT = 2;
 
 // iAfecIVA/dTasaIVA/dPropIVA por tasa: 3=Exento (dPropIVA debe ser 0), 1=Gravado IVA (dPropIVA debe
@@ -113,7 +118,7 @@ const formatearFechaISO = (fecha) => dayjs.utc(fecha).format("YYYY-MM-DD");
 const construirParamsEmpresa = (empresa) => {
   if (!empresa.tipo_contribuyente || !empresa.tipo_impuesto || !empresa.cod_actividad_principal) {
     throw new ErrorApp(
-      "La empresa no tiene completos los datos fiscales SIFEN (tipo_contribuyente/tipo_impuesto/actividad economica) — ver desvio #3 de MIGRATION_PLAN.md",
+      "La empresa no tiene completos los datos fiscales SIFEN (tipo_contribuyente/tipo_impuesto/actividad economica)",
       400
     );
   }
@@ -162,7 +167,7 @@ const construirParamsEmpresa = (empresa) => {
       // recibe params.establecimientos[i].email (jsonDeMain.service.js) — sin `if` de validacion
       // propia que lo exija, omite el tag en silencio si falta. Establecimiento no tiene email propio
       // en el schema; se usa el de Empresa (campo obligatorio, no nullable) para los 3 (confirmado
-      // por validacion XSD ad-hoc contra siRecepDE_v150.xsd — ver MIGRATION_PLAN.md).
+      // por validacion XSD ad-hoc contra siRecepDE_v150.xsd).
       item.email = empresa.email;
       return item;
     }),
@@ -170,14 +175,43 @@ const construirParamsEmpresa = (empresa) => {
 };
 
 /**
+ * Arma el `data.cliente` de un receptor innominado (consumidor final no identificado) para xmlgen.
+ * Produce el nodo `gDatRec` del Manual Técnico SIFEN: iNatRec=2 (no contribuyente), iTiOpe=2 (B2C),
+ * iTipIDRec=5 ("Innominado"), dNumIDRec=0, dNomRec="Sin Nombre" — idéntico al que emitía la API PHP
+ * legacy cuando el cliente venía sin RUC.
+ *
+ * `razonSocial` se pasa explícitamente como "Sin Nombre": xmlgen (jsonDeMain.service.js:1122-1128)
+ * primero setea dNomRec="Sin Nombre" para documentoTipo=5 pero, unas líneas después, SIEMPRE
+ * sobrescribe dNomRec con `data.cliente.razonSocial.trim()`. Si no se lo pasa (o se pasa vacío) el
+ * nombre del receptor queda vacío / rompe con `.trim()` de undefined. `documentoNumero` se manda "0"
+ * por prolijidad, aunque xmlgen ya lo fuerza a "0" cuando documentoTipo===5.
+ * @returns {Object}
+ */
+const mapearClienteInnominado = () => ({
+  contribuyente: false,
+  tipoOperacion: TIPO_OPERACION_SIFEN.NO_CONTRIBUYENTE,
+  razonSocial: RAZON_SOCIAL_INNOMINADO,
+  pais: "PRY",
+  documentoTipo: TIPO_DOCUMENTO_RECEPTOR_SIFEN.INNOMINADO,
+  documentoNumero: "0",
+});
+
+/**
  * Mapea un Cliente de Prisma al `data.cliente` que espera xmlgen, según su `situacion_tributaria`.
  * Escapado de XML: no se hace acá — xml2js.Builder (usado internamente por xmlgen para serializar el
  * JSON a XML) escapa entities de texto por default; confirmado en la verificación ad-hoc de este
- * módulo (ver MIGRATION_PLAN.md). No replicar el antipatrón T (`.replace(/&/g, 'Y')`).
+ * módulo. No replicar el antipatrón T (`.replace(/&/g, 'Y')`).
  * @param {Object} cliente - Cliente de Prisma
  * @returns {Object}
  */
 const mapearCliente = (cliente) => {
+  // Receptor innominado (consumidor final no identificado): se detecta por tipo_identificacion, no por
+  // situacion_tributaria (que es NO_CONTRIBUYENTE, igual que una cédula/pasaporte). Debe resolverse
+  // antes de las ramas por situación tributaria.
+  if (cliente.tipo_identificacion === "INNOMINADO") {
+    return mapearClienteInnominado();
+  }
+
   const contribuyente = cliente.situacion_tributaria === "CONTRIBUYENTE";
   const noDomiciliado = cliente.situacion_tributaria === "NO_DOMICILIADO";
   const tipoOperacion = TIPO_OPERACION_SIFEN[cliente.situacion_tributaria];
@@ -413,7 +447,7 @@ const MOTIVO_CANCELACION_LONGITUD_MAX = 500;
  * Pipeline completo: este XML (sin firmar) → `firmadorService.firmarXmlEvento` (firma el nodo `rEve`
  * dentro del sobre, sin tocar el resto) → el resultado ya se puede pasar tal cual a
  * `sifenClientService.evento` (que espera el sobre SOAP completo, no solo el fragmento firmado — ver
- * comentario en `sifenClientService.js`/spike #2 de MIGRATION_PLAN.md).
+ * comentario en `sifenClientService.js` / spike #2).
  * @param {Object} datos
  * @param {number} datos.id - Identificador numérico de la solicitud (`dId` del sobre SOAP)
  * @param {string} datos.cdc - CDC (44 caracteres) del documento a cancelar

@@ -35,7 +35,7 @@ const ejecutarJob = async (nombre, tarea) => {
 }
 
 /**
- * Jobs del pipeline nativo SIFEN (MIGRATION_PLAN.md §3.4). `facturaService.js`/
+ * Jobs del pipeline nativo SIFEN. `facturaService.js`/
  * `notaDeCreditoService.js` fueron reescritos (Fase 5) para emitir a través de `loteService`/
  * `eventoService` y ya setean `estado_sifen = 'GENERADO'` al crear un documento — estos jobs son
  * ahora el único camino de envío/consulta a SIFEN. El sync legacy contra la API PHP

@@ -6,6 +6,7 @@ const { uploadEmpresaArchivos } = require('../middleware/uploadEmpresaArchivos')
 const { comprimirImagen } = require('../utils/comprimirImagen');
 const empresaController = require('../controllers/empresaController');
 const Response = require('../utils/response');
+const { PLANTILLAS_PDF } = require('../utils/plantillasPdf');
 
 const LOGO_MAX_BYTES = 300 * 1024;
 
@@ -105,6 +106,8 @@ routes.post(
     body('empresa.descMoneda').optional().isString(),
     body('empresa.csc', 'Parámetro empresa.csc es requerido').isString().notEmpty(),
     body('empresa.cscId', 'Parámetro empresa.cscId es requerido').isString().notEmpty(),
+    body('empresa.plantillaPdf').optional().isIn(PLANTILLAS_PDF)
+        .withMessage(`Parámetro empresa.plantillaPdf inválido (valores: ${PLANTILLAS_PDF.join(', ')})`),
 
     // Establecimientos + cajas + secuencias
     body('establecimientos', 'Parámetro establecimientos debe ser un array con al menos un elemento')
@@ -213,6 +216,8 @@ routes.put(
     body('descMoneda').optional().isString(),
     body('csc').optional().isString().notEmpty().withMessage('Parámetro csc debe ser un string no vacío'),
     body('cscId').optional().isString().notEmpty().withMessage('Parámetro cscId debe ser un string no vacío'),
+    body('plantillaPdf').optional().isIn(PLANTILLAS_PDF)
+        .withMessage(`Parámetro plantillaPdf inválido (valores: ${PLANTILLAS_PDF.join(', ')})`),
 
     // Certificado: alias/clave son opcionales, pero si se quiere renovar tienen que venir los
     // tres juntos (alias + clave + archivo) — un certificado a medio informar no sirve para

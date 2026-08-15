@@ -3,14 +3,14 @@ const ErrorApp = require("../../utils/error");
 
 /**
  * Wrapea `facturacionelectronicapy-setapi`. Expone deliberadamente solo `recibeLote`, `evento`,
- * `consultaLote`, `consulta` y `consultaRuc` (ver MIGRATION_PLAN.md §3.2) — nunca `recibe` (envío
+ * `consultaLote`, `consulta` y `consultaRuc` — nunca `recibe` (envío
  * síncrono individual), para que no exista ni la tentación de bifurcar el camino de emisión: el
  * único camino de emisión de Factura/NotaCredito es por lote (Decisión cerrada), incluso para
  * lotes de 1 solo documento.
  *
  * `SIFEN_ENV` se lee de `process.env` (mismo patrón que `qrService.js`) — la propia lib resuelve el
  * endpoint SOAP según este valor (`"test"` -> sifen-test.set.gov.py, cualquier otro -> producción;
- * confirmado por lectura de codigo en el spike #1, ver MIGRATION_PLAN.md "Resultados de los spikes").
+ * confirmado por lectura de codigo en el spike #1).
  *
  * Certificado (path + password ya descifrada) recibido explicito por parametro en cada llamada, sin
  * estado global (antipatron G) — mismo patron que `firmadorService.js`.
@@ -57,7 +57,7 @@ const recibeLote = async ({ id, xmls, certificadoPath, certificadoPassword, conf
 
 /**
  * Envia un evento (p. ej. cancelacion) ya firmado a SIFEN. Camino sincrono — SIFEN no ofrece envio
- * de eventos por lote (ver MIGRATION_PLAN.md, "Conflictos detectados").
+ * de eventos por lote.
  * @param {Object} datos
  * @param {number} datos.id - Identificador numerico de la solicitud (`dId` del sobre SOAP), generado por el caller
  * @param {string} datos.xml - XML de evento ya firmado (nodo `rEve`)

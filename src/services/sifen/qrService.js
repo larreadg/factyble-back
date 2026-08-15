@@ -6,8 +6,8 @@ const SIFEN_ENV = process.env.SIFEN_ENV === "prod" ? "prod" : "test";
 
 /**
  * Inyecta el link de consulta pública QR (`rDE > gCamFuFD > dCarQR`) en un XML ya firmado.
- * Reemplaza por completo el string-splicing frágil de la API PHP legacy (`agregarLinkXML.php`,
- * ver MIGRATION_PLAN.md §1.8): `qrgen.generateQR` parsea el XML con xml2js, arma el `preLinkQR`
+ * Reemplaza por completo el string-splicing frágil de la API PHP legacy
+ * (`agregarLinkXML.php`): `qrgen.generateQR` parsea el XML con xml2js, arma el `preLinkQR`
  * (CDC/fecha/receptor/totales/cantidad de items/DigestValue de la firma/IdCSC), calcula
  * `cHashQR` (SHA-256 plano de `preLink + CSC` — pese al nombre "HMAC-SHA256" que usa el manual
  * de SIFEN, no es un HMAC real, se replica tal cual) y reserializa el XML completo con

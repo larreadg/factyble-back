@@ -3,6 +3,7 @@ const path = require("path");
 const dayjs = require("dayjs");
 const QRCode = require("qrcode");
 const { formatNumber } = require("./format");
+const { resolverPlantillaPdf } = require("./plantillasPdf");
 const LOGOS_DIR = path.resolve(__dirname, "../..", process.env.LOGOS_DIR || "logos");
 const PUBLIC_QR = path.resolve(__dirname, '../../public/qr');
 const FACTYBLE_LOGO = path.resolve(__dirname, "..", "resources", "factura.png");
@@ -33,9 +34,12 @@ const generarQr = async (url, filename) => {
 };
 const generarPdf = async (datos) => {
   try {
-    // Rutas a JRXML y Jasper
-    const jrxmlPath  = path.resolve(__dirname, "..", "resources", "Factura.jrxml");
-    const jasperPath = path.resolve(__dirname, "..", "resources", "Factura.jasper");
+    // Rutas a JRXML y Jasper — el nombre base sale de la plantilla configurada en la empresa
+    // (Factura / Factura80mm / FacturaBN). `resolverPlantillaPdf` cae a la default si viene null
+    // o un valor no reconocido, así que acá siempre se resuelve a un par de archivos existente.
+    const plantilla  = resolverPlantillaPdf(datos.plantilla);
+    const jrxmlPath  = path.resolve(__dirname, "..", "resources", `${plantilla}.jrxml`);
+    const jasperPath = path.resolve(__dirname, "..", "resources", `${plantilla}.jasper`);
     const outputPath = path.resolve(__dirname, "../../public", `${datos.uuid}.pdf`);
 
     // 1) Compila el JRXML a Jasper fresco

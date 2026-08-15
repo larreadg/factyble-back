@@ -26,7 +26,7 @@ const CAMPOS_NOTA_CREDITO = [
   "factura", "eventos_sifen", "nota_credito_detalle", "caja", "establecimiento",
 ];
 
-// tipoDocumento SIFEN para el CDC (MIGRATION_PLAN.md §1.3) — 5=Nota de Credito, ver xmlBuilderService.js
+// tipoDocumento SIFEN para el CDC — 5=Nota de Credito, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_NOTA_CREDITO = 5;
 const CDC_TIPO_EMISION_NORMAL = 1;
 const CDC_TIPO_CONTRIBUYENTE = { FISICA: 1, JURIDICA: 2 };
@@ -161,7 +161,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     const notaDeCreditoUuid = uuidv4();
 
     // Se usa transacción y FOR UPDATE para bloquear la tabla al crear el número de factura por si hay concurrencia.
-    // La firma nativa (SIFEN, MIGRATION_PLAN.md Fase 5) participa de la misma transacción: si falla
+    // La firma nativa (SIFEN) participa de la misma transacción: si falla
     // (certificado vencido/ausente, datos fiscales incompletos de la empresa), todo se revierte junto
     // con la numeración recién asignada — no queda un número de Nota de Crédito "quemado".
     const notaDeCredito = await prisma.$transaction(async (tx) => {
@@ -194,7 +194,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
         codigoSeguridadAleatorio = generarCodigoSeguridad();
       }
 
-      // CDC calculado localmente (MIGRATION_PLAN.md §1.3) — ya no lo devuelve la API PHP legacy.
+      // CDC calculado localmente — ya no lo devuelve la API PHP legacy.
       const [rucSinDv, dvEmisor] = usuario.empresa.ruc.split('-');
       const cdc = construirCdc({
         tipoDocumento: CDC_TIPO_DOCUMENTO_NOTA_CREDITO,
@@ -210,8 +210,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       });
 
       // Crear nota de crédito (estado_sifen: GENERADO — el pipeline nativo la firma a continuación,
-      // en esta misma transacción; `xml`/`linkqr`/`sifen_estado` legacy quedan sin escribir, ver
-      // MIGRATION_PLAN.md §2.2)
+      // en esta misma transacción; `xml`/`linkqr`/`sifen_estado` legacy quedan sin escribir)
       const notaDeCredito = await tx.notaCredito.create({
         data: {
           factura_id: factura.id,
@@ -245,7 +244,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       });
 
       // Firma + QR sincrónicos (mismo comportamiento que ya tenía la API PHP legacy — solo el envío a
-      // SIFEN es asíncrono por lote, ver "Conflictos detectados" en MIGRATION_PLAN.md).
+      // SIFEN es asíncrono por lote).
       return loteService.firmarDocumentoRecienCreado('NOTA_CREDITO', notaDeCredito.id, tx);
     });
 
@@ -271,6 +270,7 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
     // Se espera la generación del PDF (antes era fire-and-forget) para poder devolver su nombre de
     // archivo al caller, mismo criterio que facturaService.emitirFactura.
     await generarPdf({
+      plantilla: usuario.empresa.plantilla_pdf,
       empresaLogo: usuario.empresa.logo,
       empresaRuc: usuario.empresa.ruc,
       empresaTimbrado: usuario.empresa.timbrado,
@@ -479,7 +479,7 @@ const cancelarNotaDeCredito = async (datos, datosUsuario) => {
       throw new ErrorApp('La nota de crédito ya se encuentra con estado Cancelado', 400)
     }
 
-    // Cancelación síncrona contra SIFEN (MIGRATION_PLAN.md §3.2) — eventoService valida por su cuenta
+    // Cancelación síncrona contra SIFEN — eventoService valida por su cuenta
     // que la Nota de Crédito esté APROBADA, arma+firma+envía el evento, y actualiza estado_sifen a CANCELADO.
     return await eventoService.cancelarNotaCredito({ notaCreditoId: datos.notaDeCreditoId, motivo: datos.motivo });
 

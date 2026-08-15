@@ -14,7 +14,7 @@ ENV PATH=$JAVA_HOME/bin:$PATH
 # Fuerza el huso horario usado para SIFEN. Necesario porque la librería vendorizada
 # facturacionelectronicapy-xmlsign estampa el campo dFecFirma del DE con new Date()
 # usando getters locales (no UTC, no dayjs.tz), a diferencia de xmlBuilderService.js/cdc.js
-# que sí convierten explícitamente (ver AUD-002, MIGRATION_PLAN.md).
+# que sí convierten explícitamente (ver AUD-002).
 # Sin esto, dFecFirma queda en hora UTC y SIFEN la rechaza como "adelantada" (código 1004).
 # Se usa America/Argentina/Buenos_Aires en vez de America/Asuncion: mismo offset real (-03:00,
 # oficial en Paraguay desde 2024) pero sin las reglas históricas de DST de la entrada de tzdata

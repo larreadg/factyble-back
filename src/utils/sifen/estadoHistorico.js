@@ -1,6 +1,6 @@
 /**
  * Lectura dual de estado para Factura/NotaCredito históricas (AUD-001, STATIC_AUDIT_FINDINGS.json;
- * MIGRATION_PLAN.md desvío #1 — "sifen_estado NO se convirtió a enum"). `estado_sifen` (enum nativo)
+ * "sifen_estado NO se convirtió a enum"). `estado_sifen` (enum nativo)
  * es NULL para todo documento emitido antes del corte a este pipeline (o por el flujo legacy mientras
  * convivió) — el dato real de aprobación/cancelación de esos documentos vive únicamente en
  * `sifen_estado` (texto libre, escrito históricamente por la API PHP legacy, ya congelado y sin

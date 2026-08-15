@@ -1,14 +1,13 @@
 /**
- * Mapa de interpretación de códigos de respuesta de negocio de SIFEN (`dCodRes`), MIGRATION_PLAN.md
- * §3.5. Solo interpreta códigos que llegaron dentro de una respuesta SOAP ya resuelta —
+ * Mapa de interpretación de códigos de respuesta de negocio de SIFEN (`dCodRes`). Solo interpreta
+ * códigos que llegaron dentro de una respuesta SOAP ya resuelta —
  * `sifenClientService` nunca rechaza la Promise ante un código de negocio, solo ante fallas de
  * transporte/parseo (timeout, red, 5xx, respuesta no-XML). Esas fallas de transporte NO pasan por
  * acá: `loteService`/`eventoService` las atrapan directamente (catch del `ErrorApp` que lanza
  * `sifenClientService`) y las tratan como reintentables sin necesidad de este mapa.
  *
- * NO INVENTAR CÓDIGOS (instrucción explícita de MIGRATION_PLAN.md §3.2) — cada entrada de este mapa
- * está sourceada, no adivinada:
- * - "0142": ya documentado en MIGRATION_PLAN.md desde el inicio del proyecto (motivo original de esta
+ * NO INVENTAR CÓDIGOS — cada entrada de este mapa está sourceada, no adivinada:
+ * - "0142": documentado desde el inicio del proyecto (motivo original de esta
  *   migración — certificado no asociado/vencido para el RUC emisor).
  * - "0260", "0300", "0301", "0360", "0361", "0362", "0363", "0420", "0421", "0422", "0600":
  *   confirmados contra el Manual Técnico SIFEN v150 oficial (DNIT), copia local
@@ -39,7 +38,7 @@ const CATEGORIA = {
   // "Ya fue AUTORIZADO otro documento…" — o sea el documento YA EXISTE como DTE en SIFEN. No es un
   // rechazo de contenido: es la prueba de que reintentar el envío no corresponde. Debe disparar
   // reconciliación por CDC (que resolverá a APROBADO), nunca `marcarLoteAgotado` ni un RECHAZADO
-  // terminal (MIGRATION_PLAN.md §reconciliación por CDC).
+  // terminal (ver la reconciliación por CDC en `loteService.js`).
   DUPLICADO: "DUPLICADO",
 };
 

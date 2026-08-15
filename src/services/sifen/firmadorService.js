@@ -2,7 +2,7 @@ const xmlsign = require("facturacionelectronicapy-xmlsign").default;
 const ErrorApp = require("../../utils/error");
 
 /**
- * Decisión de diseño (ver MIGRATION_PLAN.md, "Estado de implementación" §Fase 0 spike #2):
+ * Decisión de diseño (Fase 0, spike #2):
  * `xmlsign` tiene dos vías de firma intercambiables por este flag. La vía Java
  * (activada al omitirlo o pasar un valor falsy) arma un comando de shell por
  * interpolación de string sin escapar la contraseña del P12 — inyección de comandos

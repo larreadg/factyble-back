@@ -21,7 +21,7 @@ const {
 const { decryptTolerante } = require("../../utils/crypto");
 
 /**
- * Único camino de emisión de Factura/NotaCredito (MIGRATION_PLAN.md §3.1/§3.2, Decisión cerrada) —
+ * Único camino de emisión de Factura/NotaCredito (Decisión cerrada) —
  * incluso un lote de 1 solo documento pasa por acá, no hay atajo síncrono para "urgente" (se eliminó
  * `setapi.recibe`, ver `sifenClientService.js`).
  *
@@ -208,7 +208,7 @@ const firmarYPersistirDocumento = async (tipoDoc, documento, client = prisma) =>
     xmlConQr = resultadoQr.xmlConQr;
 
     // `linkqr` sigue siendo la misma columna que ya alimentaba `generarPdf.js`/el mail — no es un
-    // campo legacy congelado (a diferencia de `xml`/`sifen_estado`, ver MIGRATION_PLAN.md §2.2):
+    // campo legacy congelado (a diferencia de `xml`/`sifen_estado`):
     // solo cambia quién la calcula (ver docstring de `qrService.generarQr`).
     const documentoActualizado = await config.modelo(client).update({
       where: { id: documento.id },
@@ -246,11 +246,11 @@ const firmarYPersistirDocumento = async (tipoDoc, documento, client = prisma) =>
 
 /**
  * Firma y persiste, sincrónicamente, un documento recién creado por `facturaService`/
- * `notaDeCreditoService` (Fase 5, MIGRATION_PLAN.md §3.2) — a diferencia de `firmarPendientes()`
+ * `notaDeCreditoService` (Fase 5) — a diferencia de `firmarPendientes()`
  * (que corre en el cron cada 5 min sobre cualquier `GENERADO` suelto), este camino firma en el mismo
  * momento de la emisión, replicando el comportamiento que ya tenía la API PHP legacy (`data.php`
- * firmaba sincrónico, solo el envío a SIFEN era asíncrono por lote — ver "Conflictos detectados" en
- * MIGRATION_PLAN.md). Pensado para invocarse con la `tx` de la transacción de creación del caller: si
+ * firmaba sincrónico, solo el envío a SIFEN era asíncrono por lote). Pensado para invocarse con la
+ * `tx` de la transacción de creación del caller: si
  * la firma falla (certificado vencido/ausente, datos fiscales incompletos de la empresa), toda la
  * transacción se revierte junto con la numeración recién asignada — no queda un número de documento
  * "quemado" por un problema de configuración detectable en el momento (mismo criterio atómico que ya
@@ -299,7 +299,7 @@ const firmarDocumentoRecienCreado = async (tipoDoc, documentoId, client = prisma
  * número, nunca uno nuevo.
  *
  * **Antes de reenviar, consulta a SIFEN por CDC** (`reconciliarPorCdc`) — corrige el bug raíz de esta
- * función (MIGRATION_PLAN.md §reconciliación por CDC): la premisa vieja era "un documento que no llegó
+ * función (reconciliación por CDC): la premisa vieja era "un documento que no llegó
  * a APROBADO nunca fue consumido por SIFEN, así que reusar el CDC es seguro", pero un documento pudo
  * quedar en ERROR/RECHAZADO en nuestra base por una consulta de lote fallida/ambigua (p. ej.
  * `dCodResLot` ausente) aunque SIFEN lo haya aprobado. Reenviar el mismo CDC en ese caso choca con
@@ -536,7 +536,7 @@ const marcarFirmaAgotada = async (tipoDoc, documento, mensajeError) => {
  * Selecciona únicamente `estado_sifen = 'GENERADO'`, **nunca** `estado_sifen IS NULL` — a propósito.
  * `estado_sifen` es nullable y hoy vale `null` para el 100% de las Facturas/NotasCredito existentes
  * (tanto las históricas de antes de esta migración como cualquier factura nueva emitida por el flujo
- * legacy todavía vigente, ver desvío #1 de MIGRATION_PLAN.md — `facturaService.js`/
+ * legacy todavía vigente — `facturaService.js`/
  * `notaDeCreditoService.js` todavía no fueron reescritos para usar este pipeline, eso es Fase 5).
  * Solo el flujo de emisión nativo (todavía sin escribir) va a setear `estado_sifen = 'GENERADO'` al
  * crear el documento. Si acá se incluyera también `estado_sifen IS NULL`, `armarLotes()` intentaría
@@ -816,7 +816,7 @@ const registrarFalloEnvio = async (lote, mensajeError) => {
 };
 
 /**
- * Reconciliación por CDC previa a un RE-envío (Opción B, MIGRATION_PLAN.md §reconciliación por CDC).
+ * Reconciliación por CDC previa a un RE-envío (Opción B).
  * Un fallo de transporte en un envío previo es ambiguo — SIFEN pudo haber recibido el lote y perderse
  * la respuesta —, así que reenviar a ciegas arriesga un "CDC duplicado". Antes de reenviar, se consulta
  * cada documento del lote por CDC (`reconciliarPorCdc`, que sincroniza a APROBADO los que SIFEN ya
@@ -1040,7 +1040,7 @@ const actualizarDocumentoPorResultado = async (tipoDoc, loteId, resultadoDocumen
   // DUPLICADO NO se resuelve acá: dispara la reconciliación por CDC (siConsDE, fuente de verdad
   // autoritativa), que distingue 0422 (existe -> APROBADO) de 0420 (no existe -> se deja como está para
   // la próxima consulta/red de seguridad). Es exactamente lo que ya documentaba codigosRespuesta.js
-  // (categoría DUPLICADO) y MIGRATION_PLAN.md §reconciliación por CDC — este atajo lo contradecía.
+  // (categoría DUPLICADO) y la reconciliación por CDC — este atajo lo contradecía.
   if (interpretacion.categoria === CATEGORIA.DUPLICADO) {
     const documentoDuplicado = await modelo.findFirst({ where: { cdc, lote_id: loteId }, include: config.include });
     if (!documentoDuplicado) {
@@ -1086,8 +1086,8 @@ const actualizarDocumentoPorResultado = async (tipoDoc, loteId, resultadoDocumen
  * siConsDE) — la fuente de verdad autoritativa — y sincroniza `estado_sifen` en consecuencia. NUNCA
  * reenvía nada: solo lee y persiste el estado real, así que es seguro llamarla desde cualquier punto
  * (consulta de lote ambigua, red de seguridad, reintento manual). Es el mecanismo que corrige la
- * divergencia "SIFEN aprobó pero nuestra base quedó en ERROR/RECHAZADO" (MIGRATION_PLAN.md
- * §reconciliación por CDC): un CDC que SIFEN ya tiene autorizado (0260/0422, o el "duplicado" 1001/1002
+ * divergencia "SIFEN aprobó pero nuestra base quedó en ERROR/RECHAZADO" (reconciliación por CDC):
+ * un CDC que SIFEN ya tiene autorizado (0260/0422, o el "duplicado" 1001/1002
  * que igual prueba que el documento existe) se sincroniza a APROBADO en vez de reenviarse.
  *
  * Deliberadamente **nunca marca RECHAZADO** desde acá: un DE rechazado en validación no queda
@@ -1235,7 +1235,7 @@ const consultarLotes = async () => {
         // ausente/desconocido NO cae acá (ver el else de abajo): antes sí caía (interpretarCodigo(null)
         // devuelve RECHAZADO por default) y `marcarLoteAgotado` condenaba a ERROR documentos que SIFEN
         // podía tener aprobados — causa raíz del bug de "CDC duplicado" en el reintento
-        // (MIGRATION_PLAN.md §reconciliación por CDC).
+        // (reconciliación por CDC).
         await marcarLoteAgotado(lote, `Lote rechazado en consulta (${interpretacionLote.codigo}): ${mensaje || interpretacionLote.mensajeInterno}`);
         continue;
       } else {
@@ -1277,7 +1277,7 @@ const consultarLotes = async () => {
  * 1. `ENVIADO` estancado: una consulta de lote que nunca resolvió (p. ej. el lote se perdió del lado de
  *    SIFEN, o SIFEN devuelve sobres ambiguos).
  * 2. `ERROR` que **ya se había enviado**: típicamente condenado por una consulta de lote fallida/ambigua
- *    aunque SIFEN lo tuviera aprobado (el bug raíz, MIGRATION_PLAN.md §reconciliación por CDC). Un ERROR
+ *    aunque SIFEN lo tuviera aprobado (el bug raíz, reconciliación por CDC). Un ERROR
  *    de firma-agotada nunca se envió (`fecha_envio_sifen` null), así que queda excluido y no se toca.
  * 3. `RECHAZADO` que ya se había enviado: un RECHAZADO puede ser una mentira — un código no documentado
  *    o una respuesta ambigua de SIFEN (p. ej. durante una caída) que `interpretarCodigo` cae a RECHAZADO

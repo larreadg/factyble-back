@@ -29,10 +29,39 @@ const CAMPOS_FACTURA = [
   "detalles", "cliente_empresa", "eventos_sifen", "caja", "establecimiento",
 ];
 
-// tipoDocumento SIFEN para el CDC (MIGRATION_PLAN.md §1.3) — 1=Factura, ver xmlBuilderService.js
+// tipoDocumento SIFEN para el CDC — 1=Factura, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_FACTURA = 1;
 const CDC_TIPO_EMISION_NORMAL = 1;
 const CDC_TIPO_CONTRIBUYENTE = { FISICA: 1, JURIDICA: 2 };
+
+// Datos del Cliente sentinela para facturas innominadas (consumidor final no identificado). Es un
+// único registro global reutilizado por todas las empresas (enlazado a cada una vía su propio
+// ClienteEmpresa), igual que un cliente compartido por RUC. El receptor innominado real
+// (iTipIDRec=5, dNomRec="Sin Nombre") lo materializa xmlBuilderService.mapearCliente a partir de
+// tipo_identificacion=INNOMINADO; estos valores solo satisfacen el modelo Prisma y el KuDE/PDF.
+const CLIENTE_INNOMINADO = {
+  ruc: "0",
+  documento: "0",
+  razon_social: "Sin Nombre",
+  tipo_identificacion: "INNOMINADO",
+  situacion_tributaria: "NO_CONTRIBUYENTE",
+  nombres: "Sin Nombre",
+  apellidos: "",
+  pais: "PRY",
+};
+
+// Devuelve el Cliente sentinela innominado, creándolo la primera vez. Una eventual carrera entre dos
+// emisiones innominadas concurrentes solo podría crear un segundo sentinela idéntico (mismo XML), sin
+// impacto funcional — por eso no se usa transacción/upsert aquí. El `orderBy` fija cuál se devuelve de
+// forma estable (siempre el más antiguo) aunque llegaran a existir varios.
+const obtenerClienteInnominado = async () => {
+  const existente = await prisma.cliente.findFirst({
+    where: { tipo_identificacion: "INNOMINADO" },
+    orderBy: { id: "asc" },
+  });
+  if (existente) return existente;
+  return prisma.cliente.create({ data: CLIENTE_INNOMINADO });
+};
 
 const emitirFactura = async (datos, datosUsuario) => {
   try {
@@ -75,7 +104,9 @@ const emitirFactura = async (datos, datosUsuario) => {
     // Validar el RUC del receptor contra el padrón de contribuyentes antes de armar/emitir el DE
     // (Manual Técnico SIFEN v150, validaciones D206b/c/d) — sin esto SIFEN rechaza el documento
     // recién después de armado y enviado, con el RUC ya guardado como Cliente.
-    if (datos.situacionTributaria === "CONTRIBUYENTE") {
+    // No aplica a facturas innominadas: no hay receptor identificado que validar y los datos de
+    // receptor que pudieran venir en el body se ignoran (ver rama `datos.innominado === true` abajo).
+    if (datos.innominado !== true && datos.situacionTributaria === "CONTRIBUYENTE") {
       const [rucBaseRaw, dvInformado] = datos.ruc.includes("-") ? datos.ruc.split("-") : [datos.ruc, undefined];
 
       if (!dvInformado) {
@@ -115,7 +146,7 @@ const emitirFactura = async (datos, datosUsuario) => {
     // mismo motivo que la validación de RUC de arriba. Solo aplica a NO_CONTRIBUYENTE con
     // documento tipo CEDULA: pasaporte/carné de residencia no tienen un registro local contra el
     // que validar, y NO_DOMICILIADO es por definición un extranjero sin cédula paraguaya.
-    if (datos.situacionTributaria === "NO_CONTRIBUYENTE" && datos.tipoIdentificacion === "CEDULA") {
+    if (datos.innominado !== true && datos.situacionTributaria === "NO_CONTRIBUYENTE" && datos.tipoIdentificacion === "CEDULA") {
       const datosCedula = await consultarCedula(datos.ruc);
 
       if (!datosCedula) {
@@ -123,60 +154,69 @@ const emitirFactura = async (datos, datosUsuario) => {
       }
     }
 
-    //Buscar si existe cliente
-    let cliente = await prisma.cliente.findFirst({
-      where: { ruc: datos.ruc },
-    });
+    // Resolver el Cliente receptor. Para una factura innominada (consumidor final no identificado) no
+    // hay datos de cliente que validar ni persistir: se reutiliza el Cliente sentinela global. Para el
+    // resto se busca/crea/actualiza a partir de los datos del body.
+    let cliente;
 
-    const nombres = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[1] ? datos.razonSocial.split(",")[1].trim() : datos.razonSocial) : datos.razonSocial;
-    const apellidos = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[0] ? datos.razonSocial.split(",")[0].trim() : "") : "";
-
-    //Crear cliente si no existe
-    if (!cliente) {
-
-      cliente = await prisma.cliente.create({
-        data: {
-          ruc: datos.ruc,
-          razon_social: datos.razonSocial,
-          documento: datos.ruc,
-          tipo_identificacion: datos.situacionTributaria === "CONTRIBUYENTE" ? "RUC" : datos.tipoIdentificacion,
-          situacion_tributaria: datos.situacionTributaria,
-          dv: datos.ruc.includes("-") ? Number(datos.ruc.split("-")[1]) : null,
-          nombres,
-          apellidos,
-          direccion: datos.direccion,
-          email: datos.email,
-          telefono: datos.telefono,
-          pais: datos.situacionTributaria === "CONTRIBUYENTE" || datos.pais === '' ? "PRY" : datos.pais
-        },
-      });
-    }
-
-    //Actualizar datos de cliente
-    if (datos.tipoIdentificacion !== cliente.tipo_identificacion
-      || datos.situacionTributaria !== cliente.situacion_tributaria
-      || nombres !== cliente.nombres
-      || apellidos !== cliente.apellidos
-      || datos.direccion !== cliente.direccion
-      || datos.email !== cliente.email
-      || datos.telefono !== cliente.telefono
-      || datos.pais !== cliente.pais) {
-      await prisma.cliente.update({
-        data: {
-          tipo_identificacion: datos.tipoIdentificacion ? datos.tipoIdentificacion : cliente.tipo_identificacion,
-          situacion_tributaria: datos.situacionTributaria ? datos.situacionTributaria : cliente.situacion_tributaria,
-          nombres: nombres ? nombres : cliente.nombres,
-          apellidos: apellidos ? apellidos : cliente.apellidos,
-          direccion: datos.direccion ? datos.direccion : cliente.direccion,
-          email: datos.email ? datos.email : cliente.email,
-          telefono: datos.telefono ? datos.telefono : cliente.telefono,
-          pais: datos.pais ? datos.pais : cliente.pais,
-        },
-        where: { id: cliente.id },
+    if (datos.innominado === true) {
+      cliente = await obtenerClienteInnominado();
+    } else {
+      //Buscar si existe cliente
+      cliente = await prisma.cliente.findFirst({
+        where: { ruc: datos.ruc },
       });
 
-      cliente.direccion = datos.direccion ? datos.direccion : cliente.direccion;
-      cliente.email = datos.email ? datos.email : cliente.email;
+      const nombres = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[1] ? datos.razonSocial.split(",")[1].trim() : datos.razonSocial) : datos.razonSocial;
+      const apellidos = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[0] ? datos.razonSocial.split(",")[0].trim() : "") : "";
+
+      //Crear cliente si no existe
+      if (!cliente) {
+
+        cliente = await prisma.cliente.create({
+          data: {
+            ruc: datos.ruc,
+            razon_social: datos.razonSocial,
+            documento: datos.ruc,
+            tipo_identificacion: datos.situacionTributaria === "CONTRIBUYENTE" ? "RUC" : datos.tipoIdentificacion,
+            situacion_tributaria: datos.situacionTributaria,
+            dv: datos.ruc.includes("-") ? Number(datos.ruc.split("-")[1]) : null,
+            nombres,
+            apellidos,
+            direccion: datos.direccion,
+            email: datos.email,
+            telefono: datos.telefono,
+            pais: datos.situacionTributaria === "CONTRIBUYENTE" || datos.pais === '' ? "PRY" : datos.pais
+          },
+        });
+      }
+
+      //Actualizar datos de cliente
+      if (datos.tipoIdentificacion !== cliente.tipo_identificacion
+        || datos.situacionTributaria !== cliente.situacion_tributaria
+        || nombres !== cliente.nombres
+        || apellidos !== cliente.apellidos
+        || datos.direccion !== cliente.direccion
+        || datos.email !== cliente.email
+        || datos.telefono !== cliente.telefono
+        || datos.pais !== cliente.pais) {
+        await prisma.cliente.update({
+          data: {
+            tipo_identificacion: datos.tipoIdentificacion ? datos.tipoIdentificacion : cliente.tipo_identificacion,
+            situacion_tributaria: datos.situacionTributaria ? datos.situacionTributaria : cliente.situacion_tributaria,
+            nombres: nombres ? nombres : cliente.nombres,
+            apellidos: apellidos ? apellidos : cliente.apellidos,
+            direccion: datos.direccion ? datos.direccion : cliente.direccion,
+            email: datos.email ? datos.email : cliente.email,
+            telefono: datos.telefono ? datos.telefono : cliente.telefono,
+            pais: datos.pais ? datos.pais : cliente.pais,
+          },
+          where: { id: cliente.id },
+        });
+
+        cliente.direccion = datos.direccion ? datos.direccion : cliente.direccion;
+        cliente.email = datos.email ? datos.email : cliente.email;
+      }
     }
 
     //Buscar en cliente_empresa
@@ -229,7 +269,7 @@ const emitirFactura = async (datos, datosUsuario) => {
     const facturaUuid = uuidv4();
 
     // Se usa transacción y FOR UPDATE para bloquear la tabla al crear el número de factura por si hay concurrencia.
-    // La firma nativa (SIFEN, MIGRATION_PLAN.md Fase 5) participa de la misma transacción: si falla
+    // La firma nativa (SIFEN) participa de la misma transacción: si falla
     // (certificado vencido/ausente, datos fiscales incompletos de la empresa), todo se revierte junto
     // con la numeración recién asignada — no queda un número de Factura "quemado".
     const factura = await prisma.$transaction(async (tx) => {
@@ -259,7 +299,7 @@ const emitirFactura = async (datos, datosUsuario) => {
         codigoSeguridadAleatorio = generarCodigoSeguridad();
       }
 
-      // CDC calculado localmente (MIGRATION_PLAN.md §1.3) — ya no lo devuelve la API PHP legacy.
+      // CDC calculado localmente — ya no lo devuelve la API PHP legacy.
       const [rucSinDv, dvEmisor] = usuario.empresa.ruc.split('-');
       const cdc = construirCdc({
         tipoDocumento: CDC_TIPO_DOCUMENTO_FACTURA,
@@ -275,7 +315,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       });
 
       //Crear factura (estado_sifen: GENERADO — el pipeline nativo la firma a continuación, en esta
-      //misma transacción; `xml`/`linkqr`/`sifen_estado` legacy quedan sin escribir, ver MIGRATION_PLAN.md §2.2)
+      //misma transacción; `xml`/`linkqr`/`sifen_estado` legacy quedan sin escribir)
       const factura = await tx.factura.create({
         data: {
           numero_factura: numeroFactura,
@@ -310,7 +350,7 @@ const emitirFactura = async (datos, datosUsuario) => {
       });
 
       // Firma + QR sincrónicos (mismo comportamiento que ya tenía la API PHP legacy — solo el envío a
-      // SIFEN es asíncrono por lote, ver "Conflictos detectados" en MIGRATION_PLAN.md). Devuelve la
+      // SIFEN es asíncrono por lote). Devuelve la
       // Factura ya con `xml_firmado`/`linkqr`/`estado_sifen: FIRMADO`.
       return loteService.firmarDocumentoRecienCreado('FACTURA', factura.id, tx);
     })
@@ -352,6 +392,7 @@ const emitirFactura = async (datos, datosUsuario) => {
     // archivo al caller — lo necesita /factura/simple para que el bot de WhatsApp lo descargue apenas
     // responde la API, y de paso deja de tragarse en silencio un eventual error de JasperReports.
     await generarPdf({
+      plantilla: usuario.empresa.plantilla_pdf,
       empresaLogo: usuario.empresa.logo,
       empresaRuc: usuario.empresa.ruc,
       empresaTimbrado: usuario.empresa.timbrado,
@@ -733,7 +774,7 @@ const cancelarFactura = async (datos, datosUsuario) => {
       throw new ErrorApp(error, 400)
     }
 
-    // Cancelación síncrona contra SIFEN (MIGRATION_PLAN.md §3.2) — eventoService valida por su cuenta
+    // Cancelación síncrona contra SIFEN — eventoService valida por su cuenta
     // que la Factura esté APROBADA, arma+firma+envía el evento, y actualiza estado_sifen a CANCELADO.
     return await eventoService.cancelarFactura({ facturaId: datos.facturaId, motivo: datos.motivo });
 

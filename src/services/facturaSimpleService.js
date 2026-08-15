@@ -60,6 +60,9 @@ const emitirFacturaSimple = async (datos, datosUsuario) => {
     const totalIva = items.reduce((acc, item) => acc + item.impuesto, 0);
 
     const datosCompletos = {
+      // Factura innominada (consumidor final no identificado): facturaService.emitirFactura ignora los
+      // datos de receptor y usa el Cliente sentinela. Los campos persona* pueden venir ausentes.
+      innominado: datos.innominado === true,
       situacionTributaria: datos.situacionTributaria,
       tipoIdentificacion: datos.situacionTributaria === "CONTRIBUYENTE" ? "RUC" : "CEDULA",
       ruc: datos.personaDocumento,

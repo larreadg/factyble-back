@@ -77,7 +77,7 @@ const calcularDigitoVerificador = (cuerpo) => {
 };
 
 /**
- * Construye el CDC de 44 caracteres según el algoritmo de SIFEN (ver MIGRATION_PLAN.md §1.3):
+ * Construye el CDC de 44 caracteres según el algoritmo de SIFEN:
  * tipoDocumento(2) + rucSinDv(8) + dvEmisor(1) + establecimiento(3) + punto(3) + numero(7)
  * + tipoContribuyente(1) + fechaEmision[YYYYMMDD](8) + tipoEmision(1) + codigoSeguridad(9)
  * + dígito verificador(1).
