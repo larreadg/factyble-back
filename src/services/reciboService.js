@@ -6,6 +6,8 @@ const { NumerosALetras } = require("numero-a-letras");
 const { parseEntero } = require("../utils/number");
 const { formatNumberWithLeadingZeros } = require("../utils/format");
 const generarPdfRecibo = require("../utils/generarPdfRecibo");
+const firmarPdf = require("../utils/firmarPdf");
+const generarXmlRecibo = require("../utils/generarXmlRecibo");
 const { enviarRecibo } = require("./correoService");
 
 const isEmailValido = (email) => {
@@ -443,8 +445,9 @@ const emitirRecibo = async (datos, datosUsuario) => {
     });
 
     const reciboId = `${datos.establecimiento}-${datos.caja}-${formatNumberWithLeadingZeros(recibo.numero_recibo)}`;
+    const fechaHora = dayjs().format("YYYY-MM-DD HH:mm:ss");
 
-    await generarPdfRecibo({
+    const { outputPath: pdfPath } = await generarPdfRecibo({
       empresaLogo: usuario.empresa.logo,
       empresaFirma: `${usuario.empresa.ruc}.png`,
       reciboUuid,
@@ -468,7 +471,7 @@ const emitirRecibo = async (datos, datosUsuario) => {
           total: t.monto,
         })),
       ],
-      fechaHora: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+      fechaHora,
       ruc: rucTexto,
       razonSocial: datos.razonSocial,
       correoElectronico: datos.email,
@@ -488,16 +491,102 @@ const emitirRecibo = async (datos, datosUsuario) => {
       concepto: datos.concepto,
     });
 
-    if (isEmailValido(datos.email)) {
-      await enviarRecibo({
-        email: datos.email,
-        cliente: datos.razonSocial,
-        uuid: reciboUuid,
-        reciboId,
-        nroRecibo: recibo.numero_recibo,
-        empresa: usuario.empresa.nombre_empresa,
-        emailEmpresa: usuario.empresa.email,
+    // Firma digital (invisible) del PDF con el certificado .p12 de la empresa.
+    // Si la empresa no tiene certificado, se emite el recibo sin firmar.
+    try {
+      const resultadoFirma = await firmarPdf({
+        pdfPath,
+        certPath: usuario.empresa.cert_path,
+        certPw: usuario.empresa.cert_pw,
+        reason: `Recibo Nro. ${reciboId}`,
+        name: usuario.empresa.nombre_empresa,
+        location: usuario.empresa.ciudad,
       });
+      if (!resultadoFirma.firmado) {
+        console.warn(
+          `Recibo ${recibo.id}: PDF no firmado (${resultadoFirma.motivo})`
+        );
+      }
+    } catch (errorFirma) {
+      console.error(
+        `Recibo ${recibo.id}: error al firmar el PDF, se emite sin firma`,
+        errorFirma
+      );
+    }
+
+    // XML de datos del recibo (se guarda en public/ y se adjunta al correo).
+    // Es un efecto secundario post-commit: si falla, no debe romper la emision
+    // (el recibo ya esta persistido), para evitar respuestas de error que
+    // provoquen reintentos y recibos duplicados.
+    let xmlFilename;
+    try {
+      ({ filename: xmlFilename } = generarXmlRecibo({
+        reciboUuid,
+        reciboId,
+        numeroRecibo: recibo.numero_recibo,
+        fechaHora,
+        concepto: datos.concepto,
+        totalLetras,
+        empresa: {
+          ruc: usuario.empresa.ruc,
+          nombre: usuario.empresa.nombre_empresa,
+          timbrado: usuario.empresa.timbrado,
+        },
+        cliente: {
+          ruc: rucTexto,
+          razonSocial: datos.razonSocial,
+          email: datos.email,
+        },
+        facturas: facturasNormalizadas.map((f) => ({
+          numero: f.numeroDocumento,
+          montoAplicado: f.montoAplicado,
+        })),
+        notasCredito: notasCreditoNormalizadas.map((n) => ({
+          numero: n.numeroDocumento,
+          montoAplicado: n.montoAplicado,
+        })),
+        cheques: chequesNormalizados.map((c) => ({
+          banco: c.banco,
+          numeroReferencia: c.numeroReferencia,
+          monto: c.monto,
+        })),
+        transferencias: transferenciasNormalizadas.map((t) => ({
+          banco: t.banco,
+          numeroReferencia: t.numeroReferencia,
+          monto: t.monto,
+        })),
+        totalEfectivo,
+        totalCheques,
+        totalTransferencias,
+        total: totalRecibo,
+      }));
+    } catch (errorXml) {
+      console.error(
+        `Recibo ${recibo.id}: error al generar el XML, se emite sin XML`,
+        errorXml
+      );
+    }
+
+    // Envio de correo: tambien es un efecto secundario post-commit; un fallo de
+    // SMTP no debe romper la emision de un recibo ya persistido.
+    if (isEmailValido(datos.email)) {
+      try {
+        await enviarRecibo({
+          email: datos.email,
+          cliente: datos.razonSocial,
+          uuid: reciboUuid,
+          xmlFilename,
+          reciboId,
+          nroRecibo: recibo.numero_recibo,
+          empresa: usuario.empresa.nombre_empresa,
+          emailEmpresa: usuario.empresa.email,
+        });
+      } catch (errorCorreo) {
+        console.error(
+          `Recibo ${recibo.id}: error al enviar el correo del recibo`,
+          errorCorreo
+        );
+      }
     } else {
       console.warn(
         `Recibo ${recibo.id}: no se envio correo por email de cliente invalido o ausente`

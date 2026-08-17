@@ -65,6 +65,8 @@ model Empresa {
   email               String          @db.VarChar(255)
   ciudad              String          @db.VarChar(100)
   logo                String?         @db.VarChar(255)
+  cert_path           String?         @db.VarChar(255)
+  cert_pw             String?         @db.VarChar(255)
   fecha_creacion      DateTime        @default(now())
   fecha_modificacion  DateTime        @updatedAt  
   usuarios            Usuario[]

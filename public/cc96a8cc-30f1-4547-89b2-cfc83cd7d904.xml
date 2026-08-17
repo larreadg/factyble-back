@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Recibo>
+  <Identificacion>
+    <ReciboId>001-001-0000189</ReciboId>
+    <NumeroRecibo>189</NumeroRecibo>
+    <Uuid>cc96a8cc-30f1-4547-89b2-cfc83cd7d904</Uuid>
+    <FechaHora>2026-08-17 13:18:54</FechaHora>
+    <Concepto>Recibo de prueba - firma digital</Concepto>
+  </Identificacion>
+  <Empresa>
+    <Ruc>80038916-6</Ruc>
+    <Nombre>DYNAMUS MARKETING PROMOCIONAL S.A (DYSA)</Nombre>
+    <Timbrado>17314008</Timbrado>
+  </Empresa>
+  <Cliente>
+    <Ruc>5249657-0</Ruc>
+    <RazonSocial>LARREA BARRIOS, DIEGO GABRIEL</RazonSocial>
+    <Email>larreadg@gmail.com</Email>
+  </Cliente>
+  <DocumentosAplicados>
+      <Factura><Numero>25</Numero><MontoAplicado>1000</MontoAplicado></Factura>
+
+  </DocumentosAplicados>
+  <MediosDePago>
+    <Efectivo>1000</Efectivo>
+
+
+  </MediosDePago>
+  <Totales>
+    <Efectivo>1000</Efectivo>
+    <Cheques>0</Cheques>
+    <Transferencias>0</Transferencias>
+    <Total>1000</Total>
+    <TotalEnLetras>Un Mil Guaranies</TotalEnLetras>
+  </Totales>
+</Recibo>

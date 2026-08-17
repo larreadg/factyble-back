@@ -130,7 +130,7 @@ const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito
 
 }
 
-const enviarRecibo = async ({ email, cliente, uuid, reciboId, nroRecibo, empresa, emailEmpresa }) => {
+const enviarRecibo = async ({ email, cliente, uuid, xmlFilename, reciboId, nroRecibo, empresa, emailEmpresa }) => {
 
     let filePath = path.join(__dirname, '..', 'resources', 'reciboTemplate.html')
     let html = fs.readFileSync(filePath, {encoding:'utf-8'})
@@ -162,6 +162,14 @@ const enviarRecibo = async ({ email, cliente, uuid, reciboId, nroRecibo, empresa
                 contentType: 'application/pdf'
             }
         ]
+    }
+
+    if (xmlFilename) {
+        mailObj.attachments.push({
+            filename: xmlFilename,
+            path: path.join(__dirname, '..', '..', 'public', xmlFilename),
+            contentType: 'application/xml'
+        })
     }
 
     let info = await transporter.sendMail(mailObj)
