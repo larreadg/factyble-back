@@ -35,12 +35,14 @@
     "java": "^0.14.0",
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
+    "node-forge": "^1.4.0",
     "nodemailer": "^6.9.14",
     "numero-a-letras": "^1.0.6",
     "pg": "^8.12.0",
     "qrcode": "^1.5.3",
     "svg-captcha": "^1.4.0",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "xml-crypto": "^6.1.2"
   },
   "devDependencies": {
     "prisma": "^5.16.1"

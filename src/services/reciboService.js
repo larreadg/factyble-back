@@ -8,6 +8,7 @@ const { formatNumberWithLeadingZeros } = require("../utils/format");
 const generarPdfRecibo = require("../utils/generarPdfRecibo");
 const firmarPdf = require("../utils/firmarPdf");
 const generarXmlRecibo = require("../utils/generarXmlRecibo");
+const firmarXml = require("../utils/firmarXml");
 const { enviarRecibo } = require("./correoService");
 
 const isEmailValido = (email) => {
@@ -520,7 +521,8 @@ const emitirRecibo = async (datos, datosUsuario) => {
     // provoquen reintentos y recibos duplicados.
     let xmlFilename;
     try {
-      ({ filename: xmlFilename } = generarXmlRecibo({
+      let xmlPath;
+      ({ outputPath: xmlPath, filename: xmlFilename } = generarXmlRecibo({
         reciboUuid,
         reciboId,
         numeroRecibo: recibo.numero_recibo,
@@ -560,9 +562,21 @@ const emitirRecibo = async (datos, datosUsuario) => {
         totalTransferencias,
         total: totalRecibo,
       }));
+
+      // Firma digital (XML-DSig) del XML con el mismo certificado .p12.
+      const resultadoFirmaXml = firmarXml({
+        xmlPath,
+        certPath: usuario.empresa.cert_path,
+        certPw: usuario.empresa.cert_pw,
+      });
+      if (!resultadoFirmaXml.firmado) {
+        console.warn(
+          `Recibo ${recibo.id}: XML no firmado (${resultadoFirmaXml.motivo})`
+        );
+      }
     } catch (errorXml) {
       console.error(
-        `Recibo ${recibo.id}: error al generar el XML, se emite sin XML`,
+        `Recibo ${recibo.id}: error al generar/firmar el XML, se emite sin XML firmado`,
         errorXml
       );
     }
