@@ -12,5 +12,6 @@ routes.use('/geografia', require('./geografiaRoute'))
 routes.use('/rucs', require('./padronRucRoute'))
 routes.use('/reportes', require('./reporteRoute'))
 routes.use('/docs', require('./docsRoute'))
+routes.use('/procesar-factura', require('./procesarFacturaRoute'))
 
 module.exports = routes;
