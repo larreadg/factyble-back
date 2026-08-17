@@ -1,14 +1,113 @@
 const { v4: uuidv4 } = require("uuid");
 const dayjs = require("dayjs");
+const path = require("path");
+const fs = require("fs");
+const { validationResult } = require("express-validator");
 const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
+const { validadoresRecibo } = require("../validators/reciboValidators");
 const { NumerosALetras } = require("numero-a-letras");
 const { parseEntero } = require("../utils/number");
 const { formatNumeroDocumento } = require("../utils/format");
-const { separarCajaEstablecimiento } = require("../utils/documento");
+const { separarCajaEstablecimiento, parseNumeroCompuesto } = require("../utils/documento");
 const { parsearFields, proyectar } = require("../utils/fields");
 const generarPdfRecibo = require("../utils/generarPdfRecibo");
 const { enviarRecibo } = require("./correoService");
+const { obtenerCertificadoActivo } = require("./sifen/certificadoService");
+const { construirXmlRecibo } = require("../utils/reciboXml");
+const { firmarXmlGenerico } = require("../utils/firmaXml");
+const firmarPdf = require("../utils/firmarPdf");
+
+// Directorio público donde generarPdfRecibo deja el PDF y donde también se escribe el .xml firmado.
+const PUBLIC_DIR = path.resolve(__dirname, "..", "..", "public");
+
+/**
+ * Firma (best-effort) un recibo ya emitido: firma el PDF de forma invisible, construye y firma el XML propio
+ * de Factyble, lo escribe en /public y persiste `xml_firmado`/`fecha_firma`. Un recibo de dinero NO es un
+ * documento electrónico SIFEN (no hay DE/CDC ni envío a SET); esto es una firma propia con el certificado de
+ * la empresa. Si la empresa no tiene certificado activo/vigente, o si la firma falla, el recibo YA quedó
+ * emitido: se loguea y se devuelve null en vez de abortar (mismo criterio de aislamiento del resto del
+ * pipeline). Devuelve el XML firmado (para adjuntarlo al correo) o null.
+ */
+const firmarRecibo = async ({
+  recibo,
+  reciboUuid,
+  reciboId,
+  empresa,
+  receptor,
+  documentos,
+  cheques,
+  transferencias,
+  totales,
+  concepto,
+}) => {
+  let certificado;
+  try {
+    certificado = await obtenerCertificadoActivo({ empresaId: empresa.id });
+  } catch (error) {
+    console.warn(
+      `Recibo ${recibo.id}: se emite sin firma (sin certificado activo/vigente): ${error.message}`
+    );
+    return null;
+  }
+
+  try {
+    // 1) Firma criptográfica invisible del PDF ya generado.
+    const pdfPath = path.join(PUBLIC_DIR, `${reciboUuid}.pdf`);
+    await firmarPdf({
+      pdfPath,
+      certificadoPath: certificado.archivo,
+      certificadoPassword: certificado.clave,
+      motivo: "Firma electronica del emisor",
+      ubicacion: empresa.ciudad || "",
+    });
+
+    // 2) Construcción + firma del XML propio del recibo.
+    const xml = construirXmlRecibo({
+      reciboUuid,
+      reciboId,
+      fechaEmision: recibo.fecha_emision,
+      concepto,
+      emisor: {
+        ruc: empresa.ruc,
+        nombre: empresa.nombre_empresa,
+        direccion: empresa.direccion,
+        ciudad: empresa.ciudad,
+        telefono: empresa.telefono,
+        email: empresa.email,
+        timbrado: empresa.timbrado,
+      },
+      receptor,
+      documentos,
+      cheques,
+      transferencias,
+      totalEfectivo: totales.totalEfectivo,
+      totalCheques: totales.totalCheques,
+      totalTransferencias: totales.totalTransferencias,
+      total: totales.total,
+      totalLetras: totales.totalLetras,
+    });
+
+    const xmlFirmado = await firmarXmlGenerico({
+      xml,
+      tag: "Recibo",
+      certificadoPath: certificado.archivo,
+      certificadoPassword: certificado.clave,
+    });
+
+    // 3) Persistir: .xml en /public (junto al PDF) + columna xml_firmado en BD.
+    fs.writeFileSync(path.join(PUBLIC_DIR, `${reciboUuid}.xml`), xmlFirmado, "utf-8");
+    await prisma.recibo.update({
+      where: { id: recibo.id },
+      data: { xml_firmado: xmlFirmado, fecha_firma: new Date() },
+    });
+
+    return xmlFirmado;
+  } catch (error) {
+    console.error(`Recibo ${recibo.id}: fallo al firmar (se emite sin firma):`, error);
+    return null;
+  }
+};
 
 // Lista cerrada de atributos de PRIMER NIVEL que el query param `fields` de los GET puede pedir para
 // un Recibo. Columnas escalares + relaciones incluidas por los GET (cliente_empresa, facturas,
@@ -512,6 +611,27 @@ const emitirRecibo = async (datos, datosUsuario) => {
       concepto: datos.concepto,
     });
 
+    // Firma (best-effort) del PDF + generación/firma del XML propio. Se hace después de generar el PDF y de
+    // committear el recibo: si no hay certificado o la firma falla, el recibo igual queda emitido.
+    const xmlFirmado = await firmarRecibo({
+      recibo,
+      reciboUuid,
+      reciboId,
+      empresa: usuario.empresa,
+      receptor: { ruc: rucTexto, razonSocial: datos.razonSocial, email: datos.email },
+      documentos: documentosNormalizados,
+      cheques: chequesNormalizados,
+      transferencias: transferenciasNormalizadas,
+      totales: {
+        totalEfectivo,
+        totalCheques,
+        totalTransferencias,
+        total: totalRecibo,
+        totalLetras,
+      },
+      concepto: datos.concepto,
+    });
+
     if (isEmailValido(datos.email)) {
       await enviarRecibo({
         email: datos.email,
@@ -521,6 +641,7 @@ const emitirRecibo = async (datos, datosUsuario) => {
         nroRecibo: recibo.numero_recibo,
         empresa: usuario.empresa.nombre_empresa,
         emailEmpresa: usuario.empresa.email,
+        xmlFirmado,
       });
     } else {
       console.warn(
@@ -615,6 +736,19 @@ const getRecibos = async (page = 1, itemsPerPage = 10, filter = null, empresaId,
 
       or.push({ recibo_uuid: { contains: filter } });
       or.push({ concepto: { contains: filter } });
+
+      // Match por número compuesto establecimiento-caja-numero (ej. "001-001-0000023"), tal como se
+      // imprime/muestra el recibo. Se resuelve contra la relación caja/establecimiento + numero_recibo.
+      const compuesto = parseNumeroCompuesto(filter);
+      if (compuesto) {
+        or.push({
+          numero_recibo: compuesto.numero,
+          caja: {
+            codigo: compuesto.caja,
+            establecimiento: { codigo: compuesto.establecimiento },
+          },
+        });
+      }
 
       const isIntegerString = /^[0-9]+$/.test(filter);
       if (isIntegerString && filter.length <= 18) {
@@ -780,8 +914,81 @@ const getReciboByIdExterno = async (idExterno, empresaId, fields = null) => {
   }
 };
 
+// Alta masiva de recibos (carga por planilla): el caller manda un array de objetos, cada uno con el mismo shape
+// que POST /recibo (recibo no tiene versión "simple"). Se devuelve un array espejo `resultados` en el MISMO
+// orden que la entrada, donde el elemento en la posición `i` corresponde al recibo `i`. El procesamiento es
+// deliberadamente secuencial: emitirRecibo numera con un UPDATE transaccional sobre la secuencia del recibo, así
+// que serializar evita carreras de numeración. Cada recibo se valida y emite de forma aislada: un ítem inválido
+// o una emisión fallida produce un resultado de error propio sin abortar el resto del lote (mismo criterio de
+// aislamiento por documento que facturaSimpleService.emitirFacturasBulk).
+const emitirRecibosBulk = async (recibos, datosUsuario) => {
+  try {
+    const resultados = [];
+
+    for (let i = 0; i < recibos.length; i++) {
+      // Se valida cada elemento reutilizando exactamente las reglas de POST /recibo, corriéndolas de forma
+      // imperativa contra un req sintético `{ body: item }`. Los sanitizers (p. ej. idExterno a string) mutan
+      // ese body, por eso a emitirRecibo se le pasa `reqItem.body` ya saneado.
+      const reqItem = { body: recibos[i] };
+
+      for (const validador of validadoresRecibo) {
+        await validador.run(reqItem);
+      }
+
+      const errores = validationResult(reqItem);
+      if (!errores.isEmpty()) {
+        resultados.push({
+          indice: i,
+          status: "error",
+          code: 400,
+          message: "Error de validación",
+          errores: errores.array(),
+          data: null,
+        });
+        continue;
+      }
+
+      try {
+        const data = await emitirRecibo(reqItem.body, datosUsuario);
+        resultados.push({
+          indice: i,
+          status: "success",
+          code: 200,
+          message: "Recibo creado",
+          errores: null,
+          data,
+        });
+      } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, "Error al crear recibo");
+        resultados.push({
+          indice: i,
+          status: "error",
+          code,
+          message,
+          errores: null,
+          data: null,
+        });
+      }
+    }
+
+    const exitosas = resultados.filter((r) => r.status === "success").length;
+
+    return {
+      resumen: {
+        total: resultados.length,
+        exitosas,
+        fallidas: resultados.length - exitosas,
+      },
+      resultados,
+    };
+  } catch (error) {
+    ErrorApp.handleServiceError(error, "Error al procesar recibos en lote");
+  }
+};
+
 module.exports = {
   emitirRecibo,
+  emitirRecibosBulk,
   getRecibos,
   getReciboByIdExterno,
   CAMPOS_RECIBO,

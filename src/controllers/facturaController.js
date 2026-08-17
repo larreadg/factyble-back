@@ -40,6 +40,24 @@ const emitirFacturaSimple = async (req, res) => {
     }
 }
 
+const emitirFacturasBulk = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const data = await facturaSimpleService.emitirFacturasBulk(req.body, req.usuario);
+
+        return res.status(200).send(Response.success(data, 'Procesamiento finalizado'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al procesar facturas');
+
+        return res.status(code).send(Response.error(message, code));
+
+    }
+}
+
 const getFacturas = async (req, res) => {
     try {
 
@@ -202,6 +220,7 @@ const cancelarFacturaSimple = async (req, res) => {
 module.exports = {
     emitirFactura,
     emitirFacturaSimple,
+    emitirFacturasBulk,
     getFacturas,
     getFacturaById,
     getFacturaByIdExterno,

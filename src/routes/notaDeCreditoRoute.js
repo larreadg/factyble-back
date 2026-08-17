@@ -5,6 +5,7 @@ const { authJwt } = require('../middleware/authJwt');
 const { validarFields } = require('../utils/fields');
 const { CAMPOS_NOTA_CREDITO } = require('../services/notaDeCreditoService');
 const { validarCantidad } = require('../utils/facturacion');
+const { validadoresNotaCreditoSimple } = require('../validators/notaCreditoSimpleValidators');
 
 routes.post(
     '/',
@@ -38,30 +39,19 @@ routes.post(
 routes.post(
     '/simple',
     authJwt(['ADMIN']),
-    body('cdc', 'Parámetro cdc requerido').notEmpty().isString(),
-    body('items', 'Parámetro items requerido').isArray({min: 1}),
-    body('items.*', 'Parámetros item requerido Object').isObject(),
-    body('items.*.cantidad', 'Parámetro cantidad debe ser numérico > 0, máx 4 decimales').custom(validarCantidad),
-    body('items.*.precioUnitario', 'Parámetro precioUnitario dentro de items requerido').isNumeric(),
-    body('items.*.descripcion', 'Parámetro descripcion dentro de items requerido').isString().notEmpty(),
-    body('items.*.tasa', 'Parámetro tasa dentro de items requerido').isIn(['0%','5%','10%']),
-    body('establecimiento').optional({ checkFalsy: true }).matches(/^\d{3}$/)
-    .withMessage('El parámetro establecimiento debe tener exactamente 3 dígitos entre 001 y 999')
-    .custom(v => {
-        const n = parseInt(v, 10)
-        if(n < 1 || n > 999) return false
-        return true
-    }).withMessage('Parámetro establecimiento inválido'),
-    body('caja').optional({ checkFalsy: true }).matches(/^\d{3}$/)
-    .withMessage('El parámetro caja debe tener exactamente 3 dígitos entre 001 y 999')
-    .custom(v => {
-        const n = parseInt(v, 10)
-        if(n < 1 || n > 999) return false
-        return true
-    }).withMessage('Parámetro caja inválido'),
-    body('idExterno', 'Parámetro idExterno inválido').optional({ checkFalsy: true })
-    .custom(v => ['string', 'number'].includes(typeof v)).customSanitizer(v => String(v)).isLength({ max: 255 }),
+    ...validadoresNotaCreditoSimple,
     notaDeCreditoController.emitirNotaDeCreditoSimple
+)
+
+// Alta masiva: el body es un array con exactamente el mismo shape que POST /nota-credito/simple por elemento.
+// La validación de cada NC se corre por ítem dentro del service (array espejo), por eso aquí sólo se valida el
+// contenedor: que sea un array no vacío y acotado. La respuesta es un array de resultados en el mismo orden que
+// la entrada, donde cada elemento indica éxito o error de esa NC en particular.
+routes.post(
+    '/bulk-insert',
+    authJwt(['ADMIN']),
+    body('', 'El body debe ser un array de notas de crédito (1 a 100)').isArray({ min: 1, max: 100 }),
+    notaDeCreditoController.emitirNotasDeCreditoBulk
 )
 
 routes.get(

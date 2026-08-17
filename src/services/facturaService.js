@@ -5,7 +5,7 @@ const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = requ
 const generarPdf = require("../utils/generarPdf");
 const { v4: uuidv4 } = require("uuid");
 const { formatNumber, formatNumeroDocumento } = require("../utils/format");
-const { separarCajaEstablecimiento } = require("../utils/documento");
+const { separarCajaEstablecimiento, parseNumeroCompuesto } = require("../utils/documento");
 const { parsearFields, proyectar } = require("../utils/fields");
 const { enviarFactura } = require("./correoService");
 const { construirCdc } = require("../utils/sifen/cdc");
@@ -500,7 +500,20 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
       // 2) Match por CDC (string)
       or.push({ cdc: { contains: filter } });
 
-      // 3) Match por número de factura (solo si filter es entero “normal”)
+      // 3) Match por número compuesto establecimiento-caja-numero (ej. "001-001-0000023"), tal como se
+      // imprime/muestra el documento. Se resuelve contra la relación caja/establecimiento + numero_factura.
+      const compuesto = parseNumeroCompuesto(filter);
+      if (compuesto) {
+        or.push({
+          numero_factura: compuesto.numero,
+          caja: {
+            codigo: compuesto.caja,
+            establecimiento: { codigo: compuesto.establecimiento },
+          },
+        });
+      }
+
+      // 4) Match por número de factura (solo si filter es entero “normal”)
       // Acepta únicamente dígitos y además limita tamaño para que entre en Int64
       const isIntegerString = /^[0-9]+$/.test(filter);
       if (isIntegerString) {

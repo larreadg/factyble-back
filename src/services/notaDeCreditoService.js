@@ -5,7 +5,7 @@ const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = requ
 const { v4: uuidv4 } = require("uuid");
 const generarPdf = require("../utils/generarPdf");
 const { formatNumber, formatNumeroDocumento } = require("../utils/format");
-const { separarCajaEstablecimiento } = require("../utils/documento");
+const { separarCajaEstablecimiento, parseNumeroCompuesto } = require("../utils/documento");
 const { parsearFields, proyectar } = require("../utils/fields");
 const { enviarNotaDeCredito } = require("./correoService");
 const { construirCdc } = require("../utils/sifen/cdc");
@@ -389,43 +389,65 @@ const getNotasDeCredito = async (
         },
       });
     } else {
-      const factura = await prisma.factura.findFirst({
+      const or = [];
+
+      // 1) Número compuesto propio de la NC: establecimiento-caja-numero (ej. "001-001-0000023"), tal como
+      // se imprime/muestra. Se resuelve contra la relación caja/establecimiento + numero_nota_credito.
+      const compuesto = parseNumeroCompuesto(filter);
+      if (compuesto) {
+        or.push({
+          numero_nota_credito: compuesto.numero,
+          caja: {
+            codigo: compuesto.caja,
+            establecimiento: { codigo: compuesto.establecimiento },
+          },
+        });
+      }
+
+      // 2) Número simple propio de la NC (sólo si el filtro es un entero “normal”).
+      const isIntegerString = /^[0-9]+$/.test(filter);
+      if (isIntegerString && String(filter).length <= 18) {
+        const n = Number(filter);
+        if (Number.isSafeInteger(n)) {
+          or.push({ numero_nota_credito: { equals: n } });
+        }
+      }
+
+      // 3) Compatibilidad histórica: NCs cuya factura vinculada matchea por CDC o número de factura.
+      const facturaOr = [{ cdc: { contains: filter } }];
+      if (isIntegerString && String(filter).length <= 18) {
+        const n = Number(filter);
+        if (Number.isSafeInteger(n)) {
+          facturaOr.push({ numero_factura: { equals: n } });
+        }
+      }
+      or.push({ factura: { OR: facturaOr } });
+
+      // Siempre acotado a las cajas de la empresa (evita fugas entre empresas).
+      const whereNc = { caja_id: { in: cajasIds }, OR: or };
+
+      notasCredito = await prisma.notaCredito.findMany({
         skip,
         take,
         orderBy: {
           fecha_creacion: "desc",
         },
-        where: {
-          OR: [
-            { cdc: filter },
-            { numero_factura: !isNaN(filter) && String(filter).length <= 7 ? Number(filter) : 0 },
-          ],
+        where: whereNc,
+        include: {
+          factura: true,
+          eventos_sifen: true,
+          nota_credito_detalle: true,
+          caja: {
+            include: {
+              establecimiento: true,
+            },
+          },
         },
       });
 
-      if (factura) {
-        notasCredito = await prisma.notaCredito.findMany({
-          where: {
-            factura_id: factura.id,
-          },
-          include: {
-            factura: true,
-            eventos_sifen: true,
-            nota_credito_detalle: true,
-            caja: {
-              include: {
-                establecimiento: true,
-              },
-            },
-          },
-        });
-
-        totalItems = await prisma.notaCredito.count({
-          where: {
-            factura_id: factura.id,
-          },
-        });
-      }
+      totalItems = await prisma.notaCredito.count({
+        where: whereNc,
+      });
     }
 
     return {
