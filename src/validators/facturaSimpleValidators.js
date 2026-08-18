@@ -15,8 +15,13 @@ const validadoresFacturaSimple = [
     body('situacionTributaria', 'Parámetro situacionTributaria requerido').if(noInnominado).notEmpty().isIn([
         'CONTRIBUYENTE','NO_CONTRIBUYENTE'
     ]),
-    body('personaDocumento', 'Parámetro personaDocumento requerido').if(noInnominado).notEmpty().isString(),
-    body('personaNombre', 'Parámetro personaNombre requerido').if(noInnominado).notEmpty().isString(),
+    // .trim() antes de notEmpty(): notEmpty() solo no trimea, y un valor de puros espacios terminaba
+    // persistido como razon_social vacía en padron_ruc/cliente. Los isLength protegen los VarChar
+    // de padron_ruc (ruc 15 + '-' + dv; razon_social 255) de un 500 de DB por 'Data too long'.
+    body('personaDocumento', 'Parámetro personaDocumento requerido').if(noInnominado).isString().trim().notEmpty()
+        .isLength({ max: 20 }).withMessage('Parámetro personaDocumento no puede superar los 20 caracteres'),
+    body('personaNombre', 'Parámetro personaNombre requerido').if(noInnominado).isString().trim().notEmpty()
+        .isLength({ max: 255 }).withMessage('Parámetro personaNombre no puede superar los 255 caracteres'),
     body('personaEmail', 'Parámetro personaEmail inválido').optional({ checkFalsy: true }).isEmail(),
     body('condicionVenta', 'Parámetro condicionVenta requerido').notEmpty().isIn(['CONTADO', 'CREDITO']),
     body('items', 'Parámetro items requerido').isArray({min: 1}),

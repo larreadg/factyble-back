@@ -16,8 +16,13 @@ routes.post(
     '/',
     authJwt(['ADMIN']),
     body('innominado', 'Parámetro innominado debe ser booleano').optional().isBoolean({ strict: true }),
-    body('ruc', 'Parámetro ruc requerido').if(noInnominado).notEmpty().isString(),
-    body('razonSocial', 'Parámetro razonSocial requerido').if(noInnominado).notEmpty().isString(),
+    // .trim() antes de notEmpty(): notEmpty() solo no trimea, y un valor de puros espacios terminaba
+    // persistido como razon_social vacía en padron_ruc/cliente. Los isLength protegen los VarChar
+    // de padron_ruc (ruc 15 + '-' + dv; razon_social 255) de un 500 de DB por 'Data too long'.
+    body('ruc', 'Parámetro ruc requerido').if(noInnominado).isString().trim().notEmpty()
+        .isLength({ max: 20 }).withMessage('Parámetro ruc no puede superar los 20 caracteres'),
+    body('razonSocial', 'Parámetro razonSocial requerido').if(noInnominado).isString().trim().notEmpty()
+        .isLength({ max: 255 }).withMessage('Parámetro razonSocial no puede superar los 255 caracteres'),
     body('situacionTributaria', 'Parámetro situacionTributaria requerido').if(noInnominado).notEmpty().isIn([
         'CONTRIBUYENTE','NO_CONTRIBUYENTE','NO_DOMICILIADO'
     ]),

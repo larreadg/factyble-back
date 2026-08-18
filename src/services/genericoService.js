@@ -1,6 +1,6 @@
 const ErrorApp = require('../utils/error');
 const prisma = require('../prisma/cliente');
-const { buscarPorRucConFallback } = require('./padronRucPersistenciaService');
+const { buscarPorRuc } = require('./padronRucPersistenciaService');
 const { consultarCedula } = require('./cedulaService');
 const { bloqueaEmision } = require('../utils/sifen/estadoPadronRuc');
 
@@ -29,9 +29,11 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
             // o "5050187-4", en ambos casos normalizamos a la BASE.
             const rucBase = String(ruc).split('-')[0].replace(/^0+(?=\d)/, '');
 
-            // Si no está en el padrón local, se consulta el servicio externo (ruc.com.py) como
-            // fallback y, si existe allí, se inserta en padron_ruc antes de continuar.
-            const registro = await buscarPorRucConFallback(rucBase);
+            // Lookup local puro: el fallback externo (ruc.com.py) se eliminó — quedó detrás de un
+            // challenge de Cloudflare inaccesible desde servidores. Si el RUC no está en el padrón,
+            // el 404 no bloquea la emisión: /factura/simple inserta el RUC en padron_ruc con los
+            // datos del receptor que llegan en esa request (ver facturaService).
+            const registro = await buscarPorRuc(rucBase);
 
             if(!registro){
                 throw new ErrorApp(`El RUC ${ruc} no existe en el padrón. Verificá el número con el cliente.`, 404);

@@ -8,11 +8,11 @@ const { formatNumber, formatNumeroDocumento } = require("../utils/format");
 const { separarCajaEstablecimiento, parseNumeroCompuesto } = require("../utils/documento");
 const { parsearFields, proyectar } = require("../utils/fields");
 const { enviarFactura } = require("./correoService");
-const { construirCdc } = require("../utils/sifen/cdc");
+const { construirCdc, calcularDigitoVerificador } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
 const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
-const { buscarPorRucConFallback } = require("./padronRucPersistenciaService");
+const { buscarPorRuc, guardarLote } = require("./padronRucPersistenciaService");
 const { bloqueaEmision } = require("../utils/sifen/estadoPadronRuc");
 const { consultarCedula } = require("./cedulaService");
 
@@ -122,23 +122,67 @@ const emitirFactura = async (datos, datosUsuario) => {
       // si la base fuese "0".
       const rucBase = rucBaseRaw.replace(/^0+(?=\d)/, "");
 
-      // padron_ruc es la única autoridad del dígito verificador: NO calculamos por módulo 11, porque
-      // ese cálculo sugería un DV/RUC que puede no existir en el padrón real. Primero se verifica que
-      // el RUC exista, luego que el DV coincida con el de la tabla (Manual Técnico SIFEN v150,
-      // validaciones D206b/c/d). Si no está en el padrón local, se consulta el servicio externo
-      // (ruc.com.py) y, si existe allí, se inserta en padron_ruc para continuar el flujo normal.
-      const registroPadron = await buscarPorRucConFallback(rucBase);
-
-      if (!registroPadron) {
-        throw new ErrorApp(`El RUC ${datos.ruc} no existe en el padrón. Verificá el número con el cliente.`, 400);
+      // padron_ruc.ruc es VarChar(15): una base más larga no es un RUC real y reventaría el INSERT
+      // crudo de guardarLote con un 500 de infraestructura; se corta acá con un 400 claro.
+      if (rucBase.length > 15) {
+        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: la parte numérica excede los 15 dígitos`, 400);
       }
 
+      // notEmpty() de express-validator no trimea (los .trim() de las rutas cubren HTTP, pero el
+      // bulk corre los validadores de forma imperativa), así que se re-guarda acá: sin esto se
+      // persistiría razon_social = '' en padron_ruc (NOT NULL acepta string vacío) y SIFEN rechaza
+      // un receptor sin nombre. El cap de 255 protege el VarChar(255) del INSERT crudo (500 opaco).
+      const razonSocialPadron = String(datos.razonSocial || "").trim().toUpperCase();
+
+      if (!razonSocialPadron) {
+        throw new ErrorApp("El parámetro razonSocial no puede estar vacío", 400);
+      }
+
+      if (razonSocialPadron.length > 255) {
+        throw new ErrorApp("El parámetro razonSocial no puede superar los 255 caracteres", 400);
+      }
+
+      // El DV autoritativo NUNCA es el informado: si el RUC ya está en padron_ruc manda el padrón;
+      // si no está, se calcula por Módulo 11 (el mismo algoritmo SET de utils/sifen/cdc.js —
+      // verificado contra el padrón real: 80000002→1, 4787587→9, 3502953→6, 5851866→5) y se inserta
+      // el RUC con ese DV, la razón social en MAYÚSCULAS (formato del padrón batch) y estado ACTIVO
+      // por defecto. Un DV informado que no coincida NO rechaza la emisión: se corrige en silencio
+      // al autoritativo (decisión de producto tras eliminar el fallback a ruc.com.py, que quedó
+      // inaccesible detrás de un challenge de Cloudflare por reputación de IP). Calcular el DV en
+      // vez de confiar en el informado evita envenenar el padrón: un typo en el DV ya no queda
+      // persistido como "autoridad" que bloquearía para siempre las emisiones correctas de ese RUC.
+      let registroPadron = await buscarPorRuc(rucBase);
+
+      if (registroPadron) {
+        if (bloqueaEmision(registroPadron.estado)) {
+          throw new ErrorApp(`El RUC ${datos.ruc} se encuentra en estado "${registroPadron.estado}" y no puede recibir documentos electrónicos`, 400);
+        }
+      } else {
+        registroPadron = {
+          ruc: rucBase,
+          razonSocial: razonSocialPadron,
+          digitoVerificador: String(calcularDigitoVerificador(rucBase)),
+          rucAnterior: null,
+          estado: "ACTIVO",
+        };
+
+        try {
+          await guardarLote([registroPadron]);
+        } catch (error) {
+          // Dos primeras emisiones concurrentes del mismo RUC pueden hacer deadlockear el
+          // INSERT ... ON DUPLICATE KEY UPDATE (ruc es índice único secundario, no PK). Antes de
+          // propagar el 500 se relee: si la request gemela ya insertó la fila, se continúa con ella.
+          const releido = await buscarPorRuc(rucBase);
+          if (!releido) throw error;
+          registroPadron = releido;
+        }
+      }
+
+      // Corrección silenciosa del DV: el Cliente y el DE se construyen a partir de datos.ruc, así
+      // que si el informado difiere del autoritativo hay que reescribirlo acá — si no, xmlgen
+      // emitiría un dDVRec inválido que SIFEN rechaza (D206b/c/d).
       if (String(dvInformado) !== String(registroPadron.digitoVerificador)) {
-        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: el dígito verificador informado ("${dvInformado}") no corresponde al RUC ${rucBase}. El dígito verificador correcto es ${registroPadron.digitoVerificador} (${rucBase}-${registroPadron.digitoVerificador})`, 400);
-      }
-
-      if (bloqueaEmision(registroPadron.estado)) {
-        throw new ErrorApp(`El RUC ${datos.ruc} se encuentra en estado "${registroPadron.estado}" y no puede recibir documentos electrónicos`, 400);
+        datos.ruc = `${rucBase}-${registroPadron.digitoVerificador}`;
       }
     }
 
