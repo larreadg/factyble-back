@@ -595,7 +595,9 @@ const getNotaDeCreditoByIdExterno = async (idExterno, empresaId, fields = null) 
         usuario: { empresa_id: empresaId },
       },
       include: {
-        factura: true,
+        // Se incluye el cliente de la factura vinculada para que el consumidor (ej. el bot,
+        // al reconciliar una NC por idExterno) pueda resolver nombre/RUC del receptor.
+        factura: { include: { cliente_empresa: { include: { cliente: true } } } },
         eventos_sifen: true,
         nota_credito_detalle: true,
         caja: {
