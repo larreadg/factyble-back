@@ -152,8 +152,14 @@ routes.post(
 routes.post(
     '/reintentar-sifen',
     authJwt(['ADMIN']),
-    body('caja').matches(/^\d{3}$/).withMessage('El parámetro caja debe tener exactamente 3 dígitos entre 001 y 999'),
-    body('factura', 'Parámetro factura requerido').isInt({min: 1}),
+    // `factura` acepta dos formatos: el número impreso completo "EEE-PPP-NNNNNNN" (ej. "001-002-0000062"),
+    // que ya lleva la caja embebida, o el secuencial entero acompañado de `caja` (3 dígitos) por separado.
+    body('factura').custom((value, { req }) => {
+        if (typeof value === 'string' && /^\d{3}-\d{3}-\d+$/.test(value.trim())) return true;
+        const numero = Number(value);
+        if (Number.isInteger(numero) && numero >= 1 && /^\d{3}$/.test(String(req.body.caja || ''))) return true;
+        throw new Error('Enviá "factura" como "EEE-PPP-NNNNNNN" (ej. "001-002-0000062") o como número entero junto con "caja" de 3 dígitos');
+    }),
     facturaController.reintentarEnvioSifen
 );
 

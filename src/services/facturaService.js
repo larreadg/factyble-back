@@ -4,7 +4,7 @@ const ErrorApp = require("../utils/error");
 const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = require("../utils/facturacion");
 const generarPdf = require("../utils/generarPdf");
 const { v4: uuidv4 } = require("uuid");
-const { formatNumber, formatNumeroDocumento } = require("../utils/format");
+const { formatNumber, formatNumeroDocumento, parseNumeroDocumento } = require("../utils/format");
 const { separarCajaEstablecimiento, parseNumeroCompuesto } = require("../utils/documento");
 const { parsearFields, proyectar } = require("../utils/fields");
 const { enviarFactura } = require("./correoService");
@@ -861,12 +861,24 @@ const cancelarFactura = async (datos, datosUsuario) => {
  */
 const reintentarEnvioSifen = async (datos, datosUsuario) => {
   try {
+    // Se acepta `factura` de dos formas: el número impreso completo "EEE-PPP-NNNNNNN"
+    // (ej. "001-002-0000062"), con la caja embebida, o el secuencial entero + `caja` aparte
+    // (contrato histórico). Cuando viene el string completo también acotamos por
+    // establecimiento.codigo: la caja (punto de expedición) no es única entre establecimientos
+    // de una misma empresa, así que sin ese filtro findFirst podría matchear otro documento.
+    const parseado = parseNumeroDocumento(datos.factura);
+    const codigoCaja = parseado ? parseado.caja : datos.caja;
+    const numeroFactura = parseado ? parseado.numero : Number(datos.factura);
+    const establecimiento = parseado
+      ? { empresa_id: datosUsuario.empresaId, codigo: parseado.establecimiento }
+      : { empresa_id: datosUsuario.empresaId };
+
     const factura = await prisma.factura.findFirst({
       where: {
-        numero_factura: datos.factura,
+        numero_factura: numeroFactura,
         caja: {
-          codigo: datos.caja,
-          establecimiento: { empresa_id: datosUsuario.empresaId },
+          codigo: codigoCaja,
+          establecimiento,
         },
       },
     });

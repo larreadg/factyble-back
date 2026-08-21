@@ -4,7 +4,7 @@ const ErrorApp = require("../utils/error");
 const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = require("../utils/facturacion");
 const { v4: uuidv4 } = require("uuid");
 const generarPdf = require("../utils/generarPdf");
-const { formatNumber, formatNumeroDocumento } = require("../utils/format");
+const { formatNumber, formatNumeroDocumento, parseNumeroDocumento } = require("../utils/format");
 const { separarCajaEstablecimiento, parseNumeroCompuesto } = require("../utils/documento");
 const { parsearFields, proyectar } = require("../utils/fields");
 const { enviarNotaDeCredito } = require("./correoService");
@@ -556,19 +556,34 @@ const reenviarNotaDeCredito = async ({ email, notaDeCreditoId, empresaId }) => {
  * Se identifica el documento por caja + número de nota de crédito (no por id interno), mismo criterio
  * que `facturaService.reintentarEnvioSifen`: `numero_nota_credito` no es único por sí solo, por eso el
  * filtro va siempre `caja.codigo` + `caja.establecimiento.empresa_id` (scoping multi-tenant) + `numero_nota_credito`.
+ *
+ * `notaCredito` se acepta de dos formas: el número impreso completo "EEE-PPP-NNNNNNN" (ej.
+ * "001-002-0000062"), con la caja embebida, o el secuencial entero + `caja` aparte (contrato histórico).
  * @param {Object} datos
- * @param {string} datos.caja - Código de caja (3 dígitos), el punto de expedición SIFEN
- * @param {number} datos.notaCredito - Número de nota de crédito (`numero_nota_credito`), no el id interno
+ * @param {string} [datos.caja] - Código de caja (3 dígitos), el punto de expedición SIFEN. Opcional si
+ *   `notaCredito` viene con el formato completo "EEE-PPP-NNNNNNN".
+ * @param {number|string} datos.notaCredito - Número de nota de crédito (`numero_nota_credito`, no el id
+ *   interno) o el número impreso completo "EEE-PPP-NNNNNNN"
  * @param {Object} datosUsuario - `req.usuario`, para el scoping multi-tenant
  */
 const reintentarEnvioSifen = async (datos, datosUsuario) => {
   try {
+    // Cuando viene el string completo también acotamos por establecimiento.codigo: la caja (punto de
+    // expedición) no es única entre establecimientos de una misma empresa, así que sin ese filtro
+    // findFirst podría matchear otro documento.
+    const parseado = parseNumeroDocumento(datos.notaCredito);
+    const codigoCaja = parseado ? parseado.caja : datos.caja;
+    const numeroNotaCredito = parseado ? parseado.numero : Number(datos.notaCredito);
+    const establecimiento = parseado
+      ? { empresa_id: datosUsuario.empresaId, codigo: parseado.establecimiento }
+      : { empresa_id: datosUsuario.empresaId };
+
     const notaDeCredito = await prisma.notaCredito.findFirst({
       where: {
-        numero_nota_credito: datos.notaCredito,
+        numero_nota_credito: numeroNotaCredito,
         caja: {
-          codigo: datos.caja,
-          establecimiento: { empresa_id: datosUsuario.empresaId },
+          codigo: codigoCaja,
+          establecimiento,
         },
       },
     });
