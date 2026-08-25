@@ -25,6 +25,28 @@ const emitirRecibo = async (req, res) => {
   }
 };
 
+const emitirRecibosBulk = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res
+        .status(400)
+        .send(new Response('error', 400, errors.array(), 'Error de validacion'));
+    }
+
+    const data = await reciboService.emitirRecibosBulk(req.body, req.usuario);
+
+    return res.status(200).send(Response.success(data, 'Procesamiento finalizado'));
+  } catch (error) {
+    const { code, message } = ErrorApp.handleControllerError(
+      error,
+      'Error al procesar recibos'
+    );
+
+    return res.status(code).send(Response.error(message, code));
+  }
+};
+
 const getRecibos = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -85,6 +107,7 @@ const getReciboByIdExterno = async (req, res) => {
 
 module.exports = {
   emitirRecibo,
+  emitirRecibosBulk,
   getRecibos,
   getReciboByIdExterno,
 };

@@ -446,6 +446,13 @@ model Recibo {
   // idExterno del body de emisión; nullable por convención de columnas nuevas sobre tablas con filas
   // existentes y porque no todo recibo proviene de una integración externa.
   id_externo           String?               @db.VarChar(255)
+  // XML propio de Factyble ya firmado (XML-DSig enveloped, RSA-SHA256) con el certificado activo de la
+  // empresa. Un recibo de dinero NO es un documento electrónico SIFEN (no hay DE/CDC/timbrado ni envío a
+  // SET), así que este XML es una representación firmada propia, no un DE. Nullable por convención de
+  // columnas nuevas sobre tablas con filas existentes y porque la firma es best-effort: si la empresa no
+  // tiene certificado activo/vigente al emitir, el recibo se emite igual y este campo queda en NULL.
+  xml_firmado          String?               @db.Text
+  fecha_firma          DateTime?
   fecha_emision        DateTime              @default(now())
   fecha_creacion       DateTime              @default(now())
   fecha_modificacion   DateTime              @updatedAt

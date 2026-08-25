@@ -4,21 +4,22 @@ const ErrorApp = require("../utils/error");
 const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = require("../utils/facturacion");
 const generarPdf = require("../utils/generarPdf");
 const { v4: uuidv4 } = require("uuid");
-const { formatNumber, formatNumeroDocumento } = require("../utils/format");
-const { separarCajaEstablecimiento } = require("../utils/documento");
+const { formatNumber, formatNumeroDocumento, parseNumeroDocumento } = require("../utils/format");
+const { separarCajaEstablecimiento, parseNumeroCompuesto } = require("../utils/documento");
 const { parsearFields, proyectar } = require("../utils/fields");
 const { enviarFactura } = require("./correoService");
-const { construirCdc } = require("../utils/sifen/cdc");
+const { construirCdc, calcularDigitoVerificador } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
 const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
-const { buscarPorRucConFallback } = require("./padronRucPersistenciaService");
+const { buscarPorRuc, guardarLote } = require("./padronRucPersistenciaService");
 const { bloqueaEmision } = require("../utils/sifen/estadoPadronRuc");
 const { consultarCedula } = require("./cedulaService");
 
 // Lista cerrada de atributos de PRIMER NIVEL que el query param `fields` de los GET puede pedir para
 // una Factura. Incluye las columnas escalares + las relaciones que los GET incluyen (detalles,
-// cliente_empresa, eventos_sifen, caja) + los campos sintetizados en la respuesta (establecimiento).
+// cliente_empresa, eventos_sifen, caja, nota_credito -> expuesta como `notas_credito`) + los campos
+// sintetizados en la respuesta (establecimiento).
 // Cualquier field fuera de esta lista => 400. Ver src/utils/fields.js.
 const CAMPOS_FACTURA = [
   "id", "numero_factura", "factura_uuid", "usuario_id", "cliente_empresa_id",
@@ -27,7 +28,61 @@ const CAMPOS_FACTURA = [
   "estado_sifen", "sifen_cod_respuesta", "sifen_num_transaccion", "fecha_firma", "fecha_envio_sifen",
   "fecha_respuesta_sifen", "intentos_firma", "lote_id", "codigo_seguridad", "caja_id",
   "detalles", "cliente_empresa", "eventos_sifen", "caja", "establecimiento",
+  "notas_credito",
 ];
+
+// Subconjunto de columnas de NotaCredito que los GET de Factura exponen en `notas_credito`. Se
+// selecciona explícito en vez de traer la fila entera porque xml / xml_firmado / linkqr son
+// TEXT/MEDIUMTEXT: en un listado paginado se multiplicarían por cada NC de cada factura.
+// caja/establecimiento se traen solo para poder formatear el número impreso y se descartan después
+// (ver mapearNotasCreditoAsociadas).
+const SELECT_NOTA_CREDITO_ASOCIADA = {
+  id: true,
+  numero_nota_credito: true,
+  nota_credito_uuid: true,
+  cdc: true,
+  total: true,
+  total_iva: true,
+  fuente: true,
+  id_externo: true,
+  // estado_sifen es el campo del pipeline nativo; sifen_estado (legacy, congelado) se expone también
+  // porque para las NC históricas es el único con contenido — mismo criterio que esCancelado/esAprobado
+  // (utils/sifen/estadoHistorico.js), que consultan ambos.
+  estado_sifen: true,
+  sifen_estado: true,
+  sifen_estado_mensaje: true,
+  sifen_cod_respuesta: true,
+  fecha_creacion: true,
+  caja_id: true,
+  caja: {
+    select: {
+      codigo: true,
+      establecimiento: { select: { codigo: true } },
+    },
+  },
+};
+
+// Relación de Prisma tal como está declarada en el schema (Factura.nota_credito), incluida en los GET
+// de Factura. Más recientes primero, igual criterio de orden que el listado de notas de crédito.
+const INCLUDE_NOTAS_CREDITO_ASOCIADAS = {
+  orderBy: { fecha_creacion: "desc" },
+  select: SELECT_NOTA_CREDITO_ASOCIADA,
+};
+
+// Normaliza las NC asociadas al mismo contrato que el documento padre: numero_nota_credito formateado
+// como se imprime (establecimiento-caja-numero, relleno a 7 dígitos) y sin el objeto caja anidado, que
+// solo se trajo para poder armar ese número. Cae al número crudo cuando no se puede formatear
+// (documentos legacy con caja_id NULL), igual que la Factura.
+const mapearNotasCreditoAsociadas = (notasCredito = []) =>
+  notasCredito.map(({ caja, ...notaCredito }) => ({
+    ...notaCredito,
+    numero_nota_credito:
+      formatNumeroDocumento(
+        caja?.establecimiento?.codigo,
+        caja?.codigo,
+        notaCredito.numero_nota_credito
+      ) ?? notaCredito.numero_nota_credito,
+  }));
 
 // tipoDocumento SIFEN para el CDC — 1=Factura, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_FACTURA = 1;
@@ -122,23 +177,67 @@ const emitirFactura = async (datos, datosUsuario) => {
       // si la base fuese "0".
       const rucBase = rucBaseRaw.replace(/^0+(?=\d)/, "");
 
-      // padron_ruc es la única autoridad del dígito verificador: NO calculamos por módulo 11, porque
-      // ese cálculo sugería un DV/RUC que puede no existir en el padrón real. Primero se verifica que
-      // el RUC exista, luego que el DV coincida con el de la tabla (Manual Técnico SIFEN v150,
-      // validaciones D206b/c/d). Si no está en el padrón local, se consulta el servicio externo
-      // (ruc.com.py) y, si existe allí, se inserta en padron_ruc para continuar el flujo normal.
-      const registroPadron = await buscarPorRucConFallback(rucBase);
-
-      if (!registroPadron) {
-        throw new ErrorApp(`El RUC ${datos.ruc} no existe en el padrón. Verificá el número con el cliente.`, 400);
+      // padron_ruc.ruc es VarChar(15): una base más larga no es un RUC real y reventaría el INSERT
+      // crudo de guardarLote con un 500 de infraestructura; se corta acá con un 400 claro.
+      if (rucBase.length > 15) {
+        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: la parte numérica excede los 15 dígitos`, 400);
       }
 
+      // notEmpty() de express-validator no trimea (los .trim() de las rutas cubren HTTP, pero el
+      // bulk corre los validadores de forma imperativa), así que se re-guarda acá: sin esto se
+      // persistiría razon_social = '' en padron_ruc (NOT NULL acepta string vacío) y SIFEN rechaza
+      // un receptor sin nombre. El cap de 255 protege el VarChar(255) del INSERT crudo (500 opaco).
+      const razonSocialPadron = String(datos.razonSocial || "").trim().toUpperCase();
+
+      if (!razonSocialPadron) {
+        throw new ErrorApp("El parámetro razonSocial no puede estar vacío", 400);
+      }
+
+      if (razonSocialPadron.length > 255) {
+        throw new ErrorApp("El parámetro razonSocial no puede superar los 255 caracteres", 400);
+      }
+
+      // El DV autoritativo NUNCA es el informado: si el RUC ya está en padron_ruc manda el padrón;
+      // si no está, se calcula por Módulo 11 (el mismo algoritmo SET de utils/sifen/cdc.js —
+      // verificado contra el padrón real: 80000002→1, 4787587→9, 3502953→6, 5851866→5) y se inserta
+      // el RUC con ese DV, la razón social en MAYÚSCULAS (formato del padrón batch) y estado ACTIVO
+      // por defecto. Un DV informado que no coincida NO rechaza la emisión: se corrige en silencio
+      // al autoritativo (decisión de producto tras eliminar el fallback a ruc.com.py, que quedó
+      // inaccesible detrás de un challenge de Cloudflare por reputación de IP). Calcular el DV en
+      // vez de confiar en el informado evita envenenar el padrón: un typo en el DV ya no queda
+      // persistido como "autoridad" que bloquearía para siempre las emisiones correctas de ese RUC.
+      let registroPadron = await buscarPorRuc(rucBase);
+
+      if (registroPadron) {
+        if (bloqueaEmision(registroPadron.estado)) {
+          throw new ErrorApp(`El RUC ${datos.ruc} se encuentra en estado "${registroPadron.estado}" y no puede recibir documentos electrónicos`, 400);
+        }
+      } else {
+        registroPadron = {
+          ruc: rucBase,
+          razonSocial: razonSocialPadron,
+          digitoVerificador: String(calcularDigitoVerificador(rucBase)),
+          rucAnterior: null,
+          estado: "ACTIVO",
+        };
+
+        try {
+          await guardarLote([registroPadron]);
+        } catch (error) {
+          // Dos primeras emisiones concurrentes del mismo RUC pueden hacer deadlockear el
+          // INSERT ... ON DUPLICATE KEY UPDATE (ruc es índice único secundario, no PK). Antes de
+          // propagar el 500 se relee: si la request gemela ya insertó la fila, se continúa con ella.
+          const releido = await buscarPorRuc(rucBase);
+          if (!releido) throw error;
+          registroPadron = releido;
+        }
+      }
+
+      // Corrección silenciosa del DV: el Cliente y el DE se construyen a partir de datos.ruc, así
+      // que si el informado difiere del autoritativo hay que reescribirlo acá — si no, xmlgen
+      // emitiría un dDVRec inválido que SIFEN rechaza (D206b/c/d).
       if (String(dvInformado) !== String(registroPadron.digitoVerificador)) {
-        throw new ErrorApp(`El RUC ${datos.ruc} es inválido: el dígito verificador informado ("${dvInformado}") no corresponde al RUC ${rucBase}. El dígito verificador correcto es ${registroPadron.digitoVerificador} (${rucBase}-${registroPadron.digitoVerificador})`, 400);
-      }
-
-      if (bloqueaEmision(registroPadron.estado)) {
-        throw new ErrorApp(`El RUC ${datos.ruc} se encuentra en estado "${registroPadron.estado}" y no puede recibir documentos electrónicos`, 400);
+        datos.ruc = `${rucBase}-${registroPadron.digitoVerificador}`;
       }
     }
 
@@ -500,7 +599,20 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
       // 2) Match por CDC (string)
       or.push({ cdc: { contains: filter } });
 
-      // 3) Match por número de factura (solo si filter es entero “normal”)
+      // 3) Match por número compuesto establecimiento-caja-numero (ej. "001-001-0000023"), tal como se
+      // imprime/muestra el documento. Se resuelve contra la relación caja/establecimiento + numero_factura.
+      const compuesto = parseNumeroCompuesto(filter);
+      if (compuesto) {
+        or.push({
+          numero_factura: compuesto.numero,
+          caja: {
+            codigo: compuesto.caja,
+            establecimiento: { codigo: compuesto.establecimiento },
+          },
+        });
+      }
+
+      // 4) Match por número de factura (solo si filter es entero “normal”)
       // Acepta únicamente dígitos y además limita tamaño para que entre en Int64
       const isIntegerString = /^[0-9]+$/.test(filter);
       if (isIntegerString) {
@@ -532,6 +644,7 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
           },
         },
         eventos_sifen: true,
+        nota_credito: INCLUDE_NOTAS_CREDITO_ASOCIADAS,
         caja: {
           include: {
             establecimiento: true,
@@ -549,7 +662,7 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
     });
 
     return {
-      items: facturas.map((factura) => proyectar({
+      items: facturas.map(({ nota_credito, ...factura }) => proyectar({
         ...factura,
         // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
         // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
@@ -562,6 +675,9 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
         detalles: normalizarCantidadDetalles(factura.detalles),
         // Expone caja y establecimiento como campos hermanos del documento.
         ...separarCajaEstablecimiento(factura.caja),
+        // Notas de crédito emitidas contra esta factura (array vacío si no tiene). Es un resumen,
+        // no la fila completa — ver SELECT_NOTA_CREDITO_ASOCIADA.
+        notas_credito: mapearNotasCreditoAsociadas(nota_credito),
       }, campos)),
       page,
       itemsPerPage,
@@ -589,6 +705,7 @@ const getFacturaById = async (id, empresaId, fields = null) => {
       include: {
         detalles: true,
         eventos_sifen: true,
+        nota_credito: INCLUDE_NOTAS_CREDITO_ASOCIADAS,
         cliente_empresa: {
           include: {
             cliente: true,
@@ -606,8 +723,10 @@ const getFacturaById = async (id, empresaId, fields = null) => {
       throw new ErrorApp(`Factura con ID ${id} no encontrado`, 404);
     }
 
+    const { nota_credito, ...facturaSinNotas } = factura;
+
     return proyectar({
-      ...factura,
+      ...facturaSinNotas,
       // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
       // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
       numero_factura: formatNumeroDocumento(
@@ -617,6 +736,9 @@ const getFacturaById = async (id, empresaId, fields = null) => {
       ) ?? factura.numero_factura,
       // Expone caja y establecimiento como campos hermanos del documento.
       ...separarCajaEstablecimiento(factura.caja),
+      // Notas de crédito emitidas contra esta factura (array vacío si no tiene). Es un resumen,
+      // no la fila completa — ver SELECT_NOTA_CREDITO_ASOCIADA.
+      notas_credito: mapearNotasCreditoAsociadas(nota_credito),
     }, campos);
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al obtener datos de factura");
@@ -637,6 +759,7 @@ const getFacturaByIdExterno = async (idExterno, empresaId, fields = null) => {
       include: {
         detalles: true,
         eventos_sifen: true,
+        nota_credito: INCLUDE_NOTAS_CREDITO_ASOCIADAS,
         cliente_empresa: {
           include: {
             cliente: true,
@@ -655,8 +778,10 @@ const getFacturaByIdExterno = async (idExterno, empresaId, fields = null) => {
       throw new ErrorApp(`Factura con id externo ${idExterno} no encontrada`, 404);
     }
 
+    const { nota_credito, ...facturaSinNotas } = factura;
+
     return proyectar({
-      ...factura,
+      ...facturaSinNotas,
       // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
       // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
       numero_factura: formatNumeroDocumento(
@@ -666,6 +791,9 @@ const getFacturaByIdExterno = async (idExterno, empresaId, fields = null) => {
       ) ?? factura.numero_factura,
       // Expone caja y establecimiento como campos hermanos del documento.
       ...separarCajaEstablecimiento(factura.caja),
+      // Notas de crédito emitidas contra esta factura (array vacío si no tiene). Es un resumen,
+      // no la fila completa — ver SELECT_NOTA_CREDITO_ASOCIADA.
+      notas_credito: mapearNotasCreditoAsociadas(nota_credito),
     }, campos);
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al obtener datos de factura");
@@ -804,12 +932,24 @@ const cancelarFactura = async (datos, datosUsuario) => {
  */
 const reintentarEnvioSifen = async (datos, datosUsuario) => {
   try {
+    // Se acepta `factura` de dos formas: el número impreso completo "EEE-PPP-NNNNNNN"
+    // (ej. "001-002-0000062"), con la caja embebida, o el secuencial entero + `caja` aparte
+    // (contrato histórico). Cuando viene el string completo también acotamos por
+    // establecimiento.codigo: la caja (punto de expedición) no es única entre establecimientos
+    // de una misma empresa, así que sin ese filtro findFirst podría matchear otro documento.
+    const parseado = parseNumeroDocumento(datos.factura);
+    const codigoCaja = parseado ? parseado.caja : datos.caja;
+    const numeroFactura = parseado ? parseado.numero : Number(datos.factura);
+    const establecimiento = parseado
+      ? { empresa_id: datosUsuario.empresaId, codigo: parseado.establecimiento }
+      : { empresa_id: datosUsuario.empresaId };
+
     const factura = await prisma.factura.findFirst({
       where: {
-        numero_factura: datos.factura,
+        numero_factura: numeroFactura,
         caja: {
-          codigo: datos.caja,
-          establecimiento: { empresa_id: datosUsuario.empresaId },
+          codigo: codigoCaja,
+          establecimiento,
         },
       },
     });

@@ -1,6 +1,8 @@
+const { validationResult } = require("express-validator");
 const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
 const { calcularImpuesto, calcularTotalItem } = require("../utils/facturacion");
+const { validadoresFacturaSimple } = require("../validators/facturaSimpleValidators");
 const facturaService = require("./facturaService");
 
 // Facturación simplificada para integraciones tipo bot (ver CLAUDE.md): el caller sólo manda datos del
@@ -93,6 +95,78 @@ const emitirFacturaSimple = async (datos, datosUsuario) => {
   }
 };
 
+// Alta masiva de facturas simples (carga por planilla): el caller manda un array de objetos, cada uno con el
+// mismo shape que POST /factura/simple. Se devuelve un array espejo `resultados` en el MISMO orden que la
+// entrada, donde el elemento en la posición `i` corresponde a la factura `i`. El procesamiento es
+// deliberadamente secuencial: emitirFactura numera con un UPDATE transaccional sobre secuencia_factura y
+// envía a SIFEN, así que serializar evita carreras de numeración y no golpea a SIFEN en paralelo. Cada
+// factura se valida y emite de forma aislada: un ítem inválido o una emisión fallida produce un resultado de
+// error propio sin abortar el resto del lote (mismo criterio de aislamiento por documento del pipeline SIFEN).
+const emitirFacturasBulk = async (facturas, datosUsuario) => {
+  try {
+    const resultados = [];
+
+    for (let i = 0; i < facturas.length; i++) {
+      // Se valida cada elemento reutilizando exactamente las reglas de /factura/simple, corriéndolas de
+      // forma imperativa contra un req sintético `{ body: item }`. Los sanitizers (p. ej. idExterno a
+      // string) mutan ese body, por eso a emitirFacturaSimple se le pasa `reqItem.body` ya saneado.
+      const reqItem = { body: facturas[i] };
+
+      for (const validador of validadoresFacturaSimple) {
+        await validador.run(reqItem);
+      }
+
+      const errores = validationResult(reqItem);
+      if (!errores.isEmpty()) {
+        resultados.push({
+          indice: i,
+          status: "error",
+          code: 400,
+          message: "Error de validación",
+          errores: errores.array(),
+          data: null,
+        });
+        continue;
+      }
+
+      try {
+        const data = await emitirFacturaSimple(reqItem.body, datosUsuario);
+        resultados.push({
+          indice: i,
+          status: "success",
+          code: 200,
+          message: "Factura creada",
+          errores: null,
+          data,
+        });
+      } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, "Error al crear factura");
+        resultados.push({
+          indice: i,
+          status: "error",
+          code,
+          message,
+          errores: null,
+          data: null,
+        });
+      }
+    }
+
+    const exitosas = resultados.filter((r) => r.status === "success").length;
+
+    return {
+      resumen: {
+        total: resultados.length,
+        exitosas,
+        fallidas: resultados.length - exitosas,
+      },
+      resultados,
+    };
+  } catch (error) {
+    ErrorApp.handleServiceError(error, "Error al procesar facturas en lote");
+  }
+};
+
 // Cancelación simplificada: el caller sólo manda el cdc, sin motivo — se usa un motivo fijo y se
 // delega en facturaService.cancelarFactura (misma validación de estado/NC vinculadas que la
 // cancelación por facturaId, ver facturaService.js).
@@ -133,5 +207,6 @@ const cancelarFacturaSimple = async (datos, datosUsuario) => {
 
 module.exports = {
   emitirFacturaSimple,
+  emitirFacturasBulk,
   cancelarFacturaSimple,
 };

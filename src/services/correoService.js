@@ -174,7 +174,7 @@ const enviarNotaDeCredito = async ({ email, cdc, cliente, uuid, nroNotaDeCredito
 
 }
 
-const enviarRecibo = async ({ email, cliente, uuid, reciboId, nroRecibo, empresa, emailEmpresa }) => {
+const enviarRecibo = async ({ email, cliente, uuid, reciboId, nroRecibo, empresa, emailEmpresa, xmlFirmado }) => {
 
     let filePath = path.join(__dirname, '..', 'resources', 'reciboTemplate.html')
     let html = fs.readFileSync(filePath, {encoding:'utf-8'})
@@ -194,19 +194,33 @@ const enviarRecibo = async ({ email, cliente, uuid, reciboId, nroRecibo, empresa
         },
     })
 
+    // El PDF de `pdfPath` ya viene firmado (firma invisible) cuando la empresa tiene certificado activo.
+    const attachments = [
+        {
+            filename: `${uuid}.pdf`,
+            path: pdfPath,
+            contentType: 'application/pdf'
+        },
+        adjuntoLogoFactyble()
+    ]
+
+    // XML propio del recibo ya firmado (columna `xml_firmado`). Puede venir null si la empresa no tiene
+    // certificado activo o si la firma falló (emisión best-effort): en ese caso se manda el mail sin el XML,
+    // igual que facturas/NC cuando no hay xml_firmado.
+    if (xmlFirmado) {
+        attachments.push({
+            filename: `${reciboId}.xml`,
+            content: Buffer.from(xmlFirmado, 'utf-8'),
+            contentType: 'application/xml'
+        })
+    }
+
     let mailObj = {
         from: process.env.EMAIL_FROM, // sender address
         to: email, // list of receivers
         subject: `Recibo Nro. ${nroRecibo} | ${empresa}`,
         html,
-        attachments: [
-            {
-                filename: `${uuid}.pdf`,
-                path: pdfPath,
-                contentType: 'application/pdf'
-            },
-            adjuntoLogoFactyble()
-        ]
+        attachments
     }
 
     let info = await transporter.sendMail(mailObj)

@@ -5,6 +5,7 @@ const { authJwt } = require('../middleware/authJwt');
 const { validarFields } = require('../utils/fields');
 const { CAMPOS_FACTURA } = require('../services/facturaService');
 const { validarCantidad } = require('../utils/facturacion');
+const { validadoresFacturaSimple } = require('../validators/facturaSimpleValidators');
 
 // Para una factura innominada (consumidor final no identificado) los datos del receptor no aplican:
 // el receptor se emite como "Sin Nombre" (SIFEN iTipIDRec=5). Cuando `innominado` es true se omiten las
@@ -15,8 +16,13 @@ routes.post(
     '/',
     authJwt(['ADMIN']),
     body('innominado', 'Parámetro innominado debe ser booleano').optional().isBoolean({ strict: true }),
-    body('ruc', 'Parámetro ruc requerido').if(noInnominado).notEmpty().isString(),
-    body('razonSocial', 'Parámetro razonSocial requerido').if(noInnominado).notEmpty().isString(),
+    // .trim() antes de notEmpty(): notEmpty() solo no trimea, y un valor de puros espacios terminaba
+    // persistido como razon_social vacía en padron_ruc/cliente. Los isLength protegen los VarChar
+    // de padron_ruc (ruc 15 + '-' + dv; razon_social 255) de un 500 de DB por 'Data too long'.
+    body('ruc', 'Parámetro ruc requerido').if(noInnominado).isString().trim().notEmpty()
+        .isLength({ max: 20 }).withMessage('Parámetro ruc no puede superar los 20 caracteres'),
+    body('razonSocial', 'Parámetro razonSocial requerido').if(noInnominado).isString().trim().notEmpty()
+        .isLength({ max: 255 }).withMessage('Parámetro razonSocial no puede superar los 255 caracteres'),
     body('situacionTributaria', 'Parámetro situacionTributaria requerido').if(noInnominado).notEmpty().isIn([
         'CONTRIBUYENTE','NO_CONTRIBUYENTE','NO_DOMICILIADO'
     ]),
@@ -75,37 +81,19 @@ routes.post(
 routes.post(
     '/simple',
     authJwt(['ADMIN']),
-    body('innominado', 'Parámetro innominado debe ser booleano').optional().isBoolean({ strict: true }),
-    body('situacionTributaria', 'Parámetro situacionTributaria requerido').if(noInnominado).notEmpty().isIn([
-        'CONTRIBUYENTE','NO_CONTRIBUYENTE'
-    ]),
-    body('personaDocumento', 'Parámetro personaDocumento requerido').if(noInnominado).notEmpty().isString(),
-    body('personaNombre', 'Parámetro personaNombre requerido').if(noInnominado).notEmpty().isString(),
-    body('personaEmail', 'Parámetro personaEmail inválido').optional({ checkFalsy: true }).isEmail(),
-    body('condicionVenta', 'Parámetro condicionVenta requerido').notEmpty().isIn(['CONTADO', 'CREDITO']),
-    body('items', 'Parámetro items requerido').isArray({min: 1}),
-    body('items.*', 'Parámetros item requerido Object').isObject(),
-    body('items.*.cantidad', 'Parámetro cantidad debe ser numérico > 0, máx 4 decimales').custom(validarCantidad),
-    body('items.*.precioUnitario', 'Parámetro precioUnitario dentro de items requerido').isNumeric(),
-    body('items.*.descripcion', 'Parámetro descripcion dentro de items requerido').isString().notEmpty(),
-    body('items.*.tasa', 'Parámetro tasa dentro de items requerido').isIn(['0%','5%','10%']),
-    body('establecimiento').optional({ checkFalsy: true }).matches(/^\d{3}$/)
-    .withMessage('El parámetro establecimiento debe tener exactamente 3 dígitos entre 001 y 999')
-    .custom(v => {
-        const n = parseInt(v, 10)
-        if(n < 1 || n > 999) return false
-        return true
-    }).withMessage('Parámetro establecimiento inválido'),
-    body('caja').optional({ checkFalsy: true }).matches(/^\d{3}$/)
-    .withMessage('El parámetro caja debe tener exactamente 3 dígitos entre 001 y 999')
-    .custom(v => {
-        const n = parseInt(v, 10)
-        if(n < 1 || n > 999) return false
-        return true
-    }).withMessage('Parámetro caja inválido'),
-    body('idExterno', 'Parámetro idExterno inválido').optional({ checkFalsy: true })
-    .custom(v => ['string', 'number'].includes(typeof v)).customSanitizer(v => String(v)).isLength({ max: 255 }),
+    ...validadoresFacturaSimple,
     facturaController.emitirFacturaSimple
+);
+
+// Alta masiva: el body es un array con exactamente el mismo shape que POST /factura/simple por elemento.
+// La validación de cada factura se corre por ítem dentro del service (array espejo), por eso aquí sólo se
+// valida el contenedor: que sea un array no vacío y acotado. La respuesta es un array de resultados en el
+// mismo orden que la entrada, donde cada elemento indica éxito o error de esa factura en particular.
+routes.post(
+    '/bulk-insert',
+    authJwt(['ADMIN']),
+    body('', 'El body debe ser un array de facturas (1 a 100)').isArray({ min: 1, max: 100 }),
+    facturaController.emitirFacturasBulk
 );
 
 routes.get(
@@ -164,8 +152,14 @@ routes.post(
 routes.post(
     '/reintentar-sifen',
     authJwt(['ADMIN']),
-    body('caja').matches(/^\d{3}$/).withMessage('El parámetro caja debe tener exactamente 3 dígitos entre 001 y 999'),
-    body('factura', 'Parámetro factura requerido').isInt({min: 1}),
+    // `factura` acepta dos formatos: el número impreso completo "EEE-PPP-NNNNNNN" (ej. "001-002-0000062"),
+    // que ya lleva la caja embebida, o el secuencial entero acompañado de `caja` (3 dígitos) por separado.
+    body('factura').custom((value, { req }) => {
+        if (typeof value === 'string' && /^\d{3}-\d{3}-\d+$/.test(value.trim())) return true;
+        const numero = Number(value);
+        if (Number.isInteger(numero) && numero >= 1 && /^\d{3}$/.test(String(req.body.caja || ''))) return true;
+        throw new Error('Enviá "factura" como "EEE-PPP-NNNNNNN" (ej. "001-002-0000062") o como número entero junto con "caja" de 3 dígitos');
+    }),
     facturaController.reintentarEnvioSifen
 );
 

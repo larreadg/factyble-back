@@ -4,8 +4,8 @@ const ErrorApp = require("../utils/error");
 const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = require("../utils/facturacion");
 const { v4: uuidv4 } = require("uuid");
 const generarPdf = require("../utils/generarPdf");
-const { formatNumber, formatNumeroDocumento } = require("../utils/format");
-const { separarCajaEstablecimiento } = require("../utils/documento");
+const { formatNumber, formatNumeroDocumento, parseNumeroDocumento } = require("../utils/format");
+const { separarCajaEstablecimiento, parseNumeroCompuesto } = require("../utils/documento");
 const { parsearFields, proyectar } = require("../utils/fields");
 const { enviarNotaDeCredito } = require("./correoService");
 const { construirCdc } = require("../utils/sifen/cdc");
@@ -25,6 +25,59 @@ const CAMPOS_NOTA_CREDITO = [
   "codigo_seguridad", "fecha_creacion", "fecha_modificacion", "caja_id",
   "factura", "eventos_sifen", "nota_credito_detalle", "caja", "establecimiento",
 ];
+
+// Columnas de la Factura vinculada que exponen los GET de Nota de Crédito. Se seleccionan explícito
+// para dejar afuera xml / linkqr / xml_firmado (TEXT/MEDIUMTEXT): con `factura: true` el XML firmado
+// completo de la factura viajaba dentro de CADA ítem del listado paginado. El resto de las columnas
+// se mantiene tal cual venía, para no romper el contrato del front.
+const SELECT_FACTURA_VINCULADA = {
+  id: true,
+  numero_factura: true,
+  factura_uuid: true,
+  usuario_id: true,
+  cliente_empresa_id: true,
+  fecha_creacion: true,
+  fecha_modificacion: true,
+  condicion_venta: true,
+  total_iva: true,
+  total: true,
+  cdc: true,
+  fuente: true,
+  id_externo: true,
+  sifen_estado: true,
+  sifen_estado_mensaje: true,
+  estado_sifen: true,
+  sifen_cod_respuesta: true,
+  sifen_num_transaccion: true,
+  fecha_firma: true,
+  fecha_envio_sifen: true,
+  fecha_respuesta_sifen: true,
+  intentos_firma: true,
+  lote_id: true,
+  codigo_seguridad: true,
+  caja_id: true,
+  // Solo para poder formatear numero_factura como se imprime; se descarta en mapearFacturaVinculada.
+  caja: { select: { codigo: true, establecimiento: { select: { codigo: true } } } },
+};
+
+// Normaliza la Factura vinculada al mismo contrato que el documento padre: numero_factura formateado
+// como se imprime (establecimiento-caja-numero, relleno a 7 dígitos) y sin el objeto caja anidado, que
+// solo se trajo para armar ese número. Cae al número crudo cuando no se puede formatear (facturas
+// legacy con caja_id NULL), igual que el documento padre. Se usa la caja DE LA FACTURA, no la de la
+// NC: son caja_id independientes y pueden diferir.
+const mapearFacturaVinculada = (factura) => {
+  if (!factura) return factura;
+  const { caja, ...resto } = factura;
+  return {
+    ...resto,
+    numero_factura:
+      formatNumeroDocumento(
+        caja?.establecimiento?.codigo,
+        caja?.codigo,
+        factura.numero_factura
+      ) ?? factura.numero_factura,
+  };
+};
 
 // tipoDocumento SIFEN para el CDC — 5=Nota de Credito, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_NOTA_CREDITO = 5;
@@ -370,7 +423,7 @@ const getNotasDeCredito = async (
           },
         },
         include: {
-          factura: true,
+          factura: { select: SELECT_FACTURA_VINCULADA },
           eventos_sifen: true,
           nota_credito_detalle: true,
           caja: {
@@ -389,43 +442,65 @@ const getNotasDeCredito = async (
         },
       });
     } else {
-      const factura = await prisma.factura.findFirst({
+      const or = [];
+
+      // 1) Número compuesto propio de la NC: establecimiento-caja-numero (ej. "001-001-0000023"), tal como
+      // se imprime/muestra. Se resuelve contra la relación caja/establecimiento + numero_nota_credito.
+      const compuesto = parseNumeroCompuesto(filter);
+      if (compuesto) {
+        or.push({
+          numero_nota_credito: compuesto.numero,
+          caja: {
+            codigo: compuesto.caja,
+            establecimiento: { codigo: compuesto.establecimiento },
+          },
+        });
+      }
+
+      // 2) Número simple propio de la NC (sólo si el filtro es un entero “normal”).
+      const isIntegerString = /^[0-9]+$/.test(filter);
+      if (isIntegerString && String(filter).length <= 18) {
+        const n = Number(filter);
+        if (Number.isSafeInteger(n)) {
+          or.push({ numero_nota_credito: { equals: n } });
+        }
+      }
+
+      // 3) Compatibilidad histórica: NCs cuya factura vinculada matchea por CDC o número de factura.
+      const facturaOr = [{ cdc: { contains: filter } }];
+      if (isIntegerString && String(filter).length <= 18) {
+        const n = Number(filter);
+        if (Number.isSafeInteger(n)) {
+          facturaOr.push({ numero_factura: { equals: n } });
+        }
+      }
+      or.push({ factura: { OR: facturaOr } });
+
+      // Siempre acotado a las cajas de la empresa (evita fugas entre empresas).
+      const whereNc = { caja_id: { in: cajasIds }, OR: or };
+
+      notasCredito = await prisma.notaCredito.findMany({
         skip,
         take,
         orderBy: {
           fecha_creacion: "desc",
         },
-        where: {
-          OR: [
-            { cdc: filter },
-            { numero_factura: !isNaN(filter) && String(filter).length <= 7 ? Number(filter) : 0 },
-          ],
+        where: whereNc,
+        include: {
+          factura: { select: SELECT_FACTURA_VINCULADA },
+          eventos_sifen: true,
+          nota_credito_detalle: true,
+          caja: {
+            include: {
+              establecimiento: true,
+            },
+          },
         },
       });
 
-      if (factura) {
-        notasCredito = await prisma.notaCredito.findMany({
-          where: {
-            factura_id: factura.id,
-          },
-          include: {
-            factura: true,
-            eventos_sifen: true,
-            nota_credito_detalle: true,
-            caja: {
-              include: {
-                establecimiento: true,
-              },
-            },
-          },
-        });
-
-        totalItems = await prisma.notaCredito.count({
-          where: {
-            factura_id: factura.id,
-          },
-        });
-      }
+      totalItems = await prisma.notaCredito.count({
+        where: whereNc,
+      });
     }
 
     return {
@@ -438,8 +513,13 @@ const getNotasDeCredito = async (
           notaCredito.caja?.codigo,
           notaCredito.numero_nota_credito
         ) ?? notaCredito.numero_nota_credito,
-        // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar el contrato.
-        detalles: normalizarCantidadDetalles(notaCredito.detalles),
+        // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar
+        // el contrato. OJO: en NotaCredito la relación se llama `nota_credito_detalle`, no `detalles`
+        // como en Factura — apuntar a `detalles` normalizaba undefined y dejaba las cantidades como
+        // string en la respuesta.
+        nota_credito_detalle: normalizarCantidadDetalles(notaCredito.nota_credito_detalle),
+        // Factura vinculada con numero_factura formateado y sin los TEXT pesados.
+        factura: mapearFacturaVinculada(notaCredito.factura),
         // Expone caja y establecimiento como campos hermanos del documento.
         ...separarCajaEstablecimiento(notaCredito.caja),
       }, campos)),
@@ -534,19 +614,34 @@ const reenviarNotaDeCredito = async ({ email, notaDeCreditoId, empresaId }) => {
  * Se identifica el documento por caja + número de nota de crédito (no por id interno), mismo criterio
  * que `facturaService.reintentarEnvioSifen`: `numero_nota_credito` no es único por sí solo, por eso el
  * filtro va siempre `caja.codigo` + `caja.establecimiento.empresa_id` (scoping multi-tenant) + `numero_nota_credito`.
+ *
+ * `notaCredito` se acepta de dos formas: el número impreso completo "EEE-PPP-NNNNNNN" (ej.
+ * "001-002-0000062"), con la caja embebida, o el secuencial entero + `caja` aparte (contrato histórico).
  * @param {Object} datos
- * @param {string} datos.caja - Código de caja (3 dígitos), el punto de expedición SIFEN
- * @param {number} datos.notaCredito - Número de nota de crédito (`numero_nota_credito`), no el id interno
+ * @param {string} [datos.caja] - Código de caja (3 dígitos), el punto de expedición SIFEN. Opcional si
+ *   `notaCredito` viene con el formato completo "EEE-PPP-NNNNNNN".
+ * @param {number|string} datos.notaCredito - Número de nota de crédito (`numero_nota_credito`, no el id
+ *   interno) o el número impreso completo "EEE-PPP-NNNNNNN"
  * @param {Object} datosUsuario - `req.usuario`, para el scoping multi-tenant
  */
 const reintentarEnvioSifen = async (datos, datosUsuario) => {
   try {
+    // Cuando viene el string completo también acotamos por establecimiento.codigo: la caja (punto de
+    // expedición) no es única entre establecimientos de una misma empresa, así que sin ese filtro
+    // findFirst podría matchear otro documento.
+    const parseado = parseNumeroDocumento(datos.notaCredito);
+    const codigoCaja = parseado ? parseado.caja : datos.caja;
+    const numeroNotaCredito = parseado ? parseado.numero : Number(datos.notaCredito);
+    const establecimiento = parseado
+      ? { empresa_id: datosUsuario.empresaId, codigo: parseado.establecimiento }
+      : { empresa_id: datosUsuario.empresaId };
+
     const notaDeCredito = await prisma.notaCredito.findFirst({
       where: {
-        numero_nota_credito: datos.notaCredito,
+        numero_nota_credito: numeroNotaCredito,
         caja: {
-          codigo: datos.caja,
-          establecimiento: { empresa_id: datosUsuario.empresaId },
+          codigo: codigoCaja,
+          establecimiento,
         },
       },
     });
@@ -573,7 +668,15 @@ const getNotaDeCreditoByIdExterno = async (idExterno, empresaId, fields = null) 
         usuario: { empresa_id: empresaId },
       },
       include: {
-        factura: true,
+        // Se incluye el cliente de la factura vinculada para que el consumidor (ej. el bot,
+        // al reconciliar una NC por idExterno) pueda resolver nombre/RUC del receptor.
+        factura: {
+          include: {
+            cliente_empresa: { include: { cliente: true } },
+            // Solo para formatear numero_factura; mapearFacturaVinculada la descarta después.
+            caja: { select: { codigo: true, establecimiento: { select: { codigo: true } } } },
+          },
+        },
         eventos_sifen: true,
         nota_credito_detalle: true,
         caja: {
@@ -598,8 +701,11 @@ const getNotaDeCreditoByIdExterno = async (idExterno, empresaId, fields = null) 
         notaDeCredito.caja?.codigo,
         notaDeCredito.numero_nota_credito
       ) ?? notaDeCredito.numero_nota_credito,
-      // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar el contrato.
-      detalles: normalizarCantidadDetalles(notaDeCredito.detalles),
+      // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar
+      // el contrato — ver el comentario homólogo en getNotasDeCredito sobre el nombre de la relación.
+      nota_credito_detalle: normalizarCantidadDetalles(notaDeCredito.nota_credito_detalle),
+      // Factura vinculada con numero_factura formateado (conserva cliente_empresa/cliente).
+      factura: mapearFacturaVinculada(notaDeCredito.factura),
       // Expone caja y establecimiento como campos hermanos del documento.
       ...separarCajaEstablecimiento(notaDeCredito.caja),
     }, campos);
