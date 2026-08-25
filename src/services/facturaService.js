@@ -18,7 +18,8 @@ const { consultarCedula } = require("./cedulaService");
 
 // Lista cerrada de atributos de PRIMER NIVEL que el query param `fields` de los GET puede pedir para
 // una Factura. Incluye las columnas escalares + las relaciones que los GET incluyen (detalles,
-// cliente_empresa, eventos_sifen, caja) + los campos sintetizados en la respuesta (establecimiento).
+// cliente_empresa, eventos_sifen, caja, nota_credito -> expuesta como `notas_credito`) + los campos
+// sintetizados en la respuesta (establecimiento).
 // Cualquier field fuera de esta lista => 400. Ver src/utils/fields.js.
 const CAMPOS_FACTURA = [
   "id", "numero_factura", "factura_uuid", "usuario_id", "cliente_empresa_id",
@@ -27,7 +28,61 @@ const CAMPOS_FACTURA = [
   "estado_sifen", "sifen_cod_respuesta", "sifen_num_transaccion", "fecha_firma", "fecha_envio_sifen",
   "fecha_respuesta_sifen", "intentos_firma", "lote_id", "codigo_seguridad", "caja_id",
   "detalles", "cliente_empresa", "eventos_sifen", "caja", "establecimiento",
+  "notas_credito",
 ];
+
+// Subconjunto de columnas de NotaCredito que los GET de Factura exponen en `notas_credito`. Se
+// selecciona explícito en vez de traer la fila entera porque xml / xml_firmado / linkqr son
+// TEXT/MEDIUMTEXT: en un listado paginado se multiplicarían por cada NC de cada factura.
+// caja/establecimiento se traen solo para poder formatear el número impreso y se descartan después
+// (ver mapearNotasCreditoAsociadas).
+const SELECT_NOTA_CREDITO_ASOCIADA = {
+  id: true,
+  numero_nota_credito: true,
+  nota_credito_uuid: true,
+  cdc: true,
+  total: true,
+  total_iva: true,
+  fuente: true,
+  id_externo: true,
+  // estado_sifen es el campo del pipeline nativo; sifen_estado (legacy, congelado) se expone también
+  // porque para las NC históricas es el único con contenido — mismo criterio que esCancelado/esAprobado
+  // (utils/sifen/estadoHistorico.js), que consultan ambos.
+  estado_sifen: true,
+  sifen_estado: true,
+  sifen_estado_mensaje: true,
+  sifen_cod_respuesta: true,
+  fecha_creacion: true,
+  caja_id: true,
+  caja: {
+    select: {
+      codigo: true,
+      establecimiento: { select: { codigo: true } },
+    },
+  },
+};
+
+// Relación de Prisma tal como está declarada en el schema (Factura.nota_credito), incluida en los GET
+// de Factura. Más recientes primero, igual criterio de orden que el listado de notas de crédito.
+const INCLUDE_NOTAS_CREDITO_ASOCIADAS = {
+  orderBy: { fecha_creacion: "desc" },
+  select: SELECT_NOTA_CREDITO_ASOCIADA,
+};
+
+// Normaliza las NC asociadas al mismo contrato que el documento padre: numero_nota_credito formateado
+// como se imprime (establecimiento-caja-numero, relleno a 7 dígitos) y sin el objeto caja anidado, que
+// solo se trajo para poder armar ese número. Cae al número crudo cuando no se puede formatear
+// (documentos legacy con caja_id NULL), igual que la Factura.
+const mapearNotasCreditoAsociadas = (notasCredito = []) =>
+  notasCredito.map(({ caja, ...notaCredito }) => ({
+    ...notaCredito,
+    numero_nota_credito:
+      formatNumeroDocumento(
+        caja?.establecimiento?.codigo,
+        caja?.codigo,
+        notaCredito.numero_nota_credito
+      ) ?? notaCredito.numero_nota_credito,
+  }));
 
 // tipoDocumento SIFEN para el CDC — 1=Factura, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_FACTURA = 1;
@@ -589,6 +644,7 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
           },
         },
         eventos_sifen: true,
+        nota_credito: INCLUDE_NOTAS_CREDITO_ASOCIADAS,
         caja: {
           include: {
             establecimiento: true,
@@ -606,7 +662,7 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
     });
 
     return {
-      items: facturas.map((factura) => proyectar({
+      items: facturas.map(({ nota_credito, ...factura }) => proyectar({
         ...factura,
         // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
         // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
@@ -619,6 +675,9 @@ const getFacturas = async (page = 1, itemsPerPage = 10, filter = null, empresaId
         detalles: normalizarCantidadDetalles(factura.detalles),
         // Expone caja y establecimiento como campos hermanos del documento.
         ...separarCajaEstablecimiento(factura.caja),
+        // Notas de crédito emitidas contra esta factura (array vacío si no tiene). Es un resumen,
+        // no la fila completa — ver SELECT_NOTA_CREDITO_ASOCIADA.
+        notas_credito: mapearNotasCreditoAsociadas(nota_credito),
       }, campos)),
       page,
       itemsPerPage,
@@ -646,6 +705,7 @@ const getFacturaById = async (id, empresaId, fields = null) => {
       include: {
         detalles: true,
         eventos_sifen: true,
+        nota_credito: INCLUDE_NOTAS_CREDITO_ASOCIADAS,
         cliente_empresa: {
           include: {
             cliente: true,
@@ -663,8 +723,10 @@ const getFacturaById = async (id, empresaId, fields = null) => {
       throw new ErrorApp(`Factura con ID ${id} no encontrado`, 404);
     }
 
+    const { nota_credito, ...facturaSinNotas } = factura;
+
     return proyectar({
-      ...factura,
+      ...facturaSinNotas,
       // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
       // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
       numero_factura: formatNumeroDocumento(
@@ -674,6 +736,9 @@ const getFacturaById = async (id, empresaId, fields = null) => {
       ) ?? factura.numero_factura,
       // Expone caja y establecimiento como campos hermanos del documento.
       ...separarCajaEstablecimiento(factura.caja),
+      // Notas de crédito emitidas contra esta factura (array vacío si no tiene). Es un resumen,
+      // no la fila completa — ver SELECT_NOTA_CREDITO_ASOCIADA.
+      notas_credito: mapearNotasCreditoAsociadas(nota_credito),
     }, campos);
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al obtener datos de factura");
@@ -694,6 +759,7 @@ const getFacturaByIdExterno = async (idExterno, empresaId, fields = null) => {
       include: {
         detalles: true,
         eventos_sifen: true,
+        nota_credito: INCLUDE_NOTAS_CREDITO_ASOCIADAS,
         cliente_empresa: {
           include: {
             cliente: true,
@@ -712,8 +778,10 @@ const getFacturaByIdExterno = async (idExterno, empresaId, fields = null) => {
       throw new ErrorApp(`Factura con id externo ${idExterno} no encontrada`, 404);
     }
 
+    const { nota_credito, ...facturaSinNotas } = factura;
+
     return proyectar({
-      ...factura,
+      ...facturaSinNotas,
       // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
       // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
       numero_factura: formatNumeroDocumento(
@@ -723,6 +791,9 @@ const getFacturaByIdExterno = async (idExterno, empresaId, fields = null) => {
       ) ?? factura.numero_factura,
       // Expone caja y establecimiento como campos hermanos del documento.
       ...separarCajaEstablecimiento(factura.caja),
+      // Notas de crédito emitidas contra esta factura (array vacío si no tiene). Es un resumen,
+      // no la fila completa — ver SELECT_NOTA_CREDITO_ASOCIADA.
+      notas_credito: mapearNotasCreditoAsociadas(nota_credito),
     }, campos);
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al obtener datos de factura");

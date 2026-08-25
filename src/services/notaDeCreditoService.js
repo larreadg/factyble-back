@@ -26,6 +26,59 @@ const CAMPOS_NOTA_CREDITO = [
   "factura", "eventos_sifen", "nota_credito_detalle", "caja", "establecimiento",
 ];
 
+// Columnas de la Factura vinculada que exponen los GET de Nota de Crédito. Se seleccionan explícito
+// para dejar afuera xml / linkqr / xml_firmado (TEXT/MEDIUMTEXT): con `factura: true` el XML firmado
+// completo de la factura viajaba dentro de CADA ítem del listado paginado. El resto de las columnas
+// se mantiene tal cual venía, para no romper el contrato del front.
+const SELECT_FACTURA_VINCULADA = {
+  id: true,
+  numero_factura: true,
+  factura_uuid: true,
+  usuario_id: true,
+  cliente_empresa_id: true,
+  fecha_creacion: true,
+  fecha_modificacion: true,
+  condicion_venta: true,
+  total_iva: true,
+  total: true,
+  cdc: true,
+  fuente: true,
+  id_externo: true,
+  sifen_estado: true,
+  sifen_estado_mensaje: true,
+  estado_sifen: true,
+  sifen_cod_respuesta: true,
+  sifen_num_transaccion: true,
+  fecha_firma: true,
+  fecha_envio_sifen: true,
+  fecha_respuesta_sifen: true,
+  intentos_firma: true,
+  lote_id: true,
+  codigo_seguridad: true,
+  caja_id: true,
+  // Solo para poder formatear numero_factura como se imprime; se descarta en mapearFacturaVinculada.
+  caja: { select: { codigo: true, establecimiento: { select: { codigo: true } } } },
+};
+
+// Normaliza la Factura vinculada al mismo contrato que el documento padre: numero_factura formateado
+// como se imprime (establecimiento-caja-numero, relleno a 7 dígitos) y sin el objeto caja anidado, que
+// solo se trajo para armar ese número. Cae al número crudo cuando no se puede formatear (facturas
+// legacy con caja_id NULL), igual que el documento padre. Se usa la caja DE LA FACTURA, no la de la
+// NC: son caja_id independientes y pueden diferir.
+const mapearFacturaVinculada = (factura) => {
+  if (!factura) return factura;
+  const { caja, ...resto } = factura;
+  return {
+    ...resto,
+    numero_factura:
+      formatNumeroDocumento(
+        caja?.establecimiento?.codigo,
+        caja?.codigo,
+        factura.numero_factura
+      ) ?? factura.numero_factura,
+  };
+};
+
 // tipoDocumento SIFEN para el CDC — 5=Nota de Credito, ver xmlBuilderService.js
 const CDC_TIPO_DOCUMENTO_NOTA_CREDITO = 5;
 const CDC_TIPO_EMISION_NORMAL = 1;
@@ -370,7 +423,7 @@ const getNotasDeCredito = async (
           },
         },
         include: {
-          factura: true,
+          factura: { select: SELECT_FACTURA_VINCULADA },
           eventos_sifen: true,
           nota_credito_detalle: true,
           caja: {
@@ -434,7 +487,7 @@ const getNotasDeCredito = async (
         },
         where: whereNc,
         include: {
-          factura: true,
+          factura: { select: SELECT_FACTURA_VINCULADA },
           eventos_sifen: true,
           nota_credito_detalle: true,
           caja: {
@@ -460,8 +513,13 @@ const getNotasDeCredito = async (
           notaCredito.caja?.codigo,
           notaCredito.numero_nota_credito
         ) ?? notaCredito.numero_nota_credito,
-        // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar el contrato.
-        detalles: normalizarCantidadDetalles(notaCredito.detalles),
+        // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar
+        // el contrato. OJO: en NotaCredito la relación se llama `nota_credito_detalle`, no `detalles`
+        // como en Factura — apuntar a `detalles` normalizaba undefined y dejaba las cantidades como
+        // string en la respuesta.
+        nota_credito_detalle: normalizarCantidadDetalles(notaCredito.nota_credito_detalle),
+        // Factura vinculada con numero_factura formateado y sin los TEXT pesados.
+        factura: mapearFacturaVinculada(notaCredito.factura),
         // Expone caja y establecimiento como campos hermanos del documento.
         ...separarCajaEstablecimiento(notaCredito.caja),
       }, campos)),
@@ -612,7 +670,13 @@ const getNotaDeCreditoByIdExterno = async (idExterno, empresaId, fields = null) 
       include: {
         // Se incluye el cliente de la factura vinculada para que el consumidor (ej. el bot,
         // al reconciliar una NC por idExterno) pueda resolver nombre/RUC del receptor.
-        factura: { include: { cliente_empresa: { include: { cliente: true } } } },
+        factura: {
+          include: {
+            cliente_empresa: { include: { cliente: true } },
+            // Solo para formatear numero_factura; mapearFacturaVinculada la descarta después.
+            caja: { select: { codigo: true, establecimiento: { select: { codigo: true } } } },
+          },
+        },
         eventos_sifen: true,
         nota_credito_detalle: true,
         caja: {
@@ -637,8 +701,11 @@ const getNotaDeCreditoByIdExterno = async (idExterno, empresaId, fields = null) 
         notaDeCredito.caja?.codigo,
         notaDeCredito.numero_nota_credito
       ) ?? notaDeCredito.numero_nota_credito,
-      // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar el contrato.
-      detalles: normalizarCantidadDetalles(notaDeCredito.detalles),
+      // cantidad de cada detalle vuelve a number (columna Decimal -> Prisma.Decimal) para no cambiar
+      // el contrato — ver el comentario homólogo en getNotasDeCredito sobre el nombre de la relación.
+      nota_credito_detalle: normalizarCantidadDetalles(notaDeCredito.nota_credito_detalle),
+      // Factura vinculada con numero_factura formateado (conserva cliente_empresa/cliente).
+      factura: mapearFacturaVinculada(notaDeCredito.factura),
       // Expone caja y establecimiento como campos hermanos del documento.
       ...separarCajaEstablecimiento(notaDeCredito.caja),
     }, campos);
