@@ -1,1 +1,0 @@
-import{j as o}from"./vendor-react-BhHoK7D7.js";import{P as r}from"./index-DutL1oeJ.js";const e=({color:s="#fff"})=>o.jsx("svg",{xmlns:"http://www.w3.org/2000/svg",fill:"none",viewBox:"0 0 24 24",strokeWidth:1.5,stroke:s,className:"size-6",children:o.jsx("path",{strokeLinecap:"round",strokeLinejoin:"round",d:"M12 4.5v15m7.5-7.5h-15"})});e.propTypes={color:r.string};export{e as P};
