@@ -1,20 +1,16 @@
-const java = require("java");
+const java = require("./jvm");
 const path = require("path");
 const dayjs = require("dayjs");
 const QRCode = require("qrcode");
 const { formatNumber } = require("./format");
 const { resolverPlantillaPdf } = require("./plantillasPdf");
+const { imprimirJasperPrint } = require("./imprimirJasper");
 const LOGOS_DIR = path.resolve(__dirname, "../..", process.env.LOGOS_DIR || "logos");
 const PUBLIC_QR = path.resolve(__dirname, '../../public/qr');
 const FACTYBLE_LOGO = path.resolve(__dirname, "..", "resources", "factura.png");
 
-java.classpath.push(path.resolve(__dirname, "..", "resources/lib/jasperreports.jar"));
-java.classpath.push(path.resolve(__dirname, "..", "resources/lib/jasperreports-fonts.jar"));
-java.classpath.push(path.resolve(__dirname, "..", "resources/lib/commons-collections.jar"));
-java.classpath.push(path.resolve(__dirname, "..", "resources/lib/itext.jar"));
-java.classpath.push(path.resolve(__dirname, "..", "resources/lib/commons-logging.jar"));
-java.classpath.push(path.resolve(__dirname, "..", "resources/lib/commons-digester.jar"));
-java.classpath.push(path.resolve(__dirname, "..", "resources/lib/commons-beanutils.jar"));
+// El classpath de JasperReports lo arma `./jvm` al cargarse (node-java lo congela en la primera
+// llamada a Java, así que no puede registrarse acá abajo).
 
 // Todos los parámetros del Factura.jrxml son java.lang.String. Si un valor llega null/undefined hay
 // que mandar "" y no dejar que se imprima "null" en el KUDE — ojo que String(null) === "null", por eso
@@ -122,6 +118,24 @@ const generarPdf = async (datos) => {
     JasperExportManager.exportReportToPdfFileSync(jasperPrint, outputPath);
 
     console.log("PDF generado exitosamente en:", outputPath);
+
+    // 8) Impresión directa (opcional, sólo el despliegue on-prem la pide). Se reutiliza el MISMO
+    // jasperPrint del PDF: no se vuelve a llenar el reporte y lo que sale por la impresora es
+    // idéntico al archivo que se archiva y se le manda al cliente.
+    //
+    // Aislada en su propio try/catch a propósito: cuando esto corre la factura YA se emitió y ya se
+    // firmó. Un atasco de papel, una impresora apagada o un nombre mal configurado no pueden hacer
+    // fallar el request y dejar al caller creyendo que la emisión no ocurrió — el candado del outbox
+    // volvería a PENDIENTE y la venta se emitiría dos veces.
+    if (datos.impresora) {
+      try {
+        imprimirJasperPrint(jasperPrint, datos.impresora);
+        console.log(`Ticket enviado a la impresora "${datos.impresora}"`);
+      } catch (errorImpresion) {
+        console.error(`No se pudo imprimir el ticket (la factura SÍ se emitió):`, errorImpresion.message);
+      }
+    }
+
     return { outputPath };
   }
   catch (error) {

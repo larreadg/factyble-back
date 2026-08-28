@@ -523,7 +523,11 @@ const emitirFactura = async (datos, datosUsuario) => {
       tipoCredito: datos.tipoCredito,
       cantidadCuota: String(datos.cantidadCuota),
       periodicidad: datos.periodicidad,
-      plazoDescripcion: datos.plazoDescripcion
+      plazoDescripcion: datos.plazoDescripcion,
+      // Nombre de impresora del sistema, o undefined. Sólo lo setea el despliegue on-prem (ver
+      // procesarFacturaService): si viene, generarPdf manda el mismo reporte a esa impresora además
+      // de exportarlo a PDF. En el despliegue en la nube nunca llega, y no se imprime nada.
+      impresora: datos.impresora
     });
 
     return {

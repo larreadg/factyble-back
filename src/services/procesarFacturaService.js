@@ -225,10 +225,39 @@ async function marcarEvento(pool, ventaId, estado) {
     `);
 }
 
+// Impresora de tickets del despliegue on-prem (nombre exacto de Windows, p. ej.
+// "EPSON TM-T20IV-L Receipt"). Vacía = no se imprime nada, que es lo que corresponde en la nube.
+//
+// Se lee UNA vez al cargar el módulo: cambiar el .env no tiene efecto hasta reiniciar el proceso. Por
+// eso se loguea al arrancar — sin esto, "no imprime" y "no está configurada" se ven exactamente igual
+// desde afuera (la emisión funciona, el KUDE sale, y no aparece ningún error en ningún lado).
+const IMPRESORA_TICKETS = process.env.IMPRESORA_TICKETS || '';
+console.log(
+  IMPRESORA_TICKETS
+    ? `[procesarFactura] impresión de tickets ACTIVA -> "${IMPRESORA_TICKETS}"`
+    : '[procesarFactura] impresión de tickets DESACTIVADA (IMPRESORA_TICKETS vacía)'
+);
+
 // Emite una venta ya mapeada bajo el candado del outbox. Devuelve el objeto resultado (PROCESADA /
 // YA_PROCESADA / OMITIDA / ERROR). Compartido por el endpoint (nominadas) y el cron (innominadas).
-async function emitirVentaConCandado(pool, venta, payload, datosUsuario) {
+//
+// `imprimir` distingue los dos casos de uso, y no es un detalle de configuración: las NOMINADAS las
+// dispara una persona parada frente a la caja con el cliente esperando su comprobante, así que salen
+// por la impresora. Las INNOMINADAS las emite el cron cada 5 minutos en lotes; imprimirlas escupiría
+// tickets de ventas cuyo cliente se fue hace rato. Por eso el cron llama sin esta opción.
+async function emitirVentaConCandado(pool, venta, payload, datosUsuario, { imprimir = false } = {}) {
   const ventaId = venta.venta_id;
+
+  // fuente APP y no BOT (el default de facturaSimpleService): estas facturas nacen en Factyble sobre
+  // una venta de Starsoft, no en una conversación de WhatsApp. No es cosmético — loteService reenvía a
+  // BOT_API_URL el resultado de SIFEN de todo documento con fuente BOT, y en el despliegue on-prem esa
+  // URL no existe: cada factura terminaría en un POST fallido y una alerta de Telegram avisando que el
+  // cliente final no recibió una notificación que nunca correspondió.
+  const payloadFinal = {
+    ...payload,
+    fuente: 'APP',
+    ...(imprimir && IMPRESORA_TICKETS ? { impresora: IMPRESORA_TICKETS } : {}),
+  };
 
   // Decisión A/C: reclamar el candado ANTES de emitir. Si no se gana, la venta ya fue tomada.
   const reclamada = await reclamarEvento(pool, ventaId);
@@ -238,7 +267,7 @@ async function emitirVentaConCandado(pool, venta, payload, datosUsuario) {
   }
 
   try {
-    const factura = await facturaSimpleService.emitirFacturaSimple(payload, datosUsuario);
+    const factura = await facturaSimpleService.emitirFacturaSimple(payloadFinal, datosUsuario);
     await marcarEvento(pool, ventaId, 'PROCESADO');
     return {
       venta_id: ventaId,
@@ -303,7 +332,8 @@ const procesarFactura = async (datos, datosUsuario) => {
         resultados.push({ venta_id: venta.venta_id, resultado: 'ERROR', error: mapeo.error });
         continue;
       }
-      resultados.push(await emitirVentaConCandado(pool, venta, mapeo.payload, datosUsuario));
+      // Nominadas disparadas por una persona: el cliente está esperando su comprobante en papel.
+      resultados.push(await emitirVentaConCandado(pool, venta, mapeo.payload, datosUsuario, { imprimir: true }));
     }
 
     const procesadas = resultados.filter((r) => r.resultado === 'PROCESADA').length;
@@ -417,6 +447,7 @@ async function procesarInnominadosPendientes(limite = 10) {
       continue;
     }
 
+    // Sin `imprimir`: son innominadas de un lote del cron, el cliente ya no está en el mostrador.
     resultados.push(await emitirVentaConCandado(pool, venta, mapeo.payload, emisor.datosUsuario));
   }
 
@@ -588,7 +619,8 @@ const emitirVentaPorId = async (ventaId, datosUsuario) => {
     }
 
     const pool = await getPool();
-    return await emitirVentaConCandado(pool, venta, mapeo.payload, datosUsuario);
+    // Botón "Generar factura" de la pantalla de caja: se imprime en el acto.
+    return await emitirVentaConCandado(pool, venta, mapeo.payload, datosUsuario, { imprimir: true });
   } catch (error) {
     ErrorApp.handleServiceError(error, 'Error al emitir la venta de PVTA');
   }

@@ -79,7 +79,15 @@ const emitirFacturaSimple = async (datos, datosUsuario) => {
       establecimiento: establecimiento.codigo,
       caja: caja.codigo,
       idExterno: datos.idExterno,
-      fuente: "BOT",
+      // Default BOT porque el consumidor histórico de este service es /factura/simple, el endpoint del
+      // bot de WhatsApp. Se puede sobrescribir: `fuente` no es una etiqueta decorativa — loteService
+      // reenvía al bot el resultado de SIFEN SÓLO para los documentos con fuente BOT, así que marcar
+      // así una factura que no nació en el bot dispara un POST a BOT_API_URL y, si falla, una alerta
+      // de Telegram diciendo que el cliente final no recibió un aviso que nunca se le iba a mandar.
+      fuente: datos.fuente || "BOT",
+      // Se propaga tal cual: sólo lo setea el flujo on-prem de Starsoft para los documentos que la
+      // cajera necesita en papel. Ausente = no se imprime nada.
+      impresora: datos.impresora,
     };
 
     // Crédito simplificado: siempre "a plazo" con una descripción fija — facturaService.emitirFactura
