@@ -64,6 +64,14 @@ function mapearCondicionVenta(condicion) {
 }
 
 // Trae las filas (una por ítem) de las ventas del cliente en la fecha. Parametrizado (anti-inyección).
+//
+// El día se filtra con un rango semiabierto [fecha, fecha+1) y NO con CAST(fecha AS DATE) = @fecha:
+// envolver la columna en una función deja al optimizador de 2008 R2 dependiendo de un caso especial
+// (GetRangeThroughConvert) y sin poder usar las estadísticas de FacVenFec para estimar cardinalidad,
+// lo que en producción derivaba en planes de join completo (4,5 s para listar un día). El rango es
+// semánticamente idéntico (FacVenFec es DATETIME; cualquier hora del día cae dentro) pero deja la
+// columna desnuda: sargable en cualquier versión y con estimaciones sanas. Mismo criterio en todas
+// las queries por fecha de este archivo.
 async function obtenerFilasVentas(ruc, fechaISO) {
   const pool = await getPool();
   const result = await pool
@@ -76,9 +84,9 @@ async function obtenerFilasVentas(ruc, fechaISO) {
              item_nro, item_descripcion, item_cantidad, item_precio_unitario, item_tasa_iva
       FROM dbo.FACTYBLE_VENTAS_SIFEN_MIN
       WHERE cliente_ruc = @ruc
-        AND CAST(fecha AS DATE) = @fecha
+        AND fecha >= @fecha AND fecha < DATEADD(DAY, 1, @fecha)
         AND anulada = 0
-        AND RTRIM(cliente_ruc) <> @sinNombre
+        AND cliente_ruc <> @sinNombre
       ORDER BY venta_id, item_nro
     `);
   return result.recordset;
@@ -316,6 +324,8 @@ const procesarFactura = async (datos, datosUsuario) => {
 // evento ALTA PENDIENTE en el outbox, en orden de llegada (fecha del evento). El TOP se aplica sobre los
 // venta_id de la cola (no sobre las filas-ítem), así el límite cuenta VENTAS y no ítems. Trae emisor_ruc
 // para resolver la empresa emisora aguas abajo. Compatible SQL 2008 R2 (TOP con variable + subconsulta).
+// Sin RTRIM sobre cliente_ruc: la vista ya lo expone con RTRIM aplicado (mismo criterio de
+// sargabilidad que obtenerVentasNominadasPendientes).
 async function obtenerVentasInnominadasPendientes(limite) {
   const pool = await getPool();
   const result = await pool
@@ -327,7 +337,7 @@ async function obtenerVentasInnominadasPendientes(limite) {
              v.item_nro, v.item_descripcion, v.item_cantidad, v.item_precio_unitario, v.item_tasa_iva
       FROM dbo.FACTYBLE_VENTAS_SIFEN_MIN v
       WHERE v.anulada = 0
-        AND RTRIM(v.cliente_ruc) = @sinNombre
+        AND v.cliente_ruc = @sinNombre
         AND v.venta_id IN (
           SELECT TOP (@limite) o.venta_id
           FROM dbo.FACTYBLE_SIFEN_OUTBOX o
@@ -337,7 +347,7 @@ async function obtenerVentasInnominadasPendientes(limite) {
               SELECT 1 FROM dbo.FACTYBLE_VENTAS_SIFEN_MIN vx
               WHERE vx.venta_id = o.venta_id
                 AND vx.anulada = 0
-                AND RTRIM(vx.cliente_ruc) = @sinNombre
+                AND vx.cliente_ruc = @sinNombre
             )
           ORDER BY o.fecha ASC
         )
@@ -456,6 +466,17 @@ async function obtenerRucEmpresa(datosUsuario) {
 // La fecha se bindea en vez de usar GETDATE() para poder mirar días anteriores: una venta cerrada a las
 // 23:58 y no facturada cae fuera del "hoy" apenas pasa medianoche, y sin esto quedaba sin forma de
 // llegar desde la pantalla de caja.
+//
+// Esta es LA query caliente del sistema (el front la pollea cada pocos segundos), así que todos los
+// predicados están escritos para ser sargables en el SQL Server 2008 R2 Express de producción:
+//   - fecha por rango semiabierto, no CAST(fecha AS DATE) (ver obtenerFilasVentas);
+//   - sin RTRIM sobre emisor_ruc / cliente_ruc: la vista YA los expone con RTRIM aplicado, y volver a
+//     envolverlos le impide al optimizador matchear la expresión contra la definición de la vista.
+// Con esto (y la vista v2, que sacó el RTRIM del join a CFGEMP — ver
+// el-halcon-explorar-db/vista-ventas-sifen-2008-v2.sql) el plan queda en puros index seeks: arranca por
+// el índice (estado, fecha) del outbox — decenas de filas — y hace seek por PK de FACVEN /
+// FACVENLEVEL1 / CLIENTE / CFGEMP por cada pendiente, en vez de armar el join del día entero (contar
+// las ventas de un día sobre la vista costaba 4,5 s medidos en la máquina de producción).
 async function obtenerVentasNominadasPendientes(emisorRuc, fechaISO) {
   const pool = await getPool();
   const result = await pool
@@ -468,9 +489,9 @@ async function obtenerVentasNominadasPendientes(emisorRuc, fechaISO) {
              v.item_nro, v.item_descripcion, v.item_cantidad, v.item_precio_unitario, v.item_tasa_iva
       FROM dbo.FACTYBLE_VENTAS_SIFEN_MIN v
       WHERE v.anulada = 0
-        AND RTRIM(v.emisor_ruc) = @emisorRuc
-        AND RTRIM(v.cliente_ruc) <> @sinNombre
-        AND CAST(v.fecha AS DATE) = @fecha
+        AND v.emisor_ruc = @emisorRuc
+        AND v.cliente_ruc <> @sinNombre
+        AND v.fecha >= @fecha AND v.fecha < DATEADD(DAY, 1, @fecha)
         AND EXISTS (
           SELECT 1 FROM dbo.FACTYBLE_SIFEN_OUTBOX o
           WHERE o.venta_id = v.venta_id AND o.tipo_evento = 'ALTA' AND o.estado = 'PENDIENTE'
@@ -497,8 +518,8 @@ async function obtenerFilasVentaPorId(ventaId, emisorRuc) {
       FROM dbo.FACTYBLE_VENTAS_SIFEN_MIN v
       WHERE v.venta_id = @venta_id
         AND v.anulada = 0
-        AND RTRIM(v.emisor_ruc) = @emisorRuc
-        AND RTRIM(v.cliente_ruc) <> @sinNombre
+        AND v.emisor_ruc = @emisorRuc
+        AND v.cliente_ruc <> @sinNombre
       ORDER BY v.item_nro
     `);
   return result.recordset;
