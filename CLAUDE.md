@@ -71,6 +71,14 @@ This is the core of the ongoing migration — native (no PHP intermediary) Parag
 
 `src/utils/generarPdf.js` (and `generarPdfRecibo.js`) render invoices/receipts via JasperReports through the `java` npm package (a native Node↔JVM bridge, classpath pointed at jars in `src/resources/lib/`). This bridge's native binding is compiled against a specific `NODE_MODULE_VERSION` and will hard-fail (`ERR_DLOPEN_FAILED`) to even load on a Node version it wasn't built for — this is a pre-existing, environment-level constraint, not something to "fix" as part of unrelated work. If a `require()` of `facturaService.js`/`notaDeCreditoService.js` fails this way, verify with `node --check` (syntax only) instead of trying to load the module, and don't treat the dlopen failure as a regression you introduced.
 
+### Starsoft/PVTA integration (`starsoft/`)
+
+The on-prem deployment reads sales from `PVTA`, the MSSQL database of Starsoft (a third-party POS). Everything we install *inside* that database lives in `starsoft/`: the two views (`FACTYBLE_VENTAS_SIFEN`, `FACTYBLE_VENTAS_SIFEN_MIN`), the append-only event queue (`FACTYBLE_SIFEN_OUTBOX`) and its trigger, plus migrations and diagnostics. **Read `starsoft/README.md` before touching any of it** — it documents the install order, the SQL Server 2008 R2 syntax ceiling, and two performance rules learned from real incidents (no window functions in views that get filtered by key; no `RTRIM()` on join/`WHERE` columns — both destroy seeks on that optimizer).
+
+Non-obvious invariants documented there and easy to break: the outbox has no `IDENTITY` column on purpose (it would clobber `@@IDENTITY` inside Starsoft's own transaction), its trigger is `AFTER INSERT, UPDATE` (Starsoft writes the sale as a `TipCmp=0` draft first), and a `PROCESADO` row *is* the "already invoiced" record — deleting one lets the trigger re-enqueue and double-emit. Only `PENDIENTE`/`PROCESANDO` rows are ever safe to delete.
+
+Tables owned by Starsoft (`FACVEN`, `FACVENLEVEL1`, `CLIENTE`, `CFGEMP`) are off-limits: read-only through our views, no DDL. `starsoft/PVTA-modelo-datos.md` has the reverse-engineered data model — note that `CliId` is *not* unique, clients join on the composite `(CliId, CliEmp)`.
+
 ### Auth
 
 JWT-based (`src/utils/jwt.js` + `src/middleware/authJwt.js`), role-gated per route. There's no session store — roles come from the decoded JWT payload, refreshed only on login.
