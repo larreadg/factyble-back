@@ -2,6 +2,7 @@ const prisma = require('../prisma/cliente');
 const { getPool, sql } = require('../db/dbPvta');
 const ErrorApp = require('../utils/error');
 const facturaSimpleService = require('./facturaSimpleService');
+const { calcularTotalItem } = require('../utils/facturacion');
 const telegramService = require('./telegramService');
 
 // Centinela de PVTA para el cliente "sin nombre" (consumidor final no identificado): en la vista figura
@@ -30,6 +31,18 @@ const RUC_SIN_NOMBRE = 'x';
 
 // Mapea la tasa de IVA numérica de la vista (10/5/0) al literal que espera el endpoint /factura/simple.
 const TASA_IVA_MAP = { 10: '10%', 5: '5%', 0: '0%' };
+
+// Fecha de hoy en 'yyyy-mm-dd' segun el reloj LOCAL del proceso. Se usa como default del listado de
+// caja. Local y no UTC a proposito: en el despliegue on-prem el backend, el SQL Server de Starsoft y la
+// caja son la misma maquina, y lo que importa es el dia calendario de la ferreteria, no el de Greenwich
+// (con UTC, despues de las 21:00 de Paraguay el "hoy" saltaria al dia siguiente).
+function fechaHoyISO() {
+  const ahora = new Date();
+  const mes = String(ahora.getMonth() + 1).padStart(2, '0');
+  const dia = String(ahora.getDate()).padStart(2, '0');
+
+  return `${ahora.getFullYear()}-${mes}-${dia}`;
+}
 
 // 'dd/mm/yyyy' (ya validado por la ruta) -> 'yyyy-mm-dd' para el binding sql.Date.
 function convertirFecha(fechaDdMmYyyy) {
@@ -225,6 +238,10 @@ async function emitirVentaConCandado(pool, venta, payload, datosUsuario) {
       factura_id: factura && factura.id,
       cdc: factura && factura.cdc,
       numero_factura: factura && factura.numeroFacturaFormateada,
+      // Cuando esto responde el KUDE ya existe y está servido en /public: firma, QR y PDF son
+      // síncronos dentro de facturaService.emitirFactura (sólo el envío a SIFEN es por lote). El
+      // front lo necesita para imprimir; el cron de innominadas simplemente ignora este campo.
+      pdf_nombre: factura && factura.pdfNombre,
     };
   } catch (error) {
     // Emisión falló: liberar el candado (PROCESANDO -> PENDIENTE) para permitir un reintento futuro.
@@ -399,6 +416,163 @@ async function procesarInnominadosPendientes(limite = 10) {
   return { tomadas: ventas.length, procesadas, errores, resultados };
 }
 
+// ---------------------------------------------------------------------------------------------------
+// Flujo asistido por caja (El Halcón): la cajera ve las ventas NOMINADAS pendientes y aprieta
+// "Generar factura" en cada una, porque son las que requieren KUDE impreso para el cliente.
+//
+// Deliberadamente NO hay cron ni copia local para esto: la vista + FACTYBLE_SIFEN_OUTBOX ya son la cola,
+// así que el front pollea el listado y éste consulta MSSQL en vivo. Replicar ese estado en MySQL sólo
+// sumaría latencia (cron + polling se apilan) y consultas de fondo con la caja cerrada.
+//
+// Las innominadas quedan fuera de estos dos caminos: las emite proactivamente el cron
+// (procesarInnominadosPendientes + cronJobsPvta.js). Los conjuntos son disjuntos, así que el flujo
+// manual y el automático nunca compiten por la misma venta.
+// ---------------------------------------------------------------------------------------------------
+
+// PVTA es multiempresa (FACVEN.FacVenEmp -> CFGEMP.CfgRuc, expuesto como emisor_ruc en la vista), así
+// que TODA consulta del flujo de caja debe acotarse al RUC de la empresa del usuario: sin ese filtro un
+// usuario vería — y podría emitir bajo su propio timbrado — ventas de otra empresa del sistema.
+//
+// El RUC se resuelve desde la BD por empresaId en vez de leer el claim `empresaRuc` del JWT: el token es
+// de larga duración y quedaría desactualizado si se corrige el RUC de la empresa. Es un lookup por clave
+// primaria, barato aun con el polling del front.
+async function obtenerRucEmpresa(datosUsuario) {
+  const empresaId = datosUsuario && datosUsuario.empresaId;
+  if (!empresaId) {
+    throw new ErrorApp('El usuario no tiene una empresa asociada', 403);
+  }
+
+  const empresa = await prisma.empresa.findUnique({ where: { id: empresaId }, select: { ruc: true } });
+  if (!empresa || !empresa.ruc) {
+    throw new ErrorApp('La empresa del usuario no tiene RUC configurado', 409);
+  }
+
+  return empresa.ruc.trim();
+}
+
+// Filas-ítem de TODAS las ventas nominadas (cliente identificado) de un día con evento ALTA PENDIENTE.
+// Sin TOP: es un listado, no un batch acotado — el volumen queda limitado por el filtro de fecha.
+//
+// La fecha se bindea en vez de usar GETDATE() para poder mirar días anteriores: una venta cerrada a las
+// 23:58 y no facturada cae fuera del "hoy" apenas pasa medianoche, y sin esto quedaba sin forma de
+// llegar desde la pantalla de caja.
+async function obtenerVentasNominadasPendientes(emisorRuc, fechaISO) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('sinNombre', sql.VarChar, RUC_SIN_NOMBRE)
+    .input('emisorRuc', sql.VarChar, emisorRuc)
+    .input('fecha', sql.Date, fechaISO)
+    .query(`
+      SELECT v.venta_id, v.empresa, v.condicion_venta, v.cliente_ruc, v.cliente_nombre,
+             v.item_nro, v.item_descripcion, v.item_cantidad, v.item_precio_unitario, v.item_tasa_iva
+      FROM dbo.FACTYBLE_VENTAS_SIFEN_MIN v
+      WHERE v.anulada = 0
+        AND RTRIM(v.emisor_ruc) = @emisorRuc
+        AND RTRIM(v.cliente_ruc) <> @sinNombre
+        AND CAST(v.fecha AS DATE) = @fecha
+        AND EXISTS (
+          SELECT 1 FROM dbo.FACTYBLE_SIFEN_OUTBOX o
+          WHERE o.venta_id = v.venta_id AND o.tipo_evento = 'ALTA' AND o.estado = 'PENDIENTE'
+        )
+      ORDER BY v.venta_id, v.item_nro
+    `);
+  return result.recordset;
+}
+
+// Filas-ítem de UNA venta por su venta_id. Sin filtro de fecha a propósito: el front ya la listó, y una
+// venta tomada justo antes de medianoche debe poder facturarse después. Los otros dos filtros sí son
+// guardas y se mantienen: el de emisor_ruc impide emitir una venta de otra empresa bajo el timbrado
+// propio (el venta_id viene de la URL, no de la sesión), y el de innominadas impide pisar al cron.
+async function obtenerFilasVentaPorId(ventaId, emisorRuc) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('venta_id', sql.Decimal(15, 0), ventaId)
+    .input('sinNombre', sql.VarChar, RUC_SIN_NOMBRE)
+    .input('emisorRuc', sql.VarChar, emisorRuc)
+    .query(`
+      SELECT v.venta_id, v.empresa, v.condicion_venta, v.cliente_ruc, v.cliente_nombre,
+             v.item_nro, v.item_descripcion, v.item_cantidad, v.item_precio_unitario, v.item_tasa_iva
+      FROM dbo.FACTYBLE_VENTAS_SIFEN_MIN v
+      WHERE v.venta_id = @venta_id
+        AND v.anulada = 0
+        AND RTRIM(v.emisor_ruc) = @emisorRuc
+        AND RTRIM(v.cliente_ruc) <> @sinNombre
+      ORDER BY v.item_nro
+    `);
+  return result.recordset;
+}
+
+// Listado en vivo que consume el front. Cada venta se pasa por construirPayload para adelantar acá los
+// errores de mapeo (tasa de IVA no derivable, condición de venta desconocida) y exponerlos como
+// `emitible: false` + `error`: la UI deshabilita el botón en vez de dejar que el clic falle en el POST.
+const listarVentasPendientes = async (datosUsuario, fecha) => {
+  try {
+    const emisorRuc = await obtenerRucEmpresa(datosUsuario);
+    // Sin fecha explicita se lista el dia en curso: es el caso de uso normal de la caja.
+    const fechaISO = fecha || fechaHoyISO();
+    const filas = await obtenerVentasNominadasPendientes(emisorRuc, fechaISO);
+    const ventas = agruparPorVenta(filas);
+
+    const pendientes = ventas.map((venta) => {
+      const mapeo = construirPayload(venta);
+      const items = mapeo.ok ? mapeo.payload.items : [];
+
+      return {
+        venta_id: venta.venta_id,
+        cliente_ruc: venta.cliente_ruc,
+        cliente_nombre: venta.cliente_nombre,
+        condicion_venta: venta.condicion_venta,
+        items,
+        // Mismo redondeo guaraní-entero que aplica la emisión (calcularTotalItem, ver CLAUDE.md), para
+        // que el total que ve la cajera coincida con el que sale impreso en el KUDE.
+        total: items.reduce((acc, it) => acc + calcularTotalItem(it.cantidad, it.precioUnitario), 0),
+        emitible: mapeo.ok,
+        error: mapeo.ok ? null : mapeo.error,
+      };
+    });
+
+    // Se devuelve la fecha efectivamente consultada para que el front no tenga que asumir cual fue el
+    // default del servidor (su reloj puede no coincidir con el del navegador).
+    return { fecha: fechaISO, emisor_ruc: emisorRuc, ventas_pendientes: pendientes.length, ventas: pendientes };
+  } catch (error) {
+    ErrorApp.handleServiceError(error, 'Error al listar las ventas pendientes de PVTA');
+  }
+};
+
+// Emite UNA venta nominada a pedido de la cajera. El emisor es la empresa del JWT (datosUsuario), igual
+// que procesarFactura — resolverEmisorPorRuc es exclusivo del cron, que corre sin usuario y sobre varias
+// empresas. Ese mismo RUC acota la búsqueda en PVTA, así la venta que se emite y el timbrado con el que
+// se emite pertenecen siempre a la misma empresa. El candado del outbox hace idempotente el doble clic: el segundo request no reclama nada y
+// devuelve YA_PROCESADA sin emitir de nuevo.
+const emitirVentaPorId = async (ventaId, datosUsuario) => {
+  try {
+    const emisorRuc = await obtenerRucEmpresa(datosUsuario);
+    const filas = await obtenerFilasVentaPorId(ventaId, emisorRuc);
+    const ventas = agruparPorVenta(filas);
+
+    if (ventas.length === 0) {
+      throw new ErrorApp(
+        `No se encontró la venta ${ventaId} para el RUC ${emisorRuc} (inexistente, anulada, de otra ` +
+          `empresa, o de cliente sin nombre)`,
+        404
+      );
+    }
+
+    const venta = ventas[0];
+    const mapeo = construirPayload(venta);
+    if (!mapeo.ok) {
+      throw new ErrorApp(`La venta ${ventaId} no se puede emitir: ${mapeo.error}`, 422);
+    }
+
+    const pool = await getPool();
+    return await emitirVentaConCandado(pool, venta, mapeo.payload, datosUsuario);
+  } catch (error) {
+    ErrorApp.handleServiceError(error, 'Error al emitir la venta de PVTA');
+  }
+};
+
 module.exports = {
   procesarFactura,
   procesarInnominadosPendientes,
@@ -411,4 +585,10 @@ module.exports = {
   construirPayloadInnominado,
   obtenerFilasVentas,
   obtenerVentasInnominadasPendientes,
+  listarVentasPendientes,
+  emitirVentaPorId,
+  obtenerVentasNominadasPendientes,
+  obtenerFilasVentaPorId,
+  obtenerRucEmpresa,
+  fechaHoyISO,
 };
