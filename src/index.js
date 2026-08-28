@@ -22,6 +22,32 @@ if (process.env.ENTORNO === 'prod') {
 }
 
 app.use('/public', express.static(path.join(__dirname, '..', 'public')))
+
+// Los dos fronts compilados se sirven desde este mismo proceso: en el despliegue on-prem no hay un
+// nginx delante, y servirlos acá los deja en el MISMO origen que la API, así que la caja no arrastra
+// preflight de CORS ni un segundo certificado que aceptar.
+//
+// Cada uno está BUILDEADO para su prefijo (vite base '/portal/' + basename del router; <base
+// href="/portal-admin/"> en el Angular), así que estas rutas no se pueden renombrar sin recompilar
+// el front correspondiente.
+const portales = [
+    { ruta: '/portal', carpeta: 'portal' },
+    { ruta: '/portal-admin', carpeta: 'portal-admin' }
+]
+
+for (const portal of portales) {
+    const raiz = path.join(__dirname, '..', 'portales', portal.carpeta)
+
+    app.use(portal.ruta, express.static(raiz))
+
+    // Fallback de SPA: las rutas del router viven sólo en el navegador, así que un F5 sobre
+    // /portal/ventas llega al server como un GET de un archivo que no existe. Va DESPUÉS del static
+    // (si no, se comería los assets) y acotado al prefijo, para no tocar las rutas de la API.
+    app.get(`${portal.ruta}/*`, (req, res) => {
+        res.sendFile(path.join(raiz, 'index.html'))
+    })
+}
+
 app.use(routes)
 
 // HTTPS opcional, sólo para el despliegue on-prem: la caja es OTRA máquina de la LAN y el navegador
