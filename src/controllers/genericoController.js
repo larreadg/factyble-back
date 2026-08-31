@@ -10,7 +10,10 @@ const getDatosByRuc = async (req, res) => {
         const errors = validationResult(req);
         if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, null, errors.array()));
 
-        const data = await genericoService.getDatosByRuc(req.query);
+        // `empresaId` viaja en el payload del JWT (ver usuarioService) y no en la query: el servicio
+        // lo necesita para resolver el certificado con el que consultar el RUC en SIFEN cuando no
+        // está en el padrón local.
+        const data = await genericoService.getDatosByRuc({ ...req.query, empresaId: req.usuario.empresaId });
 
         return res.status(200).send(Response.success(data));
 

@@ -16,6 +16,7 @@ const { buscarPorRuc, guardarLote } = require("./padronRucPersistenciaService");
 const { bloqueaEmision } = require("../utils/sifen/estadoPadronRuc");
 const { consultarCedula } = require("./cedulaService");
 const { resolverReceptorPorCedula } = require("./receptorFallbackService");
+const { consultarRucEnSifen } = require("./sifen/consultaRucService");
 
 // Lista cerrada de atributos de PRIMER NIVEL que el query param `fields` de los GET puede pedir para
 // una Factura. Incluye las columnas escalares + las relaciones que los GET incluyen (detalles,
@@ -214,6 +215,79 @@ const emitirFactura = async (datos, datosUsuario) => {
       // vez de confiar en el informado evita envenenar el padrón: un typo en el DV ya no queda
       // persistido como "autoridad" que bloquearía para siempre las emisiones correctas de ese RUC.
       let registroPadron = await buscarPorRuc(rucBase);
+
+      // Marca que `registroPadron` ya viene de una consulta fresca a SIFEN. Evita que la
+      // revalidación de más abajo dispare una segunda llamada de red por la misma emisión — serían
+      // dos esperas de hasta 90 s cada una para responder la misma pregunta.
+      let registroVerificadoEnSifen = false;
+
+      // Adopta un registro traído de SIFEN y lo cachea en el padrón local. Es el dato de la SET, no
+      // una suposición nuestra, así que la próxima emisión del mismo RUC resuelve por el camino
+      // rápido y con el estado ya refrescado. Un fallo al guardar no invalida la consulta —el
+      // registro ya está en memoria—, así que solo se loguea y se sigue.
+      const adoptarRegistroDeSifen = async (registro) => {
+        registroPadron = registro;
+        registroVerificadoEnSifen = true;
+
+        try {
+          await guardarLote([registro]);
+        } catch (error) {
+          console.log(`[consultaRucSifen] RUC ${rucBase} — no se pudo cachear en padron_ruc: ${error.message}`);
+        }
+      };
+
+      // Fallback a la autoridad real cuando el padrón local no conoce el RUC: `padron_ruc` se
+      // importa a mano y sin cron, así que un RUC dado de alta después de la última importación no
+      // está acá aunque sea perfectamente válido. Solo corre en el miss — el hit local sigue siendo
+      // una lectura de BD sin red ni certificado.
+      //
+      // Los tres desenlaces son distintos a propósito (ver consultaRucService):
+      //   - encontrado    -> se adopta el registro de SIFEN y sigue el flujo normal, incluida la
+      //                      degradación por estado bloqueante de más abajo si corresponde.
+      //   - noExiste      -> SIFEN afirma que el RUC no existe: se rechaza la emisión. Es la única
+      //                      vía por la que un RUC ausente del padrón local bloquea; antes de este
+      //                      fallback se emitía igual asumiendo ACTIVO.
+      //   - indeterminado -> no se pudo saber (SIFEN caído, timeout, sin certificado): se mantiene
+      //                      el comportamiento previo (fabricar el registro y emitir sin comprobar).
+      //                      Una caída de SIFEN nunca debe rechazar un RUC válido.
+      if (!registroPadron) {
+        const consultaSifen = await consultarRucEnSifen({ ruc: rucBase, empresaId: datosUsuario.empresaId });
+
+        if (consultaSifen.encontrado) {
+          await adoptarRegistroDeSifen(consultaSifen.registro);
+        } else if (consultaSifen.noExiste) {
+          throw new ErrorApp(`El RUC ${datos.ruc} no existe en el padrón de la SET. Verificá el número con el cliente.`, 404);
+        }
+      }
+
+      // Revalidación contra SIFEN antes de degradar. `padron_ruc` es una foto batch que se importa
+      // a mano, y más de la mitad de sus filas están en un estado bloqueante — SUSPENSION TEMPORAL
+      // en particular es transitorio (se sale poniéndose al día con la SET). Sin este chequeo, un
+      // contribuyente que se regularizó después de la última importación se degradaría a consumidor
+      // final por cédula de forma automática e irreversible, perdiendo el crédito fiscal, solo
+      // porque nuestra foto quedó vieja.
+      //
+      // Corre únicamente en el camino bloqueado (poco frecuente) y nunca cuando el registro ya vino
+      // de SIFEN en este mismo request. Si SIFEN confirma el bloqueo, se adopta igual su registro:
+      // el estado puede haber cambiado entre estados bloqueantes y el mensaje de error debe nombrar
+      // el vigente, no el de la foto. Si no se pudo consultar (indeterminado) o SIFEN dice que el
+      // RUC no existe, se mantiene el estado local y se degrada como antes — una caída de SIFEN no
+      // debe volverse una vía para saltearse un bloqueo real.
+      if (!registroVerificadoEnSifen && registroPadron && bloqueaEmision(registroPadron.estado)) {
+        const revalidacion = await consultarRucEnSifen({ ruc: rucBase, empresaId: datosUsuario.empresaId });
+
+        if (revalidacion.encontrado) {
+          const estadoLocal = registroPadron.estado;
+          await adoptarRegistroDeSifen(revalidacion.registro);
+
+          if (!bloqueaEmision(registroPadron.estado)) {
+            console.log(
+              `[consultaRucSifen] RUC ${rucBase} — el padrón local decía "${estadoLocal}" pero SIFEN ` +
+                `responde "${registroPadron.estado}": se emite sin degradar a cédula`
+            );
+          }
+        }
+      }
 
       if (registroPadron && bloqueaEmision(registroPadron.estado)) {
         // El RUC no puede recibir un DE (CANCELADO / CANCELADO DEFINITIVO / SUSPENSION TEMPORAL).
