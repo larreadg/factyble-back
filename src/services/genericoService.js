@@ -1,6 +1,7 @@
 const ErrorApp = require('../utils/error');
 const prisma = require('../prisma/cliente');
-const { buscarPorRuc } = require('./padronRucPersistenciaService');
+const { buscarPorRuc, guardarLote } = require('./padronRucPersistenciaService');
+const { consultarRucEnSifen } = require('./sifen/consultaRucService');
 const { consultarCedula } = require('./cedulaService');
 const { bloqueaEmision } = require('../utils/sifen/estadoPadronRuc');
 const { resolverReceptorPorCedula, normalizarDatosCedula } = require('./receptorFallbackService');
@@ -18,7 +19,7 @@ const separarNombre = (razonSocial) => {
     return { nombres, apellidos };
 };
 
-const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
+const getDatosByRuc = async ({ ruc, situacionTributaria, empresaId } = {}) => {
 
     try {
 
@@ -42,10 +43,62 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
             // challenge de Cloudflare inaccesible desde servidores. Si el RUC no está en el padrón,
             // el 404 no bloquea la emisión: /factura/simple inserta el RUC en padron_ruc con los
             // datos del receptor que llegan en esa request (ver facturaService).
-            const registro = await buscarPorRuc(rucBase);
+            let registro = await buscarPorRuc(rucBase);
+
+            // Ver el equivalente en `facturaService`: evita una segunda consulta de red por la misma
+            // búsqueda cuando el registro ya vino de SIFEN.
+            let registroVerificadoEnSifen = false;
+
+            const adoptarRegistroDeSifen = async (registroSifen) => {
+                registro = registroSifen;
+                registroVerificadoEnSifen = true;
+
+                try {
+                    await guardarLote([registroSifen]);
+                } catch (error) {
+                    console.log(`[consultaRucSifen] RUC ${rucBase} — no se pudo cachear en padron_ruc: ${error.message}`);
+                }
+            };
+
+            // Mismo fallback que la emisión (`facturaService`, ver el comentario largo ahí): si el
+            // padrón local no conoce el RUC se le pregunta a SIFEN, que es la autoridad real. Sin
+            // esto el buscador devolvía un 404 duro para cualquier RUC dado de alta después de la
+            // última importación batch del padrón, y el front nunca llegaba a la emisión.
+            //
+            // El caso "indeterminado" (SIFEN caído/timeout/sin certificado) mantiene el 404, pero con
+            // un mensaje distinto: acá no se puede degradar como en la emisión, porque el buscador no
+            // recibe una razón social con la que construir el Cliente — la emisión sí, y por eso allá
+            // ese caso emite igual.
+            if(!registro && empresaId){
+                const consultaSifen = await consultarRucEnSifen({ ruc: rucBase, empresaId });
+
+                if(consultaSifen.encontrado){
+                    await adoptarRegistroDeSifen(consultaSifen.registro);
+                } else if(consultaSifen.indeterminado){
+                    throw new ErrorApp(`No se pudo verificar el RUC ${ruc}: no está en el padrón local y SIFEN no respondió la consulta. Reintentá en unos minutos.`, 404);
+                }
+            }
 
             if(!registro){
                 throw new ErrorApp(`El RUC ${ruc} no existe en el padrón. Verificá el número con el cliente.`, 404);
+            }
+
+            // Revalidación contra SIFEN antes de degradar — misma lógica y mismos motivos que en
+            // `emitirFactura` (ver el comentario largo ahí). El buscador tiene que correrla también:
+            // si no, mostraría al cliente degradado a consumidor final mientras la emisión, que sí
+            // revalida, terminaría emitiendo como contribuyente. Los dos caminos deben resolver el
+            // mismo receptor.
+            if(!registroVerificadoEnSifen && empresaId && bloqueaEmision(registro.estado)){
+                const revalidacion = await consultarRucEnSifen({ ruc: rucBase, empresaId });
+
+                if(revalidacion.encontrado){
+                    const estadoLocal = registro.estado;
+                    await adoptarRegistroDeSifen(revalidacion.registro);
+
+                    if(!bloqueaEmision(registro.estado)){
+                        console.log(`[consultaRucSifen] RUC ${rucBase} — el padrón local decía "${estadoLocal}" pero SIFEN responde "${registro.estado}": se devuelve como contribuyente, sin degradar`);
+                    }
+                }
             }
 
             // Misma blocklist normalizada que la emisión (bloqueaEmision), y también la misma

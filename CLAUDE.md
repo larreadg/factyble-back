@@ -50,11 +50,45 @@ Single schema file at `prisma/schema.prisma`. Conventions to follow when extendi
 
 Where a new native pipeline replaces a legacy one but both must temporarily coexist, this codebase freezes the legacy field and adds a new one rather than repurposing it in place — e.g. `Factura.sifen_estado` (free-text, written historically by the now-removed legacy sync) is frozen and untouched, while `Factura.estado_sifen` (`EstadoSifen` enum) is the field the native pipeline reads/writes. Same pattern for `xml` (legacy, frozen) vs `xml_firmado` (native). If you're asked to extend behavior that touches one of these pairs, the native field is the authoritative one for new code paths — and never resurrect the legacy field for new writes.
 
+### Padrón RUC resolution: local table first, SIFEN `siConsRUC` as fallback
+
+`padron_ruc` is a batch-imported snapshot (`padronRucImportService`, fed by uploading the SET's ZIPs through the endpoint — **there is no cron**), so a RUC registered after the last import is legitimately absent from it. Both consumers of the padrón (`emitirFactura` and `genericoService.getDatosByRuc` — the only two callers of `buscarPorRuc`) hit the local table first and, **only on a miss**, fall back to SIFEN's `siConsRUC` WS through `services/sifen/consultaRucService.js`. A local hit never touches the network or the certificate.
+
+`consultarRucEnSifen` returns a **three-way** result, and the distinction is the whole point of the module:
+
+| result | when | caller's behavior |
+|---|---|---|
+| `encontrado` | `0502` | adopt SIFEN's registro (then the blocking-state degradation below still applies normally) |
+| `noExiste` | `0500` | **reject** the emission — the only path by which a RUC missing from the local padrón blocks |
+| `indeterminado` | timeout, network failure, no usable certificate, `0501`, unexpected response shape | keep the previous behavior: fabricate the registro and emit **without** verifying |
+
+Properties to preserve:
+- **Never collapse `noExiste` and `indeterminado` into a boolean.** "SIFEN says it doesn't exist" is a positive answer; "we couldn't reach SIFEN" is not. Merging them makes a SIFEN outage reject perfectly valid RUCs.
+- **`0501` is `indeterminado`, not a rejection.** It means *our* emisor RUC (the cert we consult with) isn't authorized to use the WS — it says nothing about the RUC being consulted.
+- **`consultarRucEnSifen` never throws.** Every failure — including "no active certificate for this company" — is translated to `indeterminado`. An exception escaping would let a SIFEN outage break both emission and the client searcher, which is exactly what the local padrón exists to prevent.
+- **Response codes and state codes are sourced, not guessed** — Manual Técnico v150 §9.6 (`siConsRUC`, `ContenedorRUC_v150.xsd`) and §12.3.5, local copy `Manual Técnico Versión 150.md`; additionally verified against the production WS (`0502` for an existing RUC, `0500` for nonexistent ones). Same rule as `utils/sifen/codigosRespuesta.js`.
+- **`dCodEstCons` is translated to the padrón's textual vocabulary, not stored as the 3-letter code** (`ACT`→`ACTIVO`, `SUS`→`SUSPENSION TEMPORAL`, `SAD`→`SUSPENSION ADMINISTRATIVA`, `BLQ`→`BLOQUEADO`, `CAN`→`CANCELADO`, `CDE`→`CANCELADO DEFINITIVO`). This keeps `padron_ruc.estado` in one dialect and lets `bloqueaEmision()` keep working untouched. An unknown `dCodEstCons` is `indeterminado` — never assumed `ACTIVO`.
+- **The WS does not return the DV** (there is no `dDVCons` in `ContRUC01-06`), so it's computed with Módulo 11 via `calcularDigitoVerificador` — the same algorithm the emission already used for RUCs missing from the padrón.
+- **The RUC is pre-validated to 5–8 digits before the call** (`dRUCCons` is `A 5-8`). Outside that range SIFEN doesn't even answer a `rResEnviConsRUC` — it returns a `rRetEnviDe` with `0160 "XML Mal Formado"`, so the response parser must tolerate a body without the expected node.
+- **SIFEN's answer is cached into `padron_ruc`.** That's the SET's own data, not an assumption of ours, and it's strictly better than the `estado: "ACTIVO"` the emission used to fabricate. A failure to cache is logged and swallowed — the registro is already in memory. (This does not contradict "`padron_ruc` is not written on degradation" below: that rule is about not overwriting a state we didn't observe.)
+- **The searcher keeps a 404 on `indeterminado`, with a distinct message.** It can't degrade the way the emission does because it receives no `razonSocial` to build the `Cliente` with, while `emitirFactura` gets one in the request body — that asymmetry is why the two paths differ *only* in this case.
+- **No `sifen_trazabilidad` record** (product decision): that table requires an `entidad_tipo`/`entidad_id` of a document, and the consultation happens before any Factura exists. The `[consultaRucSifen]` log line is the only trace — don't remove it, same role as `[receptorFallback]`.
+- The consultation uses the library's default **90 s** timeout (explicit decision: prefer exhausting the wait over emitting unverified). Be aware this can hang a caja emission that long when SIFEN is unresponsive.
+
+There is a **second** call site for the same service: a local *hit* whose state is blocking is revalidated against SIFEN before the degradation described in the next section runs. `padron_ruc` is a manually refreshed snapshot and over half its rows are in a blocking state (`SUSPENSION TEMPORAL` alone is ~408k, and it's a transitory state — the taxpayer settles up with the SET and returns to `ACTIVO`), so without this a contribuyente regularized after the last import would be silently and irreversibly degraded to consumidor final over a stale row. Sampling 12 suspended RUCs against the production WS found 1 already regularized.
+
+Properties to preserve here too:
+- **It runs only on the blocking path, and never twice per request.** Both `emitirFactura` and `getDatosByRuc` track whether `registroPadron`/`registro` already came from a fresh SIFEN answer (`registroVerificadoEnSifen`) and skip the revalidation if so — otherwise a single emission could wait out two 90 s timeouts to answer the same question.
+- **`indeterminado` and `noExiste` keep the local blocking state and degrade as before.** A SIFEN outage must not become a way to bypass a real block — the asymmetry with the miss path is deliberate: there, not knowing means "don't reject"; here, not knowing means "don't unblock".
+- **When SIFEN confirms the block, its registro is adopted anyway**, so the error message and the degradation name the state currently in force rather than the one in the stale snapshot (a RUC can move between blocking states).
+- **The searcher must run this too.** If only the emission revalidated, the front would show the client degraded to consumidor final while the emission resolved them as contribuyente — the two paths would disagree on the receptor.
+
 ### Receptor fallback: RUC bloqueado en el padrón
 
 A RUC in a blocking state (`CANCELADO` / `CANCELADO DEFINITIVO` / `SUSPENSION TEMPORAL`, see `utils/sifen/estadoPadronRuc.js`) does **not** reject the emission anymore. `services/receptorFallbackService.js` degrades the receptor to a consumidor final identified by cédula: for a persona física the RUC base *is* the CI, so it is looked up against the identity registry (`URL_CI`) and, if found, `emitirFactura` rewrites `datos` in place to `NO_CONTRIBUYENTE` / `CEDULA`. SIFEN accepts this because D206c/d only run when the DE informs a RUC.
 
 Properties to preserve when touching this:
+- **The blocking state that triggers this is revalidated against SIFEN first** (see the previous section) — the degradation never fires straight off a local `padron_ruc` hit. Everything below applies once SIFEN has confirmed the block, or couldn't be reached.
 - **The degradation is automatic and unconfirmed** (product decision). It is irreversible for the receptor — the invoice can't be used as crédito fiscal, and a Nota de Crédito does not fix it (the NC doesn't change the receptor's naturaleza). The `[receptorFallback]` log line is the only trace; don't remove it.
 - **It applies to personas físicas only.** RUCs with the `80` prefix (personas jurídicas) are discarded before hitting the network; the `URL_CI` lookup is the second barrier. If neither passes — including when `URL_CI` is down, whose error is deliberately swallowed — the caller keeps the original 400 about the RUC state, never a 500.
 - **The searcher and the emission must stay in sync.** `genericoService.getDatosByRuc` runs the same degradation so the client the front resolves is the same receptor `emitirFactura` ends up emitting to. Both call `resolverReceptorPorCedula`; don't fork the logic.
@@ -67,6 +101,7 @@ This is the core of the ongoing migration — native (no PHP intermediary) Parag
 
 - **`sifenClientService.js`** — thin wrapper over the `facturacionelectronicapy-setapi` SOAP client. Only exposes `recibeLote`, `evento`, `consultaLote`, `consulta`, `consultaRuc` (never `recibe`, a single-document send). Certificate (path + already-decrypted password) is passed explicitly per call — no global cert state.
 - **`certificadoService.js`** — CRUD for `Certificado`, enforces "one active certificate per company" via `prisma.$transaction` (deactivate-then-activate atomically), encrypts the P12 password at rest with `utils/crypto.js` (AES-256-GCM, key from `CERT_ENCRYPTION_KEY` env var, never stored in the DB), and refuses to hand back an expired certificate.
+- **`consultaRucService.js`** — fallback to the `siConsRUC` WS when a RUC isn't in the local `padron_ruc`. Returns the three-way `encontrado`/`noExiste`/`indeterminado` result described above and never throws; see the padrón resolution section for the properties that must hold.
 - **`xmlBuilderService.js`** — maps `Factura`/`NotaCredito` + relations to the DE XML payload consumed by `facturacionelectronicapy-xmlgen`. Contains documented workarounds for real bugs found in that vendored library (e.g. `repararCTipRegVacio`, and the innominado receptor's `razonSocial` override — see the inline comments for why) — don't "clean up" that code without re-reading those explanations, the workarounds are load-bearing.
 - **`firmadorService.js`** — wraps `facturacionelectronicapy-xmlsign`, always signs via the Node implementation (`signByNodeJS: true`), never the Java path — the Java signing path in that library is vulnerable to command injection via the P12 password, so it's deliberately never used here.
 - **`qrService.js`** — wraps `facturacionelectronicapy-qrgen` to append the KUDE QR node to a signed XML. Requires the XML to already be signed.
