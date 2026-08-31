@@ -3,6 +3,7 @@ const prisma = require('../prisma/cliente');
 const { buscarPorRuc } = require('./padronRucPersistenciaService');
 const { consultarCedula } = require('./cedulaService');
 const { bloqueaEmision } = require('../utils/sifen/estadoPadronRuc');
+const { resolverReceptorPorCedula, normalizarDatosCedula } = require('./receptorFallbackService');
 
 // Separa "APELLIDOS, NOMBRES" del padrón sin romper si falta la coma o el segundo segmento
 // (la razón social del padrón no siempre trae el formato con coma).
@@ -20,6 +21,14 @@ const separarNombre = (razonSocial) => {
 const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
 
     try {
+
+        // Documento y situación tributaria efectivamente resueltos. Arrancan como los pedidos y sólo
+        // cambian cuando un receptor CONTRIBUYENTE se degrada a cédula por tener el RUC bloqueado en
+        // el padrón. `datosCedula` transporta lo ya traído del registro de identificaciones para no
+        // consultarlo de nuevo en el camino común de abajo.
+        let documento = ruc;
+        let situacion = situacionTributaria;
+        let datosCedula = null;
 
         if(situacionTributaria == 'CONTRIBUYENTE'){
             // El padrón es la autoridad y se consulta SIEMPRE (no hay fast-path por cliente cacheado):
@@ -39,67 +48,81 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
                 throw new ErrorApp(`El RUC ${ruc} no existe en el padrón. Verificá el número con el cliente.`, 404);
             }
 
-            // Misma blocklist normalizada que la emisión (bloqueaEmision): buscador y emisión aceptan
-            // exactamente los mismos RUCs.
+            // Misma blocklist normalizada que la emisión (bloqueaEmision), y también la misma
+            // degradación: si el RUC está bloqueado se resuelve a la persona por su cédula y se
+            // devuelve un cliente NO_CONTRIBUYENTE, de modo que el buscador entregue exactamente el
+            // receptor con el que emitirFactura va a terminar emitiendo. Si la degradación no aplica
+            // (persona jurídica, cédula inexistente, servicio caído) se mantiene el rechazo.
             if(bloqueaEmision(registro.estado)){
-                throw new ErrorApp(`El RUC ${ruc} se encuentra en estado "${registro.estado}" y no puede recibir documentos electrónicos`, 400);
+                datosCedula = await resolverReceptorPorCedula(rucBase, registro.estado);
+
+                if(!datosCedula){
+                    throw new ErrorApp(`El RUC ${ruc} se encuentra en estado "${registro.estado}" y no puede recibir documentos electrónicos`, 400);
+                }
+
+                documento = datosCedula.documento;
+                situacion = 'NO_CONTRIBUYENTE';
+            } else {
+
+                // Formato canónico BASE-DV: es el que exige xmlgen (jsonDteMain parte cliente.ruc por '-'
+                // para dRucRec/dDVRec) y el que ya persiste emitirFactura, así ambos flujos coinciden y no
+                // se generan clientes duplicados.
+                const dv = Number(registro.digitoVerificador);
+                const rucCanonico = `${registro.ruc}-${registro.digitoVerificador}`;
+
+                // Reutilizamos un cliente existente tolerando el formato histórico (base sola, sin DV) que
+                // guardaba este mismo endpoint antes de unificar el criterio.
+                const clienteExistente = await prisma.cliente.findFirst({
+                    where: {
+                        situacion_tributaria: 'CONTRIBUYENTE',
+                        OR: [
+                            { ruc: rucCanonico },
+                            { documento: rucCanonico },
+                            { ruc: registro.ruc },
+                            { documento: registro.ruc }
+                        ]
+                    }
+                });
+
+                if(clienteExistente){
+                    // Auto-reparación: si la fila quedó en formato legacy (sin DV), la normalizamos a canónico
+                    // para que una futura emisión no falle en xmlgen ("RUC debe contener dígito verificador").
+                    if(clienteExistente.ruc !== rucCanonico || clienteExistente.documento !== rucCanonico || clienteExistente.dv !== dv){
+                        return await prisma.cliente.update({
+                            where: { id: clienteExistente.id },
+                            data: { ruc: rucCanonico, documento: rucCanonico, dv }
+                        });
+                    }
+                    return clienteExistente;
+                }
+
+                const { nombres, apellidos } = separarNombre(registro.razonSocial);
+
+                return await prisma.cliente.create({
+                    data: {
+                        ruc: rucCanonico,
+                        documento: rucCanonico,
+                        razon_social: registro.razonSocial,
+                        dv,
+                        situacion_tributaria: 'CONTRIBUYENTE',
+                        tipo_identificacion: 'RUC',
+                        nombres,
+                        apellidos
+                    }
+                });
+
             }
-
-            // Formato canónico BASE-DV: es el que exige xmlgen (jsonDteMain parte cliente.ruc por '-'
-            // para dRucRec/dDVRec) y el que ya persiste emitirFactura, así ambos flujos coinciden y no
-            // se generan clientes duplicados.
-            const dv = Number(registro.digitoVerificador);
-            const rucCanonico = `${registro.ruc}-${registro.digitoVerificador}`;
-
-            // Reutilizamos un cliente existente tolerando el formato histórico (base sola, sin DV) que
-            // guardaba este mismo endpoint antes de unificar el criterio.
-            const clienteExistente = await prisma.cliente.findFirst({
-                where: {
-                    situacion_tributaria: 'CONTRIBUYENTE',
-                    OR: [
-                        { ruc: rucCanonico },
-                        { documento: rucCanonico },
-                        { ruc: registro.ruc },
-                        { documento: registro.ruc }
-                    ]
-                }
-            });
-
-            if(clienteExistente){
-                // Auto-reparación: si la fila quedó en formato legacy (sin DV), la normalizamos a canónico
-                // para que una futura emisión no falle en xmlgen ("RUC debe contener dígito verificador").
-                if(clienteExistente.ruc !== rucCanonico || clienteExistente.documento !== rucCanonico || clienteExistente.dv !== dv){
-                    return await prisma.cliente.update({
-                        where: { id: clienteExistente.id },
-                        data: { ruc: rucCanonico, documento: rucCanonico, dv }
-                    });
-                }
-                return clienteExistente;
-            }
-
-            const { nombres, apellidos } = separarNombre(registro.razonSocial);
-
-            return await prisma.cliente.create({
-                data: {
-                    ruc: rucCanonico,
-                    documento: rucCanonico,
-                    razon_social: registro.razonSocial,
-                    dv,
-                    situacion_tributaria: 'CONTRIBUYENTE',
-                    tipo_identificacion: 'RUC',
-                    nombres,
-                    apellidos
-                }
-            });
         }
 
         // NO_CONTRIBUYENTE / NO_DOMICILIADO (cédula): sin control de estado (el padrón de RUC no aplica),
         // se mantiene el fast-path por cliente cacheado y luego la consulta al registro de cédulas.
+        // También es el camino de salida del receptor degradado desde un RUC bloqueado, que llega acá
+        // con `documento`/`situacion` ya reescritos.
         const cliente = await prisma.cliente.findFirst({
             where: {
                 AND: [
-                    { OR: [{ ruc }, { documento: ruc }] },
-                    { situacion_tributaria: situacionTributaria }
+                    { OR: [{ ruc: documento }, { documento: documento }] },
+                    { situacion_tributaria: situacion }
                 ]
             }
         });
@@ -108,21 +131,23 @@ const getDatosByRuc = async ({ ruc, situacionTributaria } = {}) => {
             return cliente;
         }
 
-        const data = await consultarCedula(ruc);
+        if(!datosCedula){
+            datosCedula = normalizarDatosCedula(await consultarCedula(documento));
+        }
 
-        if(!data){
+        if(!datosCedula){
             throw new ErrorApp('No se encontró datos', 404);
         }
 
         return await prisma.cliente.create({
             data: {
-                ruc: data.cedula_identidad,
-                documento: data.cedula_identidad,
-                razon_social: `${data.apellidos}, ${data.nombres}`,
-                situacion_tributaria: situacionTributaria,
+                ruc: datosCedula.documento,
+                documento: datosCedula.documento,
+                razon_social: datosCedula.razonSocial,
+                situacion_tributaria: situacion,
                 tipo_identificacion: 'CEDULA',
-                nombres: data.nombres,
-                apellidos: data.apellidos
+                nombres: datosCedula.nombres,
+                apellidos: datosCedula.apellidos
             }
         });
 

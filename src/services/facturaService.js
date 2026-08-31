@@ -15,6 +15,7 @@ const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
 const { buscarPorRuc, guardarLote } = require("./padronRucPersistenciaService");
 const { bloqueaEmision } = require("../utils/sifen/estadoPadronRuc");
 const { consultarCedula } = require("./cedulaService");
+const { resolverReceptorPorCedula } = require("./receptorFallbackService");
 
 // Lista cerrada de atributos de PRIMER NIVEL que el query param `fields` de los GET puede pedir para
 // una Factura. Incluye las columnas escalares + las relaciones que los GET incluyen (detalles,
@@ -156,6 +157,12 @@ const emitirFactura = async (datos, datosUsuario) => {
       throw new ErrorApp("Usuario no encontrado", 404);
     }
 
+    // Receptor degradado a cédula: queda seteado cuando el RUC del receptor está bloqueado en el
+    // padrón y la emisión se reencauzó como NO_CONTRIBUYENTE (ver receptorFallbackService). Sirve
+    // para saltar dos pasos que ya no aplican: la corrección de DV (no hay RUC que corregir) y la
+    // validación de cédula de más abajo (ya se consultó el registro de identificaciones acá).
+    let receptorPorCedula = null;
+
     // Validar el RUC del receptor contra el padrón de contribuyentes antes de armar/emitir el DE
     // (Manual Técnico SIFEN v150, validaciones D206b/c/d) — sin esto SIFEN rechaza el documento
     // recién después de armado y enviado, con el RUC ya guardado como Cliente.
@@ -208,11 +215,31 @@ const emitirFactura = async (datos, datosUsuario) => {
       // persistido como "autoridad" que bloquearía para siempre las emisiones correctas de ese RUC.
       let registroPadron = await buscarPorRuc(rucBase);
 
-      if (registroPadron) {
-        if (bloqueaEmision(registroPadron.estado)) {
+      if (registroPadron && bloqueaEmision(registroPadron.estado)) {
+        // El RUC no puede recibir un DE (CANCELADO / CANCELADO DEFINITIVO / SUSPENSION TEMPORAL).
+        // Antes de rechazar se intenta emitir a la misma persona como consumidor final por cédula:
+        // para una persona física el RUC base ES su número de cédula, así que se lo consulta contra
+        // el registro de identificaciones (URL_CI) y, si existe, se reescribe el receptor. La
+        // degradación es automática y sin confirmación del front (decisión de producto); si no
+        // aplica —persona jurídica, cédula inexistente o servicio caído— se mantiene el rechazo
+        // original intacto. Ver receptorFallbackService para las consecuencias fiscales.
+        receptorPorCedula = await resolverReceptorPorCedula(rucBase, registroPadron.estado);
+
+        if (!receptorPorCedula) {
           throw new ErrorApp(`El RUC ${datos.ruc} se encuentra en estado "${registroPadron.estado}" y no puede recibir documentos electrónicos`, 400);
         }
-      } else {
+
+        // Se reescribe `datos` in situ porque todo lo que sigue (resolución/creación del Cliente y,
+        // a través de él, el gDatRec que arma xmlBuilderService) se construye a partir de estos
+        // campos. `ruc` pasa a ser la cédula desnuda —sin DV— igual que en cualquier emisión
+        // NO_CONTRIBUYENTE, y `razonSocial` el nombre autoritativo del registro de
+        // identificaciones, no el que vino en el body.
+        datos.situacionTributaria = "NO_CONTRIBUYENTE";
+        datos.tipoIdentificacion = "CEDULA";
+        datos.ruc = receptorPorCedula.documento;
+        datos.razonSocial = receptorPorCedula.razonSocial;
+        datos.pais = "PRY";
+      } else if (!registroPadron) {
         registroPadron = {
           ruc: rucBase,
           razonSocial: razonSocialPadron,
@@ -235,8 +262,9 @@ const emitirFactura = async (datos, datosUsuario) => {
 
       // Corrección silenciosa del DV: el Cliente y el DE se construyen a partir de datos.ruc, así
       // que si el informado difiere del autoritativo hay que reescribirlo acá — si no, xmlgen
-      // emitiría un dDVRec inválido que SIFEN rechaza (D206b/c/d).
-      if (String(dvInformado) !== String(registroPadron.digitoVerificador)) {
+      // emitiría un dDVRec inválido que SIFEN rechaza (D206b/c/d). No aplica al receptor degradado
+      // a cédula: ahí datos.ruc ya es la cédula y reescribirla con un DV la rompería.
+      if (!receptorPorCedula && String(dvInformado) !== String(registroPadron.digitoVerificador)) {
         datos.ruc = `${rucBase}-${registroPadron.digitoVerificador}`;
       }
     }
@@ -245,7 +273,9 @@ const emitirFactura = async (datos, datosUsuario) => {
     // mismo motivo que la validación de RUC de arriba. Solo aplica a NO_CONTRIBUYENTE con
     // documento tipo CEDULA: pasaporte/carné de residencia no tienen un registro local contra el
     // que validar, y NO_DOMICILIADO es por definición un extranjero sin cédula paraguaya.
-    if (datos.innominado !== true && datos.situacionTributaria === "NO_CONTRIBUYENTE" && datos.tipoIdentificacion === "CEDULA") {
+    // `!receptorPorCedula` evita una segunda llamada a URL_CI: si el receptor llegó acá degradado
+    // desde un RUC bloqueado, su cédula ya se resolvió contra ese mismo registro.
+    if (!receptorPorCedula && datos.innominado !== true && datos.situacionTributaria === "NO_CONTRIBUYENTE" && datos.tipoIdentificacion === "CEDULA") {
       const datosCedula = await consultarCedula(datos.ruc);
 
       if (!datosCedula) {
@@ -261,9 +291,22 @@ const emitirFactura = async (datos, datosUsuario) => {
     if (datos.innominado === true) {
       cliente = await obtenerClienteInnominado();
     } else {
-      //Buscar si existe cliente
+      // Buscar si existe cliente. Se acota por situación tributaria además del documento: un mismo
+      // número puede existir como CONTRIBUYENTE (en el formato legacy base-sin-DV) y como
+      // NO_CONTRIBUYENTE, y son receptores SIFEN distintos — cambian iNatRec/iTiOpe y el par
+      // dRucRec/dDVRec vs dNumIDRec/iTipIDRec. Sin este filtro, una emisión por cédula matcheaba la
+      // fila del contribuyente con el mismo número y el bloque de update de abajo le daba vuelta
+      // situacion_tributaria/tipo_identificacion, mutando un Cliente compartido por otras facturas.
+      // Lo dispara sobre todo el receptor degradado desde un RUC bloqueado, que llega acá con
+      // datos.ruc = la cédula desnuda, o sea exactamente el formato legacy del contribuyente.
+      // Mismo criterio que genericoService.getDatosByRuc, que ya filtra por situación en sus lookups.
+      // Que se cree una fila aparte no es duplicación: cada naturaleza de receptor es su propio
+      // Cliente, con su propio ClienteEmpresa.
       cliente = await prisma.cliente.findFirst({
-        where: { ruc: datos.ruc },
+        where: {
+          ruc: datos.ruc,
+          situacion_tributaria: datos.situacionTributaria,
+        },
       });
 
       const nombres = datos.razonSocial.includes(",") ? (datos.razonSocial.split(",")[1] ? datos.razonSocial.split(",")[1].trim() : datos.razonSocial) : datos.razonSocial;

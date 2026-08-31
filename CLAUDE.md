@@ -50,6 +50,17 @@ Single schema file at `prisma/schema.prisma`. Conventions to follow when extendi
 
 Where a new native pipeline replaces a legacy one but both must temporarily coexist, this codebase freezes the legacy field and adds a new one rather than repurposing it in place — e.g. `Factura.sifen_estado` (free-text, written historically by the now-removed legacy sync) is frozen and untouched, while `Factura.estado_sifen` (`EstadoSifen` enum) is the field the native pipeline reads/writes. Same pattern for `xml` (legacy, frozen) vs `xml_firmado` (native). If you're asked to extend behavior that touches one of these pairs, the native field is the authoritative one for new code paths — and never resurrect the legacy field for new writes.
 
+### Receptor fallback: RUC bloqueado en el padrón
+
+A RUC in a blocking state (`CANCELADO` / `CANCELADO DEFINITIVO` / `SUSPENSION TEMPORAL`, see `utils/sifen/estadoPadronRuc.js`) does **not** reject the emission anymore. `services/receptorFallbackService.js` degrades the receptor to a consumidor final identified by cédula: for a persona física the RUC base *is* the CI, so it is looked up against the identity registry (`URL_CI`) and, if found, `emitirFactura` rewrites `datos` in place to `NO_CONTRIBUYENTE` / `CEDULA`. SIFEN accepts this because D206c/d only run when the DE informs a RUC.
+
+Properties to preserve when touching this:
+- **The degradation is automatic and unconfirmed** (product decision). It is irreversible for the receptor — the invoice can't be used as crédito fiscal, and a Nota de Crédito does not fix it (the NC doesn't change the receptor's naturaleza). The `[receptorFallback]` log line is the only trace; don't remove it.
+- **It applies to personas físicas only.** RUCs with the `80` prefix (personas jurídicas) are discarded before hitting the network; the `URL_CI` lookup is the second barrier. If neither passes — including when `URL_CI` is down, whose error is deliberately swallowed — the caller keeps the original 400 about the RUC state, never a 500.
+- **The searcher and the emission must stay in sync.** `genericoService.getDatosByRuc` runs the same degradation so the client the front resolves is the same receptor `emitirFactura` ends up emitting to. Both call `resolverReceptorPorCedula`; don't fork the logic.
+- `padron_ruc` is **not** written on degradation — the RUC's state is the SET's fact, not ours to overwrite.
+- **Receptor lookup is scoped by `situacion_tributaria`, not by document alone** (`emitirFactura`, and `genericoService` already did it). The same number can legitimately exist as a `CONTRIBUYENTE` row (in the legacy base-without-DV format) and as a `NO_CONTRIBUYENTE` one — they are different SIFEN receptors (different `iNatRec`/`iTiOpe`, `dRucRec`/`dDVRec` vs `dNumIDRec`/`iTipIDRec`). Matching on `ruc` alone let a cédula emission pick up the contribuyente row and flip its `situacion_tributaria`/`tipo_identificacion`, mutating a Cliente shared by other invoices. Don't widen this lookup back.
+
 ### SIFEN native pipeline (`src/services/sifen/`, `src/utils/sifen/`)
 
 This is the core of the ongoing migration — native (no PHP intermediary) Paraguayan e-invoicing:
