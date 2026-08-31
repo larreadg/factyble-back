@@ -2,6 +2,11 @@
 
 > Estado: **implementado** (backend + frontend) — falta la prueba on-prem
 > Fecha: 2026-08-25
+>
+> **Cambio posterior (2026-08-31):** se eliminó el cron de innominadas (`cronJobsPvta.js`). Las ventas
+> sin cliente ya no se emiten solas: entran al mismo listado de pendientes que las nominadas (marcadas
+> con `innominada: true` en la respuesta) y las factura la cajera con el mismo botón "Generar factura",
+> imprimiendo el ticket como cualquier otra. Las secciones 3.2 y 3.3 describen el diseño original.
 
 ## 1. Contexto del despliegue
 

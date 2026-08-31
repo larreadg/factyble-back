@@ -32,11 +32,11 @@ const esFechaIsoValida = (value) => {
   return d.getFullYear() === yyyy && d.getMonth() === mm - 1 && d.getDate() === dd;
 };
 
-// GET /procesar-factura/pendientes[?fecha=yyyy-mm-dd] — ventas NOMINADAS pendientes de facturar de ese
-// día, leídas en vivo de la vista de PVTA. Sin `fecha` se lista el día en curso, que es el caso normal;
-// el parámetro existe para poder facturar una venta de ayer (una cerrada 23:58 sale del "hoy" apenas
-// pasa medianoche). Es lo que pollea la pantalla de caja; las innominadas no aparecen acá (las emite el
-// cron, ver cronJobsPvta.js).
+// GET /procesar-factura/pendientes[?fecha=yyyy-mm-dd] — ventas pendientes de facturar de ese día, leídas
+// en vivo de la vista de PVTA. Sin `fecha` se lista el día en curso, que es el caso normal; el parámetro
+// existe para poder facturar una venta de ayer (una cerrada 23:58 sale del "hoy" apenas pasa medianoche).
+// Es lo que pollea la pantalla de caja. Incluye las INNOMINADAS (cliente sin nombre, marcadas con
+// `innominada: true`): antes las emitía un cron aparte, hoy se facturan desde la misma pantalla.
 //
 // El formato es ISO y no el 'dd/mm/yyyy' del POST de abajo a propósito: en un query param conviene el
 // orden inequívoco (dd/mm vs mm/dd), y es lo que produce nativamente un <input type='date'> en el front.

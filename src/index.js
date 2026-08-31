@@ -7,7 +7,6 @@ const cors = require('cors')
 const routes = require('./routes')
 const path = require('path')
 const cronJobs = require('./services/cronJobs')
-const cronJobsPvta = require('./services/cronJobsPvta')
 
 app.use(cors())
 app.use(bodyParser.json())
@@ -16,7 +15,6 @@ app.use(bodyParser.urlencoded({ extended : false }))
 // Los cronjobs SIFEN sólo corren en producción. Si ENTORNO es 'desa' o no está definido, no se registran.
 if (process.env.ENTORNO === 'prod') {
     cronJobs()
-    cronJobsPvta()
 } else {
     console.log(`Cronjobs deshabilitados (ENTORNO=${process.env.ENTORNO || 'no definido'})`)
 }

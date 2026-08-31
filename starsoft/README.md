@@ -105,7 +105,6 @@ se apartan de él:
 | `PVTA_DB_INSTANCE` | *(vacío = instancia default)* | **Sí** — `SQLEXPRESS` |
 | `PVTA_DB_ODBC_DRIVER` | `ODBC Driver 17 for SQL Server` | **Sí** — ese driver no está instalado en la máquina productiva |
 | `PVTA_DB_TRUST_SERVER_CERT` | `no` | Sólo con ODBC Driver 18, que cambió el default de `Encrypt` a `yes` |
-| `PVTA_INNOMINADO_BATCH` | `10` | No |
 
 Sobre el driver en producción: hay `SQL Server Native Client 10.0` y el `SQL Server` legacy.
 Usar el **Native Client 10.0**. El `SQL Server` pelado es el driver MDAC que viene con Windows
