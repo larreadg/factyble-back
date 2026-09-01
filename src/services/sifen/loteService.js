@@ -19,6 +19,7 @@ const {
   extraerProtocoloAutorizacion,
 } = require("../../utils/sifen/respuestaSoap");
 const { decryptTolerante } = require("../../utils/crypto");
+const { formatNumeroDocumento } = require("../../utils/format");
 
 /**
  * Único camino de emisión de Factura/NotaCredito (Decisión cerrada) —
@@ -99,6 +100,10 @@ const TIPOS_DOCUMENTO = {
       empresa: documento.caja.establecimiento.empresa,
       usuarioEmail: documento.usuario ? documento.usuario.email : null,
     }),
+    // Nombre de la columna del secuencial, para poder pedirlo por `select` sin traerse la fila entera
+    // (`xml_firmado` pesa) al armar el aviso de aprobados por lote — `numeroDocumento` de abajo
+    // sigue siendo el accessor que usa el resto del módulo.
+    campoNumero: "numero_factura",
     numeroDocumento: (documento) => documento.numero_factura,
     notificarAprobado: async (documento, { cliente, empresa }) =>
       correoService.enviarFactura({
@@ -134,6 +139,10 @@ const TIPOS_DOCUMENTO = {
       empresa: documento.caja.establecimiento.empresa,
       usuarioEmail: documento.usuario ? documento.usuario.email : null,
     }),
+    // Nombre de la columna del secuencial, para poder pedirlo por `select` sin traerse la fila entera
+    // (`xml_firmado` pesa) al armar el aviso de aprobados por lote — `numeroDocumento` de abajo
+    // sigue siendo el accessor que usa el resto del módulo.
+    campoNumero: "numero_nota_credito",
     numeroDocumento: (documento) => documento.numero_nota_credito,
     notificarAprobado: async (documento, { cliente, empresa }) =>
       correoService.enviarNotaDeCredito({
@@ -1178,6 +1187,64 @@ const reconciliarLotePorCdc = async (lote) => {
 };
 
 /**
+ * Avisa por Telegram, en UN solo mensaje por lote, los documentos que esta pasada de `consultarLotes()`
+ * llevó a `APROBADO` — contrapartida del aviso de rechazo, que sí es por documento (un rechazo requiere
+ * acción humana; una aprobación es la confirmación de que el lote salió bien, y mandarla documento por
+ * documento inundaría el grupo hasta ahogar los rechazos).
+ *
+ * "Recién aprobados" se calcula por diferencia contra el set de IDs que ya estaban en `APROBADO` antes
+ * de procesar la respuesta (`idsAprobadosPrevios`), no por lo que devolvió `consultaLote`: un documento
+ * puede terminar en `APROBADO` por tres caminos distintos dentro de la misma pasada
+ * (`actualizarDocumentoPorResultado`, la reconciliación por CDC de un DUPLICADO, y `reconciliarLotePorCdc`
+ * ante un sobre ambiguo), y el diff los cubre a los tres sin tener que devolver estado desde cada uno.
+ * Como consecuencia también es idempotente: si la próxima pasada del cron no aprueba nada nuevo, no
+ * manda nada.
+ *
+ * Solo cubre el camino del lote. Una aprobación recuperada por la red de seguridad
+ * (`consultaIndividualRedDeSeguridad`) no pasa por acá — es un caso puntual y anómalo que ya deja su
+ * propio log, y anunciarlo como "lote aprobado" sería engañoso.
+ * @param {Object} lote
+ * @param {Set<number>} idsAprobadosPrevios - IDs del lote que ya estaban en APROBADO antes de esta pasada
+ */
+const notificarAprobadosDelLote = async (lote, idsAprobadosPrevios) => {
+  const config = TIPOS_DOCUMENTO[lote.tipo_doc];
+  const aprobados = await config.modelo().findMany({
+    where: { lote_id: lote.id, estado_sifen: "APROBADO" },
+    select: {
+      id: true,
+      [config.campoNumero]: true,
+      caja: { select: { codigo: true, establecimiento: { select: { codigo: true } } } },
+    },
+    orderBy: { id: "asc" },
+  });
+
+  const nuevos = aprobados.filter((documento) => !idsAprobadosPrevios.has(documento.id));
+  if (nuevos.length === 0) {
+    return;
+  }
+
+  const totalLote = await config.modelo().count({ where: { lote_id: lote.id } });
+  // Mismo número impreso que el KUDE/PDF (`001-001-0000123`). `caja` es nullable en el schema (documentos
+  // legacy con `caja_id` NULL), y ahí `formatNumeroDocumento` devuelve null: se cae al secuencial pelado
+  // antes que omitir el documento del aviso.
+  const numeros = nuevos.map(
+    (documento) =>
+      formatNumeroDocumento(
+        documento.caja ? documento.caja.establecimiento.codigo : null,
+        documento.caja ? documento.caja.codigo : null,
+        documento[config.campoNumero]
+      ) || String(documento[config.campoNumero])
+  );
+
+  await telegramService.notificarDocumentosAprobados({
+    tipoDoc: lote.tipo_doc,
+    numeros,
+    totalLote,
+    aprobadosLote: aprobados.length,
+  });
+};
+
+/**
  * Consulta en SIFEN el resultado de los lotes ya enviados (`estado: ENVIADO`). Aislado por lote. Un
  * lote pasa a `CONSULTADO` recién cuando ninguno de sus documentos sigue en `ENVIADO` (todos
  * resolvieron a `APROBADO`/`RECHAZADO`/`ERROR`) — mientras tanto queda `ENVIADO` para la próxima
@@ -1190,6 +1257,14 @@ const consultarLotes = async () => {
   for (const lote of lotes) {
     const config = TIPOS_DOCUMENTO[lote.tipo_doc];
     try {
+      // Foto de los ya aprobados ANTES de procesar la respuesta: la diferencia contra el estado final
+      // son los que aprobó esta pasada, que es lo que se avisa al grupo (ver `notificarAprobadosDelLote`).
+      const aprobadosPrevios = await config.modelo().findMany({
+        where: { lote_id: lote.id, estado_sifen: "APROBADO" },
+        select: { id: true },
+      });
+      const idsAprobadosPrevios = new Set(aprobadosPrevios.map((documento) => documento.id));
+
       const certificado = await certificadoService.obtenerCertificadoActivo({ empresaId: lote.empresa_id });
       const respuesta = await sifenClientService.consultaLote({
         id: generarDId(),
@@ -1249,6 +1324,15 @@ const consultarLotes = async () => {
       const pendientes = await config.modelo().count({ where: { lote_id: lote.id, estado_sifen: { in: ["ENVIADO", "ENCOLADO"] } } });
       if (pendientes === 0) {
         await prisma.lote.update({ where: { id: lote.id }, data: { estado: "CONSULTADO" } });
+      }
+
+      // Aislado en su propio try/catch a propósito: si cayera en el catch del lote se loguearía como
+      // "Error al consultar lote" y se registraría una trazabilidad de consulta fallida que no ocurrió
+      // (la consulta ya terminó bien acá). Un fallo de Telegram nunca debe alterar el estado del lote.
+      try {
+        await notificarAprobadosDelLote(lote, idsAprobadosPrevios);
+      } catch (errorTelegram) {
+        console.error(`[loteService] Error al notificar a Telegram los aprobados del lote ${lote.id}:`, errorTelegram.message);
       }
     } catch (error) {
       console.error(`[loteService] Error al consultar lote ${lote.id}:`, error.message);
