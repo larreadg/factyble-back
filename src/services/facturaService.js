@@ -1,7 +1,7 @@
 const dayjs = require("dayjs");
 const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
-const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = require("../utils/facturacion");
+const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles, rucParaKude } = require("../utils/facturacion");
 const generarPdf = require("../utils/generarPdf");
 const { v4: uuidv4 } = require("uuid");
 const { formatNumber, formatNumeroDocumento, parseNumeroDocumento } = require("../utils/format");
@@ -622,7 +622,9 @@ const emitirFactura = async (datos, datosUsuario) => {
       empresaCorreoElectronico: usuario.empresa.email,
       facturaId: numeroFacturaFormateada,
       condicionVenta: datos.condicionVenta,
-      ruc: cliente.ruc,
+      // Solo para el KuDE: una innominada imprime "X" en vez del "0" con que se rellena el sentinela.
+      // Ni el XML de SIFEN ni lo persistido cambian — ver rucParaKude en utils/facturacion.js.
+      ruc: rucParaKude(cliente),
       razonSocial: cliente.razon_social,
       correoElectronico: cliente.email,
       total: datos.total,

@@ -92,6 +92,15 @@ routes.post(
     notaDeCreditoController.reenviarNotaDeCredito
 )
 
+// Reimpresión del ticket (KuDE) de una nota de crédito ya emitida — mismas reglas que
+// POST /factura/reimprimir: la impresora la fija el servidor, no el request.
+routes.post(
+    '/reimprimir',
+    authJwt(['ADMIN']),
+    body('notaDeCreditoId', 'Parámetro notaDeCreditoId requerido').isInt({ min: 1 }).toInt(),
+    notaDeCreditoController.reimprimirNotaDeCredito
+);
+
 routes.post(
     '/reintentar-sifen',
     authJwt(['ADMIN']),

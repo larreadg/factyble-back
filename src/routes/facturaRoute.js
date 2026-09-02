@@ -134,6 +134,17 @@ routes.post(
     facturaController.reenviarFactura
 );
 
+// Reimpresión del ticket (KuDE) de una factura ya emitida, a la impresora del servidor on-prem.
+// No lleva parámetro de impresora a propósito: el destino sale de IMPRESORA_TICKETS (ver
+// utils/impresoraTickets), así que un caller no puede mandar trabajos a impresoras arbitrarias de la
+// red. Si esa variable está vacía (despliegue en la nube) el service responde 400.
+routes.post(
+    '/reimprimir',
+    authJwt(['ADMIN']),
+    body('facturaId', 'Parámetro facturaId requerido').isInt({ min: 1 }).toInt(),
+    facturaController.reimprimirFactura
+);
+
 routes.post(
     '/cancelar',
     authJwt(['ADMIN']),

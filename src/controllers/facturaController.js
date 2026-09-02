@@ -1,6 +1,7 @@
 const { validationResult } = require('express-validator');
 const facturaService = require('../services/facturaService');
 const facturaSimpleService = require('../services/facturaSimpleService');
+const reimpresionService = require('../services/reimpresionService');
 const Response = require('../utils/response');
 const ErrorApp = require('../utils/error');
 
@@ -217,6 +218,26 @@ const cancelarFacturaSimple = async (req, res) => {
     }
 }
 
+const reimprimirFactura = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const { facturaId } = req.body;
+
+        const data = await reimpresionService.reimprimirFactura({ facturaId, empresaId: Number(req.usuario.empresaId) });
+
+        return res.status(200).send(Response.success(data, 'Ticket enviado a la impresora'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al reimprimir la factura');
+
+        return res.status(code).send(Response.error(message, code));
+
+    }
+}
+
 module.exports = {
     emitirFactura,
     emitirFacturaSimple,
@@ -228,5 +249,6 @@ module.exports = {
     reenviarFactura,
     cancelarFactura,
     cancelarFacturaSimple,
-    reintentarEnvioSifen
+    reintentarEnvioSifen,
+    reimprimirFactura
 }

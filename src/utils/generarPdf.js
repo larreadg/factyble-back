@@ -58,7 +58,11 @@ const generarPdf = async (datos) => {
     params.putSync("empresaCiudad",          toStringValue(datos.empresaCiudad));
     params.putSync("empresaCorreoElectronico", toStringValue(datos.empresaCorreoElectronico));
     params.putSync("facturaId",              toStringValue(datos.facturaId));
-    params.putSync("fechaHora",              dayjs().format("YYYY-MM-DD HH:mm:ss"));
+    // Fecha/hora de emisión impresa en el KuDE. Al emitir no se pasa y equivale a `now()`, que es lo
+    // mismo que queda en `factura.fecha_creacion`. La REIMPRESIÓN sí la pasa (la fecha_creacion del
+    // documento): sin esto un ticket reimpreso saldría fechado el día de la reimpresión y no el de la
+    // emisión, contradiciendo a la fecha que el CDC lleva embebida.
+    params.putSync("fechaHora",              toStringValue(datos.fechaHora || dayjs().format("YYYY-MM-DD HH:mm:ss")));
     params.putSync("condicionVenta",         toStringValue(datos.condicionVenta));
     params.putSync("moneda",                 toStringValue(datos.moneda));
     params.putSync("ruc",                    toStringValue(datos.ruc));
@@ -113,11 +117,18 @@ const generarPdf = async (datos) => {
       new java.import("net.sf.jasperreports.engine.JREmptyDataSource")()
     );
 
-    // 7) Exporta a PDF
-    const JasperExportManager = java.import("net.sf.jasperreports.engine.JasperExportManager");
-    JasperExportManager.exportReportToPdfFileSync(jasperPrint, outputPath);
+    // 7) Exporta a PDF — salvo en modo `soloImprimir` (reimpresión de un documento ya emitido).
+    //
+    // Ahí se saltea a propósito: el PDF archivado es el KuDE original y este reporte se rellena con lo
+    // que hay HOY en la base (timbrado y plantilla vigentes de la Empresa, y sin las condiciones de
+    // crédito, que no se persisten). Si algo de eso cambió desde la emisión, exportar acá pisaría el
+    // archivo que se le mandó al cliente y que sigue publicado en /public con una versión distinta.
+    if (!datos.soloImprimir) {
+      const JasperExportManager = java.import("net.sf.jasperreports.engine.JasperExportManager");
+      JasperExportManager.exportReportToPdfFileSync(jasperPrint, outputPath);
 
-    console.log("PDF generado exitosamente en:", outputPath);
+      console.log("PDF generado exitosamente en:", outputPath);
+    }
 
     // 8) Impresión directa (opcional, sólo el despliegue on-prem la pide). Se reutiliza el MISMO
     // jasperPrint del PDF: no se vuelve a llenar el reporte y lo que sale por la impresora es
@@ -127,16 +138,22 @@ const generarPdf = async (datos) => {
     // firmó. Un atasco de papel, una impresora apagada o un nombre mal configurado no pueden hacer
     // fallar el request y dejar al caller creyendo que la emisión no ocurrió — el candado del outbox
     // volvería a PENDIENTE y la venta se emitiría dos veces.
+    //
+    // En `soloImprimir` el razonamiento se invierte y el error SÍ se propaga: no hay emisión que
+    // proteger (el documento ya existe hace rato) y la impresión es lo único que el usuario pidió, así
+    // que tragarse el error dejaría a la cajera esperando un ticket que nunca va a salir mientras la
+    // API le responde que todo salió bien.
     if (datos.impresora) {
       try {
         imprimirJasperPrint(jasperPrint, datos.impresora);
         console.log(`Ticket enviado a la impresora "${datos.impresora}"`);
       } catch (errorImpresion) {
+        if (datos.soloImprimir) throw errorImpresion;
         console.error(`No se pudo imprimir el ticket (la factura SÍ se emitió):`, errorImpresion.message);
       }
     }
 
-    return { outputPath };
+    return { outputPath: datos.soloImprimir ? null : outputPath };
   }
   catch (error) {
     console.error("Error al generar PDF:", error);

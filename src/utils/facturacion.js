@@ -123,11 +123,37 @@ function calcularTotalGeneralIva(items) {
     return items.reduce((total, item) => total + (Number(item.impuesto) || 0), 0);
 }
 
+/**
+ * Lo que se imprime en el campo RUC/CI del KuDE.
+ *
+ * El Cliente sentinela de las facturas innominadas (consumidor final no identificado) guarda
+ * `ruc: "0"` — un relleno para satisfacer el modelo Prisma, no un documento (ver CLIENTE_INNOMINADO en
+ * facturaService.js). Impreso tal cual, un "0" se lee como si el receptor tuviera ese documento; una
+ * "X" comunica lo que realmente pasa: no se informó ninguno.
+ *
+ * SOLO afecta al PDF. El XML que va a SIFEN no toca este valor: el receptor innominado se materializa
+ * en xmlBuilderService.mapearCliente como iTipIDRec=5 / dNomRec="Sin Nombre" a partir de
+ * `tipo_identificacion`, y ahí no interviene el `ruc` del Cliente. Tampoco se toca lo persistido: el
+ * sentinela sigue con "0" en la base y los GET lo siguen devolviendo así.
+ *
+ * Se decide por `tipo_identificacion === 'INNOMINADO'`, que es el hecho real, y no por comparar el ruc
+ * contra "0": si algún día cambia el relleno del sentinela, esto sigue siendo correcto.
+ *
+ * @param {Object} cliente - Cliente del documento (el de cliente_empresa)
+ * @returns {string} - El RUC/CI a imprimir
+ */
+const RUC_KUDE_INNOMINADO = 'X'
+
+const rucParaKude = (cliente) =>
+    cliente && cliente.tipo_identificacion === 'INNOMINADO' ? RUC_KUDE_INNOMINADO : (cliente ? cliente.ruc : undefined)
+
 module.exports = {
     calcularImpuesto,
     calcularTotalItem,
     validarCantidad,
     normalizarCantidadDetalles,
+    rucParaKude,
+    RUC_KUDE_INNOMINADO,
     CANTIDAD_MAX_DECIMALES,
     CANTIDAD_MAX
 }

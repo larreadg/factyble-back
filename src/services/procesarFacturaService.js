@@ -4,6 +4,7 @@ const ErrorApp = require('../utils/error');
 const facturaSimpleService = require('./facturaSimpleService');
 const { calcularTotalItem } = require('../utils/facturacion');
 const telegramService = require('./telegramService');
+const { IMPRESORA_TICKETS } = require('../utils/impresoraTickets');
 
 // Centinela de PVTA para el cliente "sin nombre" (consumidor final no identificado): en la vista figura
 // como cliente_ruc = 'x'. Estas ventas se emiten como INNOMINADAS (SIFEN iTipIDRec=5) y entran por el
@@ -230,10 +231,11 @@ async function marcarEvento(pool, ventaId, estado) {
 // Impresora de tickets del despliegue on-prem (nombre exacto de Windows, p. ej.
 // "EPSON TM-T20IV-L Receipt"). Vacía = no se imprime nada, que es lo que corresponde en la nube.
 //
-// Se lee UNA vez al cargar el módulo: cambiar el .env no tiene efecto hasta reiniciar el proceso. Por
-// eso se loguea al arrancar — sin esto, "no imprime" y "no está configurada" se ven exactamente igual
-// desde afuera (la emisión funciona, el KUDE sale, y no aparece ningún error en ningún lado).
-const IMPRESORA_TICKETS = process.env.IMPRESORA_TICKETS || '';
+// Se lee UNA vez al cargar el módulo (utils/impresoraTickets, compartido con la reimpresión): cambiar
+// el .env no tiene efecto hasta reiniciar el proceso. Por eso se loguea al arrancar — sin esto, "no
+// imprime" y "no está configurada" se ven exactamente igual desde afuera (la emisión funciona, el KUDE
+// sale, y no aparece ningún error en ningún lado). El log vive acá y no en el módulo compartido para
+// no repetirlo una vez por consumidor.
 console.log(
   IMPRESORA_TICKETS
     ? `[procesarFactura] impresión de tickets ACTIVA -> "${IMPRESORA_TICKETS}"`

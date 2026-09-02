@@ -8,6 +8,13 @@ routes.get(
     genericoController.ping
 );
 
+// Capacidad del servidor, no de la empresa: alcanza con estar autenticado.
+routes.get(
+    '/impresion',
+    authJwt(),
+    genericoController.getEstadoImpresion
+);
+
 routes.get(
     '/buscar',
     authJwt(),

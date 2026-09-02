@@ -1,6 +1,7 @@
 const { validationResult } = require('express-validator');
 const notaDeCreditoService = require('../services/notaDeCreditoService');
 const notaDeCreditoSimpleService = require('../services/notaDeCreditoSimpleService');
+const reimpresionService = require('../services/reimpresionService');
 const Response = require('../utils/response');
 const ErrorApp = require('../utils/error');
 
@@ -175,6 +176,26 @@ const cancelarNotaDeCreditoSimple = async (req, res) => {
     }
 }
 
+const reimprimirNotaDeCredito = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        const { notaDeCreditoId } = req.body;
+
+        const data = await reimpresionService.reimprimirNotaDeCredito({ notaDeCreditoId, empresaId: Number(req.usuario.empresaId) });
+
+        return res.status(200).send(Response.success(data, 'Ticket enviado a la impresora'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al reimprimir la nota de crédito');
+
+        return res.status(code).send(Response.error(message, code));
+
+    }
+}
+
 module.exports = {
     emitirNotaDeCredito,
     emitirNotaDeCreditoSimple,
@@ -184,6 +205,7 @@ module.exports = {
     cancelarNotaDeCredito,
     cancelarNotaDeCreditoSimple,
     reenviarNotaDeCredito,
-    reintentarEnvioSifen
+    reintentarEnvioSifen,
+    reimprimirNotaDeCredito
 }
 

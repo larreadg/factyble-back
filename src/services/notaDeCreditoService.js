@@ -1,7 +1,7 @@
 const dayjs = require("dayjs");
 const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
-const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = require("../utils/facturacion");
+const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles, rucParaKude } = require("../utils/facturacion");
 const { v4: uuidv4 } = require("uuid");
 const generarPdf = require("../utils/generarPdf");
 const { formatNumber, formatNumeroDocumento, parseNumeroDocumento } = require("../utils/format");
@@ -337,7 +337,9 @@ const emitirNotaDeCredito = async (datos, datosUsuario) => {
       empresaCorreoElectronico: usuario.empresa.email,
       facturaId: numeroNotaCreditoFormateada,
       condicionVenta: 'CONTADO',
-      ruc: factura.cliente_empresa.cliente.ruc,
+      // Mismo criterio que la factura: una NC sobre una innominada hereda su cliente sentinela, así que
+      // en el KuDE se imprime "X" y no el "0" de relleno. Ver rucParaKude en utils/facturacion.js.
+      ruc: rucParaKude(factura.cliente_empresa.cliente),
       razonSocial: factura.cliente_empresa.cliente.razon_social,
       correoElectronico: factura.cliente_empresa.cliente.email,
       total: datos.total,
