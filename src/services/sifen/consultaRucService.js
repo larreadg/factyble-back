@@ -62,6 +62,7 @@ const ESTADO_POR_CODIGO = {
 // Se corta antes de gastar la llamada.
 const RUC_LONGITUD_MINIMA = 5;
 const RUC_LONGITUD_MAXIMA = 8;
+const CONSULTA_RUC_TIMEOUT_MS = 5_000;
 
 const indeterminado = (motivo) => ({ encontrado: false, noExiste: false, indeterminado: true, motivo });
 
@@ -126,9 +127,10 @@ const consultarRucEnSifen = async ({ ruc, empresaId }) => {
       ruc: rucBase,
       certificadoPath: certificado.archivo,
       certificadoPassword: certificado.clave,
-      // Sin `timeout` propio: se usa el default de la lib (90 s). Decisión explícita — se prefiere
-      // agotar la espera antes que emitir sin verificar, aun a costa de que la emisión quede
-      // colgada ese tiempo si SIFEN no responde.
+      // Esta consulta es un fallback de padrón y no debe bloquear la UI ni la emisión durante los
+      // 90 s del default de la librería. Una demora se traduce a `indeterminado` y el caller aplica
+      // su política local.
+      config: { timeout: CONSULTA_RUC_TIMEOUT_MS },
     });
   } catch (error) {
     // `sifenClientService` solo rechaza ante fallas de transporte/parseo (timeout, red, 5xx, HTML de
