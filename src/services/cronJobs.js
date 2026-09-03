@@ -2,6 +2,7 @@ const cron = require('node-cron')
 const loteService = require('./sifen/loteService')
 const certificadoService = require('./sifen/certificadoService')
 const trazabilidadService = require('./sifen/trazabilidadService')
+const padronRucVerificacionService = require('../services/padronRucVerificacionService')
 const correoService = require('./correoService')
 const telegramService = require('./telegramService')
 
@@ -100,6 +101,17 @@ const cronJobsSifen = () => {
     }))
 
     cron.schedule('0 3 * * 0', () => ejecutarJob('limpiezaTrazabilidad', () => trazabilidadService.limpiezaTrazabilidad()))
+
+    // verificacionPadronRucFabricado: cierra el ciclo de los registros que `emitirFactura` inventa
+    // cuando el RUC no está en el padrón local y SIFEN no responde. Esos registros se escriben con
+    // `estado: "ACTIVO"` asumido, y ACTIVO es justamente el único estado que no dispara
+    // revalidación en el camino de lectura — sin este job la suposición se auto-sella y solo la
+    // corrige una importación batch manual.
+    //
+    // Corre a las 08:00 y solo sobre las filas `origen = 'FABRICADO'` (no recorre el padrón: son
+    // ~2M filas y `siConsRUC` es una llamada por RUC). Tiene techo por corrida y pausa entre
+    // consultas — el WS y la IP son los mismos con los que emitimos.
+    cron.schedule('0 8 * * *', () => ejecutarJob('verificacionPadronRucFabricado', () => padronRucVerificacionService.verificarRucsFabricados()))
 }
 
 const cronJobs = () => {

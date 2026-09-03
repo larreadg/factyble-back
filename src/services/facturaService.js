@@ -12,7 +12,7 @@ const { construirCdc, calcularDigitoVerificador } = require("../utils/sifen/cdc"
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
 const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
-const { buscarPorRuc, guardarLote } = require("./padronRucPersistenciaService");
+const { buscarPorRuc, guardarLote, ORIGEN_SIFEN, ORIGEN_FABRICADO } = require("./padronRucPersistenciaService");
 const { bloqueaEmision } = require("../utils/sifen/estadoPadronRuc");
 const { consultarCedula } = require("./cedulaService");
 const { resolverReceptorPorCedula } = require("./receptorFallbackService");
@@ -218,7 +218,7 @@ const emitirFactura = async (datos, datosUsuario) => {
 
       // Marca que `registroPadron` ya viene de una consulta fresca a SIFEN. Evita que la
       // revalidación de más abajo dispare una segunda llamada de red por la misma emisión — serían
-      // dos esperas de hasta 90 s cada una para responder la misma pregunta.
+      // dos esperas de red seguidas para responder la misma pregunta.
       let registroVerificadoEnSifen = false;
 
       // Adopta un registro traído de SIFEN y lo cachea en el padrón local. Es el dato de la SET, no
@@ -230,7 +230,7 @@ const emitirFactura = async (datos, datosUsuario) => {
         registroVerificadoEnSifen = true;
 
         try {
-          await guardarLote([registro]);
+          await guardarLote([registro], ORIGEN_SIFEN);
         } catch (error) {
           console.log(`[consultaRucSifen] RUC ${rucBase} — no se pudo cachear en padron_ruc: ${error.message}`);
         }
@@ -322,8 +322,12 @@ const emitirFactura = async (datos, datosUsuario) => {
           estado: "ACTIVO",
         };
 
+        // ORIGEN_FABRICADO: este registro NO es dato de la SET, es una suposición nuestra
+        // (`estado: "ACTIVO"` asumido + la razón social que vino en el body). Marcarlo así es lo
+        // que permite que el cron diario lo reconsulte hasta confirmarlo o corregirlo — sin la
+        // marca quedaba indistinguible de una fila del DNIT y, por ser ACTIVO, jamás se revalidaba.
         try {
-          await guardarLote([registroPadron]);
+          await guardarLote([registroPadron], ORIGEN_FABRICADO);
         } catch (error) {
           // Dos primeras emisiones concurrentes del mismo RUC pueden hacer deadlockear el
           // INSERT ... ON DUPLICATE KEY UPDATE (ruc es índice único secundario, no PK). Antes de

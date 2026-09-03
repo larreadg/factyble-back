@@ -1,7 +1,7 @@
 const readline = require('readline');
 const yauzl = require('yauzl');
 const { parsearLinea } = require('../utils/padronRucParser');
-const { guardarLote } = require('./padronRucPersistenciaService');
+const { guardarLote, ORIGEN_BATCH } = require('./padronRucPersistenciaService');
 const { BATCH_SIZE } = require('../utils/padronRucConfig');
 const ErrorApp = require('../utils/error');
 
@@ -88,7 +88,7 @@ const procesarArchivoZip = (rutaZip) => {
                     const flush = () => {
                         const lote = buffer;
                         buffer = [];
-                        return guardarLote(lote).then(() => {
+                        return guardarLote(lote, ORIGEN_BATCH).then(() => {
                             stats.lotesProcesados += 1;
                         });
                     };

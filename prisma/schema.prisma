@@ -708,6 +708,20 @@ model SifenTrazabilidad {
 // `ruc` es el RUC SIN dígito verificador (identificador único de actualización del
 // padrón); el RUC completo tal como lo emite SIFEN se arma en tiempo de lectura
 // concatenando `${ruc}-${digito_verificador}`, no se persiste duplicado.
+// Procedencia del dato de una fila. Sin esto la tabla mezcla tres cosas indistinguibles: la verdad
+// del DNIT, la verdad de SIFEN, y registros que fabricamos nosotros durante una emisión cuando el
+// RUC no estaba y SIFEN no respondió (`facturaService.emitirFactura`).
+//
+// El caso FABRICADO es el que obliga a tener esta columna: se escribe con `estado = "ACTIVO"`, y
+// ACTIVO es justamente el único estado que NO dispara revalidación contra SIFEN en el camino de
+// lectura — o sea, la invención se auto-sella y solo la corrige una importación batch. Marcarla
+// permite que `padronRucVerificacionService` (cron diario 08:00) la reconsulte hasta confirmarla.
+enum OrigenPadronRuc {
+  BATCH
+  SIFEN
+  FABRICADO
+}
+
 model PadronRuc {
   id                 Int      @id @default(autoincrement())
   ruc                String   @unique @db.VarChar(15)
@@ -715,9 +729,23 @@ model PadronRuc {
   digito_verificador String   @db.VarChar(2)
   ruc_anterior       String?  @db.VarChar(20)
   estado             String   @db.VarChar(50)
+
+  // Nullable obligatoriamente: la tabla ya tenía ~2M filas cuando se agregaron estas columnas y
+  // MySQL/Prisma no pueden agregar un NOT NULL sin default a una tabla poblada (mismo criterio que
+  // los campos fiscales SIFEN de `Empresa`). NULL significa "anterior al registro de procedencia",
+  // que en la práctica es BATCH — no se hizo backfill para no correr un UPDATE sobre 2M filas.
+  origen OrigenPadronRuc?
+
+  // Última vez que ESTE RUC se consultó individualmente contra el WS `siConsRUC`. No confundir con
+  // `fecha_modificacion`: `guardarLote` la pisa con NOW() en cada upsert, así que después de una
+  // importación las 2M filas dicen "modificada hoy" y no sirve para medir frescura por RUC.
+  fecha_verificacion_sifen DateTime?
+
   fecha_creacion     DateTime @default(now())
   fecha_modificacion DateTime @updatedAt
 
   @@index([estado])
+  // Soporta la query del cron diario: las FABRICADO, más viejas primero.
+  @@index([origen, fecha_verificacion_sifen])
   @@map("padron_ruc")
 }

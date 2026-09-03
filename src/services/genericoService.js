@@ -1,6 +1,6 @@
 const ErrorApp = require('../utils/error');
 const prisma = require('../prisma/cliente');
-const { buscarPorRuc, guardarLote } = require('./padronRucPersistenciaService');
+const { buscarPorRuc, guardarLote, ORIGEN_SIFEN } = require('./padronRucPersistenciaService');
 const { consultarRucEnSifen } = require('./sifen/consultaRucService');
 const { consultarCedula } = require('./cedulaService');
 const { bloqueaEmision } = require('../utils/sifen/estadoPadronRuc');
@@ -54,7 +54,7 @@ const getDatosByRuc = async ({ ruc, situacionTributaria, empresaId } = {}) => {
                 registroVerificadoEnSifen = true;
 
                 try {
-                    await guardarLote([registroSifen]);
+                    await guardarLote([registroSifen], ORIGEN_SIFEN);
                 } catch (error) {
                     console.log(`[consultaRucSifen] RUC ${rucBase} — no se pudo cachear en padron_ruc: ${error.message}`);
                 }
