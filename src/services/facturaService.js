@@ -12,7 +12,7 @@ const { construirCdc, calcularDigitoVerificador } = require("../utils/sifen/cdc"
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
 const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
-const { buscarPorRuc, guardarLote } = require("./padronRucPersistenciaService");
+const { buscarPorRuc, guardarLote, ORIGEN_SIFEN, ORIGEN_FABRICADO } = require("./padronRucPersistenciaService");
 const { bloqueaEmision } = require("../utils/sifen/estadoPadronRuc");
 const { consultarCedula } = require("./cedulaService");
 const { resolverReceptorPorCedula } = require("./receptorFallbackService");
@@ -164,6 +164,12 @@ const emitirFactura = async (datos, datosUsuario) => {
     // validación de cédula de más abajo (ya se consultó el registro de identificaciones acá).
     let receptorPorCedula = null;
 
+    // ¿El receptor es un Organismo o Entidad del Estado? Se resuelve del padrón junto con el estado
+    // y se persiste en el Cliente, que es de donde `xmlBuilderService` lo lee para emitir `iTiOpe=3`
+    // (B2G) en vez de B2B — lo exige la validación D202b de SIFEN, código 1332 (NT 20). Arranca en
+    // `false` porque el default histórico es B2B y un receptor no contribuyente nunca es B2G.
+    let receptorEsOee = false;
+
     // Validar el RUC del receptor contra el padrón de contribuyentes antes de armar/emitir el DE
     // (Manual Técnico SIFEN v150, validaciones D206b/c/d) — sin esto SIFEN rechaza el documento
     // recién después de armado y enviado, con el RUC ya guardado como Cliente.
@@ -216,9 +222,22 @@ const emitirFactura = async (datos, datosUsuario) => {
       // persistido como "autoridad" que bloquearía para siempre las emisiones correctas de ese RUC.
       let registroPadron = await buscarPorRuc(rucBase);
 
+      // La condición de OEE se captura ACÁ, de la lectura inicial del padrón, y no se vuelve a tocar.
+      // Motivo: `adoptarRegistroDeSifen` reemplaza `registroPadron` por el objeto que arma
+      // `consultaRucService`, cuya forma es {ruc, razonSocial, digitoVerificador, rucAnterior, estado}
+      // — sin `esOee`, porque el WS `siConsRUC` no informa nada de eso (ContRUC01-06). Leerlo después
+      // de una adopción daría `undefined` y degradaría a `false` un receptor correctamente marcado:
+      // el DE saldría B2B y SIFEN lo rechazaría con 1332, dejando además el Cliente en `false` contra
+      // un padrón que sigue en `true` (el COALESCE de `guardarLote` lo conserva).
+      //
+      // Conceptualmente es lo correcto: ser un organismo del Estado es una propiedad del RUC, no del
+      // estado tributario que devuelve SIFEN, así que una respuesta del WS no puede cambiarla. Si el
+      // RUC no estaba en el padrón, no sabemos: `false`, y el rechazo 1332 lo corregirá si hace falta.
+      const esOeeSegunPadron = registroPadron ? registroPadron.esOee === true : false;
+
       // Marca que `registroPadron` ya viene de una consulta fresca a SIFEN. Evita que la
       // revalidación de más abajo dispare una segunda llamada de red por la misma emisión — serían
-      // dos esperas de hasta 90 s cada una para responder la misma pregunta.
+      // dos esperas de red seguidas para responder la misma pregunta.
       let registroVerificadoEnSifen = false;
 
       // Adopta un registro traído de SIFEN y lo cachea en el padrón local. Es el dato de la SET, no
@@ -230,7 +249,7 @@ const emitirFactura = async (datos, datosUsuario) => {
         registroVerificadoEnSifen = true;
 
         try {
-          await guardarLote([registro]);
+          await guardarLote([registro], ORIGEN_SIFEN);
         } catch (error) {
           console.log(`[consultaRucSifen] RUC ${rucBase} — no se pudo cachear en padron_ruc: ${error.message}`);
         }
@@ -322,8 +341,12 @@ const emitirFactura = async (datos, datosUsuario) => {
           estado: "ACTIVO",
         };
 
+        // ORIGEN_FABRICADO: este registro NO es dato de la SET, es una suposición nuestra
+        // (`estado: "ACTIVO"` asumido + la razón social que vino en el body). Marcarlo así es lo
+        // que permite que el cron diario lo reconsulte hasta confirmarlo o corregirlo — sin la
+        // marca quedaba indistinguible de una fila del DNIT y, por ser ACTIVO, jamás se revalidaba.
         try {
-          await guardarLote([registroPadron]);
+          await guardarLote([registroPadron], ORIGEN_FABRICADO);
         } catch (error) {
           // Dos primeras emisiones concurrentes del mismo RUC pueden hacer deadlockear el
           // INSERT ... ON DUPLICATE KEY UPDATE (ruc es índice único secundario, no PK). Antes de
@@ -341,6 +364,10 @@ const emitirFactura = async (datos, datosUsuario) => {
       if (!receptorPorCedula && String(dvInformado) !== String(registroPadron.digitoVerificador)) {
         datos.ruc = `${rucBase}-${registroPadron.digitoVerificador}`;
       }
+
+      // Solo aplica si el receptor sigue siendo contribuyente: si se degradó a cédula ya no informa
+      // RUC y B2G dejaría de corresponder (D202b se dispara por el RUC de D206).
+      receptorEsOee = !receptorPorCedula && esOeeSegunPadron;
     }
 
     // Validar la cédula del receptor contra el registro de identificaciones antes de emitir —
@@ -402,7 +429,8 @@ const emitirFactura = async (datos, datosUsuario) => {
             direccion: datos.direccion,
             email: datos.email,
             telefono: datos.telefono,
-            pais: datos.situacionTributaria === "CONTRIBUYENTE" || datos.pais === '' ? "PRY" : datos.pais
+            pais: datos.situacionTributaria === "CONTRIBUYENTE" || datos.pais === '' ? "PRY" : datos.pais,
+            es_oee: receptorEsOee,
           },
         });
       }
@@ -415,7 +443,13 @@ const emitirFactura = async (datos, datosUsuario) => {
         || datos.direccion !== cliente.direccion
         || datos.email !== cliente.email
         || datos.telefono !== cliente.telefono
-        || datos.pais !== cliente.pais) {
+        || datos.pais !== cliente.pais
+        // `es_oee` se refresca desde el padrón en cada emisión, así que un RUC marcado como OEE
+        // después de haberse creado el Cliente se corrige solo en la próxima factura, sin backfill.
+        // Comparado contra `=== true` porque la columna es nullable y los Clientes anteriores a
+        // esta feature tienen NULL: sin normalizar, `false !== null` dispararía un UPDATE inútil
+        // en cada emisión de cada cliente viejo.
+        || receptorEsOee !== (cliente.es_oee === true)) {
         await prisma.cliente.update({
           data: {
             tipo_identificacion: datos.tipoIdentificacion ? datos.tipoIdentificacion : cliente.tipo_identificacion,
@@ -426,12 +460,20 @@ const emitirFactura = async (datos, datosUsuario) => {
             email: datos.email ? datos.email : cliente.email,
             telefono: datos.telefono ? datos.telefono : cliente.telefono,
             pais: datos.pais ? datos.pais : cliente.pais,
+            // Sin el patrón `x ? x : cliente.x` de los campos de arriba: acá `false` es un valor
+            // legítimo (no un "vino vacío"), y el dato autoritativo es el del padrón, no el previo.
+            es_oee: receptorEsOee,
           },
           where: { id: cliente.id },
         });
 
         cliente.direccion = datos.direccion ? datos.direccion : cliente.direccion;
         cliente.email = datos.email ? datos.email : cliente.email;
+        // El XML no se arma de este objeto (`firmarDocumentoRecienCreado` relee el documento con
+        // sus includes, y el UPDATE de arriba ya está persistido para entonces), pero se refresca
+        // igual para que `cliente` no quede desincronizado del registro si alguien lo lee más
+        // abajo — mismo criterio que las dos líneas anteriores.
+        cliente.es_oee = receptorEsOee;
       }
     }
 

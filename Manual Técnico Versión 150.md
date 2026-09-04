@@ -4674,6 +4674,14 @@ E9.5 E825 dContrato Número de contrato E820 A 1-30 0-1
 E9.5 E826 dSalAnt Saldo anterior E820 N 1-15p(0-4) 0-1 Monto del saldo anterior
 ```
 ```
+E9.5 E827 dCodConDncp Código de contratación de la DNCP E820 A 1-30 0-1 Código de contratación proveído por la DNCP
+```
+> **[Agregado por la Nota Técnica N° 20, del 17/11/2023]** — vigente en el ambiente de test desde
+> el 15/12/2023 y en producción desde el 31/01/2024. Este campo NO figura en el cuerpo original del
+> MT v150 (septiembre de 2019). Es opcional (ocurrencia 0-1) y lleva el código de contratación en
+> formato de texto libre, en paralelo a la descomposición estructurada del grupo E020 (gCompPub).
+> Ver el addendum de operaciones B2G al final de este documento.
+```
 E10. Campos que describen el transporte de las mercaderías (E900-E999)
 ```
 Grupo ID Campo Descripción NodoPadreTipoDato Longitud Ocurrencia Observaciones
@@ -7942,6 +7950,12 @@ R
 ```
 47 D202a El tipo de operación no compatible con el tipodocumento electrónico 1316 Si la transacción se documenta con Autofactura (C002=4), el tipo deoperación debe ser B2C (D202=2) R
 ```
+```
+D202b El tipo de operación no compatible para un Organismo o Entidad del Estado 1332 Si el RUC del receptor (D206) corresponde a un Organismo o Entidad del Estado (OEE), el tipo de operación debe ser B2G (D202=3) R
+```
+> **[Agregado por la Nota Técnica N° 20, del 17/11/2023]** — modifica esta tabla (página 165 del MT
+> v150). Vigente en producción desde el 31/01/2024. Estado `R` = Rechazo. Ver el addendum de
+> operaciones B2G al final de este documento.
 48 D203 Código de país del receptor inválido para el tipode operación informado 1320
 ```
 Si el tipo de operación es B2F (D202=4), el país informado debe
@@ -10480,3 +10494,150 @@ recepcionar, autorizar, almacenar y disponer los servicios de
 consulta de los DTE.
 Sistema
 ##### Marangatu Sistema de Gestión Tributaria Marangatu
+
+
+---
+
+# Addendum — Operaciones B2G (Organismos y Entidades del Estado)
+
+> **Este addendum NO forma parte del texto original del MT v150.** El cuerpo de este documento
+> corresponde a la versión de septiembre de 2019 (ver los pies de página). Todo lo que sigue proviene
+> de la **Nota Técnica N° 20 del 17/11/2023** (copia local: `NT_E_KUATIA_020_MT_V150.pdf`) más
+> anotaciones propias de implementación, explícitamente marcadas como tales.
+>
+> Se agrega acá porque la información de B2G quedaba dispersa en cuatro lugares del manual y ninguno
+> de ellos mencionaba la validación que efectivamente rechaza los documentos.
+
+## 1. La validación que dispara el rechazo (NT 20)
+
+| ID | Mensaje de la validación | Código | Observación | E |
+|---|---|---|---|---|
+| D202b | El tipo de operación no compatible para un Organismo o Entidad del Estado | **1332** | Si el RUC del receptor (D206) corresponde a un Organismo o Entidad del Estado (OEE), el tipo de operación debe ser B2G (D202=3) | R |
+
+Fechas de la NT 20: emitida el 17/11/2023, disponible en el ambiente de **test** desde el
+**15/12/2023** y en **producción** desde el **31/01/2024**.
+
+Esta validación modifica la tabla del grupo D200-D299 (página 165). No existe en el cuerpo original
+del v150: buscar "1332" o "Entidad del Estado" en la versión de 2019 no devuelve nada, y esa ausencia
+fue la causa de una investigación en falso.
+
+## 2. Campo nuevo: E827 `dCodConDncp` (NT 20)
+
+| Grupo | ID | Campo | Descripción | Nodo padre | Tipo | Longitud | Ocu | Observaciones |
+|---|---|---|---|---|---|---|---|---|
+| E9.5 | E827 | dCodConDncp | Código de contratación de la DNCP | E820 | A | 1-30 | 0-1 | Código de contratación proveído por la DNCP |
+
+Es **opcional** y vive en el grupo E9.5 (datos adicionales de uso comercial, E820-E829), no en el
+grupo de Compras Públicas. Lleva el código de contratación como texto libre, en paralelo a la
+descomposición estructurada de E021-E025.
+
+## 3. Qué exige B2G según el cuerpo del v150
+
+La NT 20 **no modifica** ninguna de estas validaciones ni las declara opcionales. Siguen vigentes
+tal como están redactadas:
+
+| Val | ID | Código | Regla |
+|---|---|---|---|
+| 78 | E020 | 1400 | El grupo de informaciones de Compras Públicas es obligatorio para tipo de operación B2G (D202=3) |
+| 79 | E020a | 1401 | El grupo de informaciones de Compras Públicas solo es permitido para tipo de operación B2G (D202=3) |
+| 80 | E025 | 1402 | La fecha de emisión del código de contratación (E025) no puede ser superior a la fecha de emisión de la FE |
+| 129 | E704 | 1800 | Si el tipo de operación es B2G (D202=3), es obligatorio informar el Código DNCP – Nivel General (E704) |
+
+Campos que arrastra el grupo E020 `gCompPub` (obligatorio si D202=3, prohibido si D202≠3):
+
+| ID | Campo | Descripción | Tipo | Longitud |
+|---|---|---|---|---|
+| E021 | dModCont | Modalidad — código emitido por la DNCP | A | 2 |
+| E022 | dEntCont | Entidad — código emitido por la DNCP | N | 5 |
+| E023 | dAnoCont | Año — código emitido por la DNCP | N | 2 |
+| E024 | dSecCont | Secuencia — emitido por la DNCP | N | 7 |
+| E025 | dFeCodCont | Fecha de emisión del código de contratación por la DNCP | F | 10 |
+
+Y, por ítem, dentro de E700:
+
+| ID | Campo | Tipo | Longitud | Ocu | Observación |
+|---|---|---|---|---|---|
+| E704 | dDncpG | Código DNCP – Nivel General | A | 8 | 0-1 | Obligatorio si D202 = 3. Rellenar con ceros a la izquierda |
+| E705 | dDncpE | Código DNCP – Nivel Específico | A | 3-4 | 0-1 | Obligatorio si existe el campo E704 |
+
+Nota adicional del cuerpo del manual: **E709 `cUniMed`** indica que "Si D202 = 3 utilizar los datos
+del WS del link de la DNCP" — es decir, con B2G la unidad de medida sale del catálogo de la DNCP y no
+del catálogo general (Tabla 5).
+
+## 4. Cómo se detecta que un RUC es OEE
+
+**No se puede detectar desde SIFEN.** El WS `siConsRUC` devuelve el contenedor `ContenedorRUC_v150.xsd`
+(§9.6), cuyos únicos campos son `dRUCCons`, `dRazCons`, `dCodEstCons`, `dDesEstCons` y `dRUCFactElec`.
+No hay ningún campo que indique la condición de Organismo o Entidad del Estado.
+
+El prefijo del RUC tampoco alcanza: `800`/`801` identifica personas jurídicas en general, no
+organismos estatales. El RUC del emisor tiene que conocer la condición del receptor por otra vía
+(catálogo de la DNCP, o marcación manual).
+
+## 5. Nota de implementación — NO oficial
+
+> Todo lo de esta sección es observación propia, no texto de la SET/DNIT. Está acá porque contradice
+> aparentemente lo que dice la sección 3.
+
+**Evidencia de campo: SIFEN acepta B2G sin `gCompPub`.** El backend PHP legacy (`factpy`) conserva
+4292 XML emitidos. De ellos, **102 llevan `<iTiOpe>3</iTiOpe>` y ninguno —cero— contiene `gCompPub`,
+`dModCont`, `dDncpG` ni `dCodConDncp`**. Su bloque `gCamFE` (`generarXml.php:90-93`) es una constante
+que solo emite `iIndPres`/`dDesIndPres`, sin importar el tipo de operación.
+
+Esos 102 documentos van del **7 de marzo de 2025 al 7 de agosto de 2026**, sin interrupción mensual,
+dirigidos a dos receptores:
+
+| Receptor | RUC | Documentos |
+|---|---|---|
+| BANCO CENTRAL DEL PARAGUAY | 80009769-6 | 73 |
+| ADMINISTRACION NACIONAL DE ELECTRICIDAD - ANDE | 80009735-1 | 29 |
+
+Los 102 tienen su contraparte firmada y con nodo `gCamFuFD`/`dCarQR` en el directorio `recibido/`, es
+decir, completaron el circuito y se entregaron al cliente. Diecisiete meses de emisión mensual
+ininterrumpida es incompatible con un rechazo sistemático.
+
+**Cómo se llegó a eso (la traza es didáctica).** El legacy resolvía B2G con una lista blanca de RUCs
+hardcodeada (`validacionesRucReceptor.php:36-37`, `eventosGenerarXML.php:117-118`):
+
+```php
+$rucsB2G = ['80009735-1', '80009769-6']; // Lista de RUCs que pertenecen a B2G
+$iTiOpe = in_array($RucPOS, $rucsB2G) ? '3' : '1';
+```
+
+Las fechas de los XML muestran la reacción a la NT 20 (vigente desde el 31/01/2024):
+
+- **09/2024 – 02/2025**: facturas a ANDE y BCP emitidas con `iTiOpe=1` (B2B).
+- **07/03/2025 y 10/03/2025**: en esos mismos dos días conviven emisiones B2B (9 y 6) y las
+  primeras B2G (3 y 6) a los mismos receptores — el patrón típico de "rechazó, se parchea, se
+  reemite".
+- **desde el 10/03/2025**: solo B2G a esos dos RUCs.
+
+Conclusión operativa: la lista blanca es **reactiva por diseño** — solo crece cuando un rechazo la
+obliga. Por eso el MEC (80005190-4), que no figura en ella y no aparece en ningún XML del legacy, es
+un organismo nuevo que el mecanismo nunca cubrió.
+
+**Alcance de esta evidencia.** Demuestra que la validación 1400 (`gCompPub` obligatorio si D202=3) no
+se aplica con el rigor con que está redactada, al menos para operaciones con ANDE y BCP. NO demuestra
+que nunca se aplique. Si se quiere certeza antes de emitir, la vía barata es reproducirlo contra
+`sifen-test.set.gov.py`; la vía directa es consultar por CDC cualquiera de esos 102 documentos y leer
+su estado. La alternativa —mandar `gCompPub` con datos de relleno— implica declarar a la SET un código
+de contratación pública inexistente, y no debería elegirse solo por comodidad.
+
+**Qué hace `facturacionelectronicapy-xmlgen` con B2G.** Al ver `cliente.tipoOperacion == 3` la
+librería exige los datos DNCP en su validador y, si no se los pasan, los completa por su cuenta
+(`dist/services/jsonDeMain.service.js:281-291` y línea 493):
+
+```
+gCompPub: dModCont='11' dEntCont='11111' dAnoCont='11' dSecCont='1111111' dFeCodCont=hoy-30d
+por ítem: dDncpG='00000000' dDncpE='000' dGtin='11111111' dGtinPq='11111111'
+```
+
+No hay forma de pedirle "B2G sin DNCP": o falla la validación, o emite esos valores (pasarle un
+objeto vacío esquiva el completado pero choca con el validador — verificado). `factyble-back` optó
+por dejar que complete, apostando a que si la implementación de referencia del ecosistema lo manda
+así, SIFEN lo acepta. Pendiente de confirmar con una emisión real. Si rechazara, la alternativa
+probada es la del legacy: borrar esos nodos del XML antes de firmar.
+
+El campo E827 de la NT 20 sí está soportado por la librería, vía
+`data.sectorAdicional.codigoContratacionDNCP` (`dist/services/jsonDteComplementario.service.js:137`,
+comentado `//NT20`), a partir de la versión 1.0.283.

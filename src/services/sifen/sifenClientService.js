@@ -27,6 +27,25 @@ const LOTE_MIN_DOCUMENTOS = 1;
 const LOTE_MAX_DOCUMENTOS = 50;
 
 /**
+ * Techo de espera para `consultaRuc`, y SOLO para `consultaRuc`. El default de la lib es 90 s para
+ * todas sus operaciones (`SET.js`, `defaultConfig.timeout`), razonable para el pipeline de lotes —
+ * que corre en cron y puede esperar— pero inaceptable acá: la consulta de RUC cuelga de un request
+ * HTTP sincrónico del usuario (`/generico/buscar` y la emisión desde caja), así que una caída de
+ * SIFEN dejaba la UI y la caja bloqueadas hasta 90 s por búsqueda.
+ *
+ * El tope vive en el wrapper y no en el caller a propósito: así lo hereda cualquier consulta de RUC
+ * a SIFEN, presente o futura, sin depender de que cada call site se acuerde de pasar el `config`.
+ * Un caller puede subirlo pasando su propio `config.timeout` (gana sobre este default), pero ningún
+ * caller vuelve a los 90 s por omisión.
+ *
+ * Agotar el tiempo NO es un rechazo: la lib rechaza la Promise, `consultaRucService` lo traduce a
+ * `indeterminado` y cada caller aplica su política local (la emisión emite sin verificar, el
+ * buscador devuelve 404). Por eso recortar la espera es seguro: nunca convierte "no sabemos" en
+ * "el RUC no existe".
+ */
+const CONSULTA_RUC_TIMEOUT_MS = Number(process.env.SIFEN_CONSULTA_RUC_TIMEOUT_MS) || 5000;
+
+/**
  * Envia un lote de XML ya firmados a SIFEN. La propia lib arma el envoltorio `<rLoteDE>`, el ZIP en
  * memoria y el sobre SOAP con mTLS (confirmado por lectura de codigo, spike #1) — este servicio solo
  * junta los XML ya firmados de un lote (mismo RUC + tipo de documento, maximo 50, minimo 1) y llama.
@@ -120,12 +139,16 @@ const consulta = async ({ id, cdc, certificadoPath, certificadoPassword, config 
  * @param {string} datos.ruc - RUC a consultar (sin dígito verificador, según exige el WSDL)
  * @param {string} datos.certificadoPath - Path del archivo .p12 en filesystem
  * @param {string} datos.certificadoPassword - Contraseña del .p12, ya descifrada por certificadoService
- * @param {Object} [datos.config] - Config opcional de la lib (timeout, debug, etc.)
+ * @param {Object} [datos.config] - Config opcional de la lib (timeout, debug, etc.). Se mezcla SOBRE
+ *   el default de este módulo, así que pasar `timeout` acá pisa a `CONSULTA_RUC_TIMEOUT_MS`
  * @returns {Promise<Object>} - Body SOAP de la respuesta de SIFEN, ya parseado
  */
 const consultaRuc = async ({ id, ruc, certificadoPath, certificadoPassword, config }) => {
   try {
-    return await setapi.consultaRUC(id, ruc, SIFEN_ENV, certificadoPath, certificadoPassword, config);
+    return await setapi.consultaRUC(id, ruc, SIFEN_ENV, certificadoPath, certificadoPassword, {
+      timeout: CONSULTA_RUC_TIMEOUT_MS,
+      ...config,
+    });
   } catch (error) {
     ErrorApp.handleServiceError(error, "Error al consultar el RUC en SIFEN");
   }

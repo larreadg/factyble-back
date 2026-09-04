@@ -10,6 +10,7 @@ const trazabilidadService = require("./trazabilidadService");
 const correoService = require("../correoService");
 const botService = require("../botService");
 const telegramService = require("../telegramService");
+const { marcarComoOee } = require("../oeeService");
 const { interpretarCodigo, CATEGORIA } = require("../../utils/sifen/codigosRespuesta");
 const {
   extraerCodigoYMensaje,
@@ -414,6 +415,87 @@ const reintentarEnvioDocumento = async (tipoDoc, documentoId, empresaId) => {
   console.log(`[loteService] Reintento manual: ${tipoDoc} id=${documento.id} (empresa=${empresaId}) ERROR -> GENERADO`);
 
   return documentoActualizado;
+};
+
+// Código de la validación D202b: "El tipo de operación no compatible para un Organismo o Entidad del
+// Estado" (Nota Técnica N° 20, vigente en producción desde el 31/01/2024). Ver codigosRespuesta.js.
+const CODIGO_RECHAZO_OEE = "1332";
+
+/**
+ * Marca al receptor como Organismo o Entidad del Estado cuando SIFEN rechaza el documento con 1332.
+ *
+ * Por qué acá y no a mano: ninguna fuente de datos nos dice qué RUC es un OEE. El TXT del DNIT trae
+ * cinco campos y no incluye eso; `siConsRUC` devuelve ContRUC01-06 y tampoco; el open data de la
+ * DNCP identifica a sus entidades con un código interno, nunca con el RUC. El catálogo sembrado
+ * (`data/oeeRucs.json`) cubre lo conocido, pero necesariamente se queda corto con cualquier
+ * organismo nuevo. Un 1332 es SIFEN afirmando la condición de OEE con autoridad — el mismo tipo de
+ * hecho que el `estado` que ya cacheamos desde `siConsRUC`, no una inferencia nuestra.
+ *
+ * Se marcan DOS lugares y los dos hacen falta:
+ *   - `padron_ruc`: para que cualquier emisión futura, de cualquier empresa, resuelva bien.
+ *   - `cliente`: porque el reintento (`reintentarDocumento`) re-firma ESTE documento sin volver a
+ *     pasar por `emitirFactura`, y el XML se arma leyendo `cliente.es_oee`. Sin esto, reemitir
+ *     produciría exactamente el mismo rechazo.
+ *
+ * Aislada en su propio try/catch, como el resto de los efectos secundarios de este módulo: un fallo
+ * marcando no debe impedir que el rechazo se persista, se notifique por mail ni se alerte.
+ *
+ * @param {"FACTURA"|"NOTA_CREDITO"} tipoDoc
+ * @param {number} documentoId
+ * @param {string|null} codigo - Código ya interpretado (`interpretacion.codigo`)
+ */
+const marcarReceptorComoOee = async (tipoDoc, documentoId, codigo) => {
+  if (String(codigo) !== CODIGO_RECHAZO_OEE) {
+    return;
+  }
+
+  try {
+    const config = TIPOS_DOCUMENTO[tipoDoc];
+    const documento = await config.modelo().findFirst({ where: { id: documentoId }, include: config.include });
+    if (!documento) {
+      return;
+    }
+
+    const { cliente } = config.obtenerContactos(documento);
+
+    // Solo un receptor CONTRIBUYENTE puede ser un OEE, y el filtro no es teórico: para un receptor
+    // degradado a cédula `cliente.ruc` es el número de CI desnudo, que para una persona física ES
+    // una clave válida de `padron_ruc`. Sin este guard, un 1332 sobre semejante documento marcaría
+    // como Organismo del Estado el RUC de una persona, en una tabla compartida por TODAS las
+    // empresas, y a partir de ahí cada factura de contribuyente a esa persona saldría B2G. El mismo
+    // recaudo tiene el UPDATE de la migración (`AND c.situacion_tributaria = 'CONTRIBUYENTE'`).
+    // En la práctica SIFEN no debería emitir 1332 sobre un DE sin RUC —D202b se dispara por D206—,
+    // pero el costo de equivocarse es contaminar el padrón para todos, así que no se confía en eso.
+    if (cliente.situacion_tributaria !== "CONTRIBUYENTE" || cliente.tipo_identificacion === "INNOMINADO") {
+      console.log(
+        `[loteService] ${tipoDoc} id=${documentoId} rechazado con 1332 pero su receptor no es ` +
+          `CONTRIBUYENTE (${cliente.situacion_tributaria}/${cliente.tipo_identificacion}): no se marca nada.`
+      );
+      return;
+    }
+
+    // Misma normalización a BASE que usan emitirFactura y getDatosByRuc: el padrón guarda el RUC sin
+    // DV ni ceros a la izquierda, mientras que `cliente.ruc` puede venir como "80005190-4".
+    const rucBase = String(cliente.ruc || "").split("-")[0].replace(/^0+(?=\d)/, "");
+    if (!rucBase) {
+      return;
+    }
+
+    const marcadoEnPadron = await marcarComoOee(rucBase);
+    await prisma.cliente.updateMany({
+      where: { id: cliente.id, OR: [{ es_oee: null }, { es_oee: false }] },
+      data: { es_oee: true },
+    });
+
+    console.log(
+      `[loteService] SIFEN rechazó ${tipoDoc} id=${documentoId} con 1332: el RUC ${rucBase} ` +
+        `("${cliente.razon_social}") es un Organismo o Entidad del Estado. Marcado en cliente id=${cliente.id}` +
+        `${marcadoEnPadron ? " y en padron_ruc" : " (en padron_ruc ya estaba marcado o el RUC no está en el padrón)"}. ` +
+        `Reemitir el documento: saldrá como B2G.`
+    );
+  } catch (error) {
+    console.error(`[loteService] Error al marcar el receptor de ${tipoDoc} id=${documentoId} como OEE tras un 1332:`, error.message);
+  }
 };
 
 /**
@@ -1086,6 +1168,11 @@ const actualizarDocumentoPorResultado = async (tipoDoc, loteId, resultadoDocumen
   if (interpretacion.alertar) {
     console.error(`[loteService] SIFEN respondio codigo ${interpretacion.codigo} para CDC=${cdc}: ${interpretacion.mensajeInterno} — SIFEN dijo: ${mensaje}`);
   }
+
+  // Antes de notificar: si el rechazo fue 1332, SIFEN acaba de decirnos que el receptor es un OEE.
+  // Se marca ahora para que el reintento manual del documento (que el mail de rechazo va a
+  // provocar) ya salga corregido como B2G.
+  await marcarReceptorComoOee(tipoDoc, documentoPrevio.id, interpretacion.codigo);
 
   await notificarResultadoDocumento(tipoDoc, documentoPrevio.id, nuevoEstado, mensaje || interpretacion.mensajeInterno);
 };

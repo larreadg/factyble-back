@@ -1,6 +1,6 @@
 const ErrorApp = require('../utils/error');
 const prisma = require('../prisma/cliente');
-const { buscarPorRuc, guardarLote } = require('./padronRucPersistenciaService');
+const { buscarPorRuc, guardarLote, ORIGEN_SIFEN } = require('./padronRucPersistenciaService');
 const { consultarRucEnSifen } = require('./sifen/consultaRucService');
 const { consultarCedula } = require('./cedulaService');
 const { bloqueaEmision } = require('../utils/sifen/estadoPadronRuc');
@@ -45,6 +45,13 @@ const getDatosByRuc = async ({ ruc, situacionTributaria, empresaId } = {}) => {
             // datos del receptor que llegan en esa request (ver facturaService).
             let registro = await buscarPorRuc(rucBase);
 
+            // Se captura de la lectura inicial del padrón y no se vuelve a leer: `adoptarRegistroDeSifen`
+            // reemplaza `registro` por el objeto de `consultaRucService`, que no trae `esOee` (el WS
+            // `siConsRUC` no informa nada de eso). Ver el comentario largo en `facturaService`; acá el
+            // daño sería peor todavía, porque este camino PISA el `es_oee` de un Cliente existente y
+            // desharía justo la marca que `loteService.marcarReceptorComoOee` escribió tras un 1332.
+            const esOee = registro ? registro.esOee === true : false;
+
             // Ver el equivalente en `facturaService`: evita una segunda consulta de red por la misma
             // búsqueda cuando el registro ya vino de SIFEN.
             let registroVerificadoEnSifen = false;
@@ -54,7 +61,7 @@ const getDatosByRuc = async ({ ruc, situacionTributaria, empresaId } = {}) => {
                 registroVerificadoEnSifen = true;
 
                 try {
-                    await guardarLote([registroSifen]);
+                    await guardarLote([registroSifen], ORIGEN_SIFEN);
                 } catch (error) {
                     console.log(`[consultaRucSifen] RUC ${rucBase} — no se pudo cachear en padron_ruc: ${error.message}`);
                 }
@@ -137,13 +144,20 @@ const getDatosByRuc = async ({ ruc, situacionTributaria, empresaId } = {}) => {
                     }
                 });
 
+                // `esOee` (capturado arriba, de la lectura inicial del padrón) define si la emisión
+                // sale como B2G (iTiOpe=3, validación D202b / código 1332 de SIFEN). Se resuelve acá
+                // igual que en `emitirFactura` para que el buscador y la emisión coincidan en el
+                // receptor — misma razón por la que ambos comparten la revalidación de estado y la
+                // degradación por cédula.
                 if(clienteExistente){
                     // Auto-reparación: si la fila quedó en formato legacy (sin DV), la normalizamos a canónico
                     // para que una futura emisión no falle en xmlgen ("RUC debe contener dígito verificador").
-                    if(clienteExistente.ruc !== rucCanonico || clienteExistente.documento !== rucCanonico || clienteExistente.dv !== dv){
+                    // `es_oee` entra en la misma reparación: un cliente creado antes de que su RUC se
+                    // marcara como OEE (o antes de esta feature, con NULL) se corrige acá sin backfill.
+                    if(clienteExistente.ruc !== rucCanonico || clienteExistente.documento !== rucCanonico || clienteExistente.dv !== dv || (clienteExistente.es_oee === true) !== esOee){
                         return await prisma.cliente.update({
                             where: { id: clienteExistente.id },
-                            data: { ruc: rucCanonico, documento: rucCanonico, dv }
+                            data: { ruc: rucCanonico, documento: rucCanonico, dv, es_oee: esOee }
                         });
                     }
                     return clienteExistente;
@@ -160,7 +174,8 @@ const getDatosByRuc = async ({ ruc, situacionTributaria, empresaId } = {}) => {
                         situacion_tributaria: 'CONTRIBUYENTE',
                         tipo_identificacion: 'RUC',
                         nombres,
-                        apellidos
+                        apellidos,
+                        es_oee: esOee
                     }
                 });
 

@@ -126,9 +126,11 @@ const consultarRucEnSifen = async ({ ruc, empresaId }) => {
       ruc: rucBase,
       certificadoPath: certificado.archivo,
       certificadoPassword: certificado.clave,
-      // Sin `timeout` propio: se usa el default de la lib (90 s). Decisión explícita — se prefiere
-      // agotar la espera antes que emitir sin verificar, aun a costa de que la emisión quede
-      // colgada ese tiempo si SIFEN no responde.
+      // Sin `config` propio a propósito: el techo de espera (5 s, `CONSULTA_RUC_TIMEOUT_MS`) lo pone
+      // `sifenClientService.consultaRuc` para TODA consulta de RUC, no cada call site. Esta consulta
+      // cuelga de un request sincrónico del usuario y no puede bloquear la UI ni la caja los 90 s del
+      // default de la lib; agotar el tiempo cae en el `catch` de abajo y se traduce a
+      // `indeterminado`, nunca a `noExiste`.
     });
   } catch (error) {
     // `sifenClientService` solo rechaza ante fallas de transporte/parseo (timeout, red, 5xx, HTML de

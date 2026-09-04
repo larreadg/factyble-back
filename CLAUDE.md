@@ -73,15 +73,144 @@ Properties to preserve:
 - **SIFEN's answer is cached into `padron_ruc`.** That's the SET's own data, not an assumption of ours, and it's strictly better than the `estado: "ACTIVO"` the emission used to fabricate. A failure to cache is logged and swallowed — the registro is already in memory. (This does not contradict "`padron_ruc` is not written on degradation" below: that rule is about not overwriting a state we didn't observe.)
 - **The searcher keeps a 404 on `indeterminado`, with a distinct message.** It can't degrade the way the emission does because it receives no `razonSocial` to build the `Cliente` with, while `emitirFactura` gets one in the request body — that asymmetry is why the two paths differ *only* in this case.
 - **No `sifen_trazabilidad` record** (product decision): that table requires an `entidad_tipo`/`entidad_id` of a document, and the consultation happens before any Factura exists. The `[consultaRucSifen]` log line is the only trace — don't remove it, same role as `[receptorFallback]`.
-- The consultation uses the library's default **90 s** timeout (explicit decision: prefer exhausting the wait over emitting unverified). Be aware this can hang a caja emission that long when SIFEN is unresponsive.
+- **The consultation is capped at 5 s, and the cap lives in `sifenClientService.consultaRuc`, not in the call sites.** The library defaults to 90 s for every operation, which is fine for the lote pipeline (cron, can wait) but not here: this consultation hangs off a synchronous user request (the client searcher and the caja emission), so a SIFEN outage would block the UI that long per search. Putting the default in the wrapper means any present or future RUC consultation inherits it without each caller having to remember a `config`; a caller can still raise it by passing its own `config.timeout`. Tunable via `SIFEN_CONSULTA_RUC_TIMEOUT_MS`. Shortening the wait is safe precisely because exhausting it is `indeterminado`, never `noExiste` — it cannot turn "we don't know" into "the RUC doesn't exist". Do **not** extend this cap to `recibeLote`/`consultaLote`/`consulta`/`evento`: those run in cron and legitimately need the long default.
 
 There is a **second** call site for the same service: a local *hit* whose state is blocking is revalidated against SIFEN before the degradation described in the next section runs. `padron_ruc` is a manually refreshed snapshot and over half its rows are in a blocking state (`SUSPENSION TEMPORAL` alone is ~408k, and it's a transitory state — the taxpayer settles up with the SET and returns to `ACTIVO`), so without this a contribuyente regularized after the last import would be silently and irreversibly degraded to consumidor final over a stale row. Sampling 12 suspended RUCs against the production WS found 1 already regularized.
 
 Properties to preserve here too:
-- **It runs only on the blocking path, and never twice per request.** Both `emitirFactura` and `getDatosByRuc` track whether `registroPadron`/`registro` already came from a fresh SIFEN answer (`registroVerificadoEnSifen`) and skip the revalidation if so — otherwise a single emission could wait out two 90 s timeouts to answer the same question.
+- **It runs only on the blocking path, and never twice per request.** Both `emitirFactura` and `getDatosByRuc` track whether `registroPadron`/`registro` already came from a fresh SIFEN answer (`registroVerificadoEnSifen`) and skip the revalidation if so — otherwise a single emission could wait out two network timeouts to answer the same question.
 - **`indeterminado` and `noExiste` keep the local blocking state and degrade as before.** A SIFEN outage must not become a way to bypass a real block — the asymmetry with the miss path is deliberate: there, not knowing means "don't reject"; here, not knowing means "don't unblock".
 - **When SIFEN confirms the block, its registro is adopted anyway**, so the error message and the degradation name the state currently in force rather than the one in the stale snapshot (a RUC can move between blocking states).
 - **The searcher must run this too.** If only the emission revalidated, the front would show the client degraded to consumidor final while the emission resolved them as contribuyente — the two paths would disagree on the receptor.
+
+### Procedencia de las filas de `padron_ruc` (`origen`) y el cron que verifica lo fabricado
+
+`padron_ruc` mezcla tres fuentes que antes eran indistinguibles entre sí, y la columna `origen` (nullable `OrigenPadronRuc`) las separa:
+
+| `origen` | Escrito por | `fecha_verificacion_sifen` | `razon_social` en el upsert |
+|---|---|---|---|
+| `BATCH` | `padronRucZipService` (import de los ZIP del DNIT) | no la toca (COALESCE conserva) | **la pisa** |
+| `SIFEN` | `adoptarRegistroDeSifen` en `emitirFactura` / `getDatosByRuc`, y el cron | `NOW()` | la conserva (salvo `pisarRazonSocial: true`) |
+| `FABRICADO` | `emitirFactura` cuando el RUC no está y SIFEN salió `indeterminado` | no la toca | la conserva |
+
+`NULL` = anterior a esta trazabilidad (en la práctica `BATCH`); no se hizo backfill para no correr un UPDATE sobre ~2M filas. Propiedades a preservar:
+
+- **`origen` es obligatorio en `guardarLote`** y se valida; un valor fuera de la lista lanza. No agregar un default: el punto entero es que cada call site declare de dónde sale el dato.
+- **Solo `BATCH` pisa `razon_social`.** El TXT del DNIT trae a las personas físicas como `"APELLIDOS, NOMBRES"` y `genericoService.separarNombre` usa esa coma para poblar `cliente.nombres`/`apellidos`; `dRazCons` del WS la devuelve corrida y sin coma. Pisar una fila del batch con la versión de SIFEN **destruye** el límite apellido/nombre y no se puede reconstruir. De SIFEN lo que se necesita es el `estado` — ese sí se actualiza siempre. Contrapartida asumida: un cambio real de razón social espera a la próxima importación batch. (La coma **no** indica procedencia: ~164k filas del propio batch no la tienen, son personas jurídicas.)
+- **`fecha_verificacion_sifen` no es `fecha_modificacion`.** `guardarLote` pisa `fecha_modificacion` con `NOW()` en cada upsert, así que tras una importación las 2M filas dicen "modificada hoy" y no sirve para medir frescura por RUC. Un upsert `BATCH` **conserva** el valor previo vía `COALESCE`: una importación masiva no debe borrar el hecho de que un RUC se verificó individualmente.
+- **`FABRICADO` existe porque la invención se auto-sella.** `emitirFactura` la escribe con `estado: "ACTIVO"`, y ACTIVO es justamente el único estado que **no** dispara revalidación en el camino de lectura — sin la marca, nada volvía a cuestionarla salvo una importación batch manual. Bajar el timeout de `siConsRUC` a 5 s aumentó la frecuencia de este camino (más `indeterminado`), así que la marca dejó de ser teórica.
+
+`padronRucVerificacionService.verificarRucsFabricados` (cron diario **08:00**, `cronJobs.js`) cierra ese ciclo:
+
+- **Solo toca `origen = 'FABRICADO'`.** Nunca recorre el padrón: son ~2M filas, `siConsRUC` es una llamada por RUC, y el Manual Técnico §7 reserva a la SET el derecho de *"limitar y/o restringir la utilización de los servicios por contribuyente, por direcciones IP u otros"* — la misma IP y el mismo certificado con los que emitimos.
+- **El certificado sale de la empresa que tiene ese RUC como cliente** (`cliente` + `cliente_empresa`), que por construcción es la que lo fabricó al emitirle. Mantiene el invariante de que cada empresa consulta con **su** certificado; nadie gasta la cuota del WS de un contribuyente ajeno. Sin cliente que lo reclame la fila se omite y se reintenta — no se cae a "cualquier certificado".
+- **Los tres desenlaces, otra vez distintos.** `encontrado` → se adopta el registro (con `pisarRazonSocial: true`: ahí la razón social guardada es la que tipeó el usuario, no dato del DNIT) y la fila **se gradúa** a `SIFEN`, saliendo del universo del job. `noExiste` → se **elimina** la fila (es una invención nuestra que la SET desmiente; dejarla sería peor, seguiría respondiendo ACTIVO) y se loguea entera antes de borrar. `indeterminado` → se deja como está y se reintenta mañana; una caída de SIFEN nunca confirma nuestra suposición.
+- **Alerta por Telegram** cuando un fabricado resulta bloqueante o inexistente: significa que ya se emitió un DE a un receptor al que no correspondía, y eso se revisa a mano.
+- **Techo por corrida** (`PADRON_RUC_VERIFICACION_MAX_POR_CORRIDA`) y pausa entre consultas (`PADRON_RUC_VERIFICACION_PAUSA_MS`), con log explícito cuando el techo trunca. No es por el volumen actual: es para que un bug que marque de más no se convierta en un barrido del padrón.
+- Cada fila está aislada en su propio try/catch — un RUC que falle no aborta la corrida.
+
+### Receptores del Estado (OEE) y emisión B2G
+
+Un DE dirigido a un Organismo o Entidad del Estado debe informar tipo de operación **B2G** (`iTiOpe=3`,
+campo D202). Emitirlo como B2B lo rechaza SIFEN con el código **1332** (validación D202b). Esa
+validación **no está en el cuerpo del MT v150** —que es de septiembre de 2019—: la agregó la **Nota
+Técnica N° 20** del 17/11/2023, vigente en producción desde el 31/01/2024. Copia local:
+`NT_E_KUATIA_020_MT_V150.pdf`, transcrita en el addendum B2G al final de `Manual Técnico Versión 150.md`.
+
+El dato vive en dos lugares, igual que el par `padron_ruc.estado` → `Cliente.situacion_tributaria`:
+`padron_ruc.es_oee` es la base de conocimiento compartida y `Cliente.es_oee` es la copia resuelta que
+lee `xmlBuilderService`. Ambas columnas son `Boolean?` y los tres estados significan cosas distintas:
+`NULL` = no lo sabemos, `false` = verificado que no lo es, `true` = OEE. Solo `true` cambia la emisión.
+
+Propiedades a preservar:
+
+- **No es un valor nuevo de `SituacionTributaria`.** Un OEE es un `CONTRIBUYENTE` normal en todo lo
+  demás (`iNatRec=1`, `dRucRec`/`dDVRec`, `iTiContRec=2`); agregarlo al enum rompería todos los
+  `=== "CONTRIBUYENTE"` del código, incluido el lookup de receptor acotado por situación tributaria.
+- **B2G solo sobre la rama contribuyente.** `mapearCliente` exige `contribuyente && es_oee === true`:
+  D202b se dispara por el RUC informado en D206, que solo existe con `iNatRec=1`. Un receptor
+  degradado a cédula por RUC bloqueado no informa RUC y no puede salir como B2G.
+- **`guardarLote` nunca borra la marca.** Ningún origen del padrón la conoce (el TXT del DNIT trae 5
+  campos y `siConsRUC` devuelve ContRUC01-06), así que los registros llegan con `esOee` undefined y
+  el `COALESCE(VALUES(es_oee), es_oee)` conserva lo que hubiera. Sin eso, la próxima importación
+  batch —o la simple revalidación de estado de un RUC ya marcado— nos deja emitiendo B2B a los
+  ministerios otra vez. Un registro puede pisar la marca seteando `esOee` explícitamente.
+- **`esOee` se captura de la lectura inicial del padrón y no se vuelve a leer.** `emitirFactura` y
+  `getDatosByRuc` reemplazan su registro cuando adoptan una respuesta de `siConsRUC`
+  (`adoptarRegistroDeSifen`), y ese objeto **no tiene `esOee`**: el WS devuelve ContRUC01-06 y no
+  informa nada de eso. Leerlo después de una adopción da `undefined` y degrada a `false` un receptor
+  correctamente marcado — el DE sale B2B, SIFEN lo rechaza con 1332, y el Cliente queda en `false`
+  contra un padrón que sigue en `true`. Conceptualmente: ser un organismo del Estado es propiedad del
+  RUC, no del estado tributario, así que una respuesta del WS no puede cambiarla.
+- **`buscarPorRuc` devuelve `esOee` con sus tres estados, sin normalizar a booleano.** Su resultado se
+  parece lo bastante a un registro de `guardarLote` como para que alguien lo reinyecte, y ahí un
+  `null` convertido en `false` pasaría de "no sabemos" a "verificado que no lo es", pisando la marca
+  real (el COALESCE solo protege contra `null`/`undefined`, no contra un `false` explícito).
+- **La automarcación por 1332 exige receptor `CONTRIBUYENTE`.** Para un receptor degradado a cédula,
+  `cliente.ruc` es el número de CI desnudo, que para una persona física es una clave válida de
+  `padron_ruc`: sin el guard, un 1332 marcaría el RUC de una persona como organismo del Estado en una
+  tabla que comparten todas las empresas. El UPDATE de la migración tiene el mismo recaudo.
+- **Se refresca en cada emisión y en cada búsqueda.** `emitirFactura` y `genericoService.getDatosByRuc`
+  releen `es_oee` del padrón y lo persisten en el `Cliente`, así que un RUC marcado después de haberse
+  creado el cliente se corrige solo en la siguiente factura, sin backfill. Los dos caminos tienen que
+  coincidir, por el mismo motivo que ya comparten la revalidación de estado y la degradación por cédula.
+
+**xmlgen no sabe emitir B2G sin datos DNCP.** Al ver `tipoOperacion == 3` la librería (a) EXIGE los
+datos de contratación pública en su validador (`jsonDeMainValidate.service.js:812-845`,
+`jsonDteItemValidate.service.js:277-305`, sin flag para saltearlo) y (b) si no se los pasan, los
+completa con valores por defecto. Pasarle un objeto vacío esquiva (b) pero choca con (a) — verificado.
+
+**Decisión tomada: se deja que la librería complete.** Es lo que hace la implementación de referencia
+del ecosistema, así que es razonable esperar que SIFEN lo acepte; queda **pendiente de confirmación
+con una emisión real**. Lo que sale en el XML de un DE B2G hoy:
+
+```xml
+<gCompPub><dModCont>11</dModCont><dEntCont>11111</dEntCont><dAnoCont>11</dAnoCont>
+          <dSecCont>1111111</dSecCont><dFeCodCont>{hoy-30d}</dFeCodCont></gCompPub>
+<!-- y por ítem: -->
+<dDncpG>00000000</dDncpG><dDncpE>000</dDncpE><dGtin>11111111</dGtin><dGtinPq>11111111</dGtinPq>
+```
+
+Si SIFEN rechazara por el grupo de Compras Públicas, hay dos salidas conocidas, en este orden:
+
+1. **Capturar los datos reales del contrato DNCP** en la emisión y pasarlos por `data.dncp` /
+   `item.dncp`. Es la correcta, y arrastra schema, ruta, validaciones y front.
+2. **Borrar los nodos del XML antes de firmar** (`gCompPub` entero más los cuatro por ítem), como
+   hacía el backend PHP legacy: sus **102 documentos B2G a ANDE y al BCP entre 03/2025 y 08/2026** no
+   llevan ninguno de esos nodos y SIFEN los aceptó 17 meses seguidos. Sería un post-proceso al lado
+   de `repararCTipRegVacio`. Formalmente el v150 exige el grupo (validaciones 1400 y 1800) y la NT 20
+   no las deroga, pero la evidencia de campo dice que no se aplica.
+
+#### De dónde sale la lista de OEE
+
+`src/data/oeeRucs.json` (392 RUC) se derivó cruzando el catálogo de entidades contratantes de la DNCP
+(descargas OCDS públicas 2024-2026) contra la razón social de nuestro padrón, porque **la DNCP
+identifica a sus entidades con un código interno y nunca publica su RUC**. Los ambiguos se revisaron
+a mano y se rechazaron los dudosos —sindicatos de funcionarios, fundaciones y empresas privadas con
+nombre parecido—: un falso negativo cuesta una reemisión, un falso positivo emite B2G a un privado.
+La derivación completa, los 23 matches rechazados y lo que el catálogo no cubre están en
+`src/data/README-oee.md`.
+
+**La siembra inicial va dentro de la propia migración** (`20260904120000_padron_ruc_cliente_es_oee`),
+no en un paso aparte: una `padron_ruc.es_oee` vacía no es un estado válido de la aplicación —sin la
+marca, todo DE a un organismo del Estado sale B2B y lo rechaza el 1332—, así que la columna y su
+contenido inicial son la misma unidad de despliegue. Mismo patrón que
+`20260828040000_add_admin_rol`. La migración también marca los `Cliente` ya existentes que apunten a
+esos RUC, normalizando el RUC a la BASE del padrón (sin DV ni ceros a la izquierda) y acotando a
+`CONTRIBUYENTE`.
+
+`npm run seed:oee` (`oeeService.sembrarCatalogoOee`) hace lo mismo y queda para resembrar cuando se
+agreguen RUC al catálogo. Ambos son idempotentes y **no** marcan `es_oee = false` en el resto del
+padrón (no verificamos 2M de RUC; el default es `NULL`).
+
+**La automarcación por 1332 es lo que evita que el catálogo se congele.** Cuando SIFEN rechaza un
+documento con ese código nos está afirmando con autoridad que el receptor es un OEE — el mismo tipo de
+hecho que el `estado` que ya cacheamos desde `siConsRUC`. `loteService.marcarReceptorComoOee` marca
+**los dos lugares**: `padron_ruc` (para toda emisión futura, de cualquier empresa) y el `Cliente`
+(porque `reintentarDocumento` re-firma ESE documento sin volver a pasar por `emitirFactura`, leyendo
+`cliente.es_oee` — sin esto, reemitir repetiría el mismo rechazo). El legacy resolvía esto con una
+lista blanca hardcodeada de dos RUC (`validacionesRucReceptor.php:36`) que solo crecía cuando alguien
+la editaba a mano tras un rechazo; por eso el MEC, dado de alta mucho después, nunca entró.
 
 ### Receptor fallback: RUC bloqueado en el padrón
 
@@ -90,6 +219,7 @@ A RUC in a blocking state (`CANCELADO` / `CANCELADO DEFINITIVO` / `SUSPENSION TE
 Properties to preserve when touching this:
 - **The blocking state that triggers this is revalidated against SIFEN first** (see the previous section) — the degradation never fires straight off a local `padron_ruc` hit. Everything below applies once SIFEN has confirmed the block, or couldn't be reached.
 - **The degradation is automatic and unconfirmed** (product decision). It is irreversible for the receptor — the invoice can't be used as crédito fiscal, and a Nota de Crédito does not fix it (the NC doesn't change the receptor's naturaleza). The `[receptorFallback]` log line is the only trace; don't remove it.
+- **The `URL_CI` lookup is capped at 5 s too** (`cedulaService`, tunable via `TIMEOUT_CI`). It runs in the same two synchronous request paths as the RUC consultation and immediately after it, so leaving axios' no-timeout default here would just move the hang one call down. The timeout is translated to an `ErrorApp` 504 rather than propagating as a raw `AxiosError` (which, having no `response`, would surface as a 500 reading "timeout of 5000ms exceeded"); `resolverReceptorPorCedula` still swallows it and keeps the original 400, so this path is unchanged. A timeout is never `null` — only an actual answer from the service means "the cédula doesn't exist".
 - **It applies to personas físicas only.** RUCs with the `80` prefix (personas jurídicas) are discarded before hitting the network; the `URL_CI` lookup is the second barrier. If neither passes — including when `URL_CI` is down, whose error is deliberately swallowed — the caller keeps the original 400 about the RUC state, never a 500.
 - **The searcher and the emission must stay in sync.** `genericoService.getDatosByRuc` runs the same degradation so the client the front resolves is the same receptor `emitirFactura` ends up emitting to. Both call `resolverReceptorPorCedula`; don't fork the logic.
 - `padron_ruc` is **not** written on degradation — the RUC's state is the SET's fact, not ours to overwrite.
