@@ -188,6 +188,76 @@ const CODIGOS_RESPUESTA = {
       "Documento electrónico duplicado — SIFEN ya autorizó otro documento con coincidencia de los " +
       "campos del timbrado (el documento ya existe como DTE). No reenviar: reconciliar por CDC.",
   },
+  // Nivel documento — validación D202b. NO está en el cuerpo del MT v150 (que es de septiembre de
+  // 2019): lo agregó la Nota Técnica N° 20 del 17/11/2023, vigente en producción desde el
+  // 31/01/2024. Copia local: `NT_E_KUATIA_020_MT_V150.pdf`, y transcrito en el addendum B2G del
+  // `Manual Técnico Versión 150.md`. Texto oficial: "Si el RUC del receptor (D206) corresponde a un
+  // Organismo o Entidad del Estado (OEE), el tipo de operación debe ser B2G (D202=3)".
+  //
+  // Es un rechazo terminal —el documento hay que reemitirlo— pero además es la única señal
+  // automática que tenemos de que un RUC es un OEE: ni el TXT del DNIT ni `siConsRUC` lo informan.
+  // Por eso `loteService` lo usa para marcar `padron_ruc.es_oee` y que la próxima emisión al mismo
+  // receptor salga bien sola.
+  "1332": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Tipo de operación incompatible con un Organismo o Entidad del Estado (D202b, NT 20) — el " +
+      "receptor es un OEE y el DE debe informar B2G (iTiOpe=3). El RUC se marca automáticamente " +
+      "como OEE en padron_ruc; hay que REEMITIR el documento, que saldrá corregido.",
+  },
+  // Grupo de Compras Públicas (E020-E029) y códigos DNCP por ítem (E704/E705). Confirmados contra la
+  // copia local `Manual Técnico Versión 150.md`: validaciones 78/79/80 (líneas 8149-8155) y 129/130
+  // (líneas 8532-8535), más la tabla maestra de rangos de códigos (líneas 7247 y 7298).
+  //
+  // Estos cinco están mapeados por precaución, no porque se hayan visto: los emite SIFEN si valida
+  // de verdad el grupo de Compras Públicas de un DE B2G. Hoy ese grupo lo completa `xmlgen` con
+  // valores por defecto (ver la nota en `xmlBuilderService`) y está PENDIENTE de confirmar contra
+  // SIFEN que los acepte. A diferencia del 1332, ninguno de estos tiene camino de autocorrección:
+  // si aparecen, TODA emisión B2G queda rota hasta cambiar código. Por eso llevan un mensajeInterno
+  // que dice qué hacer, en vez de caer en el default de "código desconocido" que no orienta a nadie.
+  "1400": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Falta el grupo de Compras Públicas (E020 gCompPub), obligatorio para tipo de operación B2G " +
+      "(D202=3). Significa que SIFEN SÍ valida ese grupo: no alcanza con emitir B2G a secas. Hay que " +
+      "capturar los datos reales del contrato DNCP (modalidad/entidad/año/secuencia/fecha) y pasarlos " +
+      "por `data.dncp` en xmlBuilderService. Afecta a TODAS las emisiones a organismos del Estado.",
+  },
+  "1401": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Se informó el grupo de Compras Públicas (E020 gCompPub) en un documento que NO es B2G " +
+      "(D202≠3) — solo se permite con D202=3. Indica que se está emitiendo gCompPub a un receptor " +
+      "que no es un OEE: revisar por qué `cliente.es_oee` no coincide con el tipo de operación del DE.",
+  },
+  "1402": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "La fecha del código de contratación DNCP (E025 dFeCodCont) es posterior a la fecha de emisión " +
+      "de la Factura. Con los valores por defecto de xmlgen esa fecha es `hoy - 30 días`, así que un " +
+      "rechazo por acá apunta a un desfasaje de reloj/zona horaria, o a un documento emitido con " +
+      "fecha retroactiva de más de 30 días.",
+  },
+  "1800": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Falta el Código DNCP – Nivel General (E704 dDncpG) en algún ítem, obligatorio con D202=3. " +
+      "Mismo diagnóstico y misma solución que el 1400, pero a nivel de ítem: los datos reales van en " +
+      "`item.dncp.codigoNivelGeneral`.",
+  },
+  "1801": {
+    categoria: CATEGORIA.RECHAZADO,
+    alertar: true,
+    mensajeInterno:
+      "Se informó el Código DNCP – Nivel General (E704) sin el de Nivel Específico (E705 dDncpE), " +
+      "que es obligatorio cuando existe el primero. Los datos reales van en " +
+      "`item.dncp.codigoNivelEspecifico`.",
+  },
 };
 
 /**

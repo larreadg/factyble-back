@@ -47,6 +47,38 @@ const PLAZO_CREDITO_DIAS_DEFAULT = "30";
 const TIPO_CONTRIBUYENTE_SIFEN = { FISICA: 1, JURIDICA: 2 };
 const TIPO_IMPUESTO_SIFEN = { IVA: 1, ISC: 2, RENTA: 3, NINGUNO: 4, IVA_RENTA: 5 };
 const TIPO_OPERACION_SIFEN = { CONTRIBUYENTE: 1, NO_CONTRIBUYENTE: 2, NO_DOMICILIADO: 4 };
+
+// B2G (D202=3): obligatorio cuando el receptor es un Organismo o Entidad del Estado. Lo exige la
+// validación D202b de SIFEN (código 1332, Nota Técnica N° 20, vigente en producción desde el
+// 31/01/2024): "Si el RUC del receptor (D206) corresponde a un OEE, el tipo de operación debe ser
+// B2G". Emitirle B2B a un ministerio es un rechazo terminal. Ver el addendum B2G del Manual Técnico.
+//
+// No es un valor más de TIPO_OPERACION_SIFEN porque no se deriva de `situacion_tributaria`: un OEE
+// es un CONTRIBUYENTE normal en todo lo demás (iNatRec=1, dRucRec/dDVRec, iTiContRec=2) y solo se
+// distingue por el flag `es_oee` del Cliente.
+const TIPO_OPERACION_B2G = 3;
+
+// NOTA sobre los datos DNCP en las emisiones B2G: NO se pasan, y eso es una decisión, no un olvido.
+//
+// Al ver `cliente.tipoOperacion == 3`, xmlgen (a) EXIGE los datos de contratación pública en su
+// validador (`jsonDeMainValidate.service.js:812-845`, `jsonDteItemValidate.service.js:277-305`, sin
+// flag para saltearlo) y (b) si no se los pasan, los completa con valores por defecto
+// (`jsonDeMain.service.js:281-291`: modalidad '11', entidad '11111', secuencia '1111111', año '11',
+// fecha = hoy-30d; y por ítem en la línea 493: dDncpG '00000000', dDncpE '000', dGtin '11111111',
+// dGtinPq '11111111'). No hay forma de pedirle "B2G sin DNCP": o falla la validación, o emite esos
+// valores. Pasarle un objeto vacío esquiva (b) pero choca con (a) — verificado, no supuesto.
+//
+// Se optó por dejar que la librería complete. Es lo que hace la implementación de referencia del
+// ecosistema, así que es razonable esperar que SIFEN lo acepte, y queda pendiente confirmarlo con
+// una emisión real.
+//
+// Si SIFEN rechazara por el grupo de Compras Públicas, hay dos salidas conocidas, en este orden:
+//   1. Capturar los datos reales del contrato DNCP en la emisión y pasarlos por `data.dncp` /
+//      `item.dncp` — la correcta.
+//   2. Borrar los nodos del XML antes de firmar (`gCompPub` completo, más `dDncpG`/`dDncpE`/
+//      `dGtin`/`dGtinPq` por ítem), como hacía el backend PHP legacy: sus 102 documentos B2G a ANDE
+//      y al BCP entre 03/2025 y 08/2026 no llevan ninguno de esos nodos y SIFEN los aceptó durante
+//      17 meses seguidos. Sería un post-proceso más, al lado de `repararCTipRegVacio`.
 const TIPO_DOCUMENTO_RECEPTOR_SIFEN = {
   CEDULA: 1,
   PASAPORTE: 2,
@@ -214,7 +246,15 @@ const mapearCliente = (cliente) => {
 
   const contribuyente = cliente.situacion_tributaria === "CONTRIBUYENTE";
   const noDomiciliado = cliente.situacion_tributaria === "NO_DOMICILIADO";
-  const tipoOperacion = TIPO_OPERACION_SIFEN[cliente.situacion_tributaria];
+
+  // B2G solo sobre la rama contribuyente. `es_oee` está acotado por `contribuyente` a propósito: la
+  // validación D202b se dispara por el RUC informado en D206, que solo existe cuando iNatRec=1. Un
+  // receptor degradado a cédula (RUC bloqueado -> NO_CONTRIBUYENTE, ver receptorFallbackService) no
+  // informa RUC, así que no puede ni debe salir como B2G — y D208b/1319 prohíbe además el documento
+  // innominado fuera de B2C.
+  const tipoOperacion = contribuyente && cliente.es_oee === true
+    ? TIPO_OPERACION_B2G
+    : TIPO_OPERACION_SIFEN[cliente.situacion_tributaria];
 
   const base = {
     contribuyente,
@@ -326,6 +366,7 @@ const validarCdcOLanzar = (cdc) => {
  */
 const construirDataComun = ({ tipoDocumento, empresa, establecimientoCodigo, puntoCodigo, numero, fecha, cdc, cliente, detalles }) => {
   validarCdcOLanzar(cdc);
+
   return {
     tipoDocumento,
     tipoEmision: TIPO_EMISION_NORMAL,

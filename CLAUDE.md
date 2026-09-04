@@ -109,6 +109,109 @@ Properties to preserve here too:
 - **Techo por corrida** (`PADRON_RUC_VERIFICACION_MAX_POR_CORRIDA`) y pausa entre consultas (`PADRON_RUC_VERIFICACION_PAUSA_MS`), con log explícito cuando el techo trunca. No es por el volumen actual: es para que un bug que marque de más no se convierta en un barrido del padrón.
 - Cada fila está aislada en su propio try/catch — un RUC que falle no aborta la corrida.
 
+### Receptores del Estado (OEE) y emisión B2G
+
+Un DE dirigido a un Organismo o Entidad del Estado debe informar tipo de operación **B2G** (`iTiOpe=3`,
+campo D202). Emitirlo como B2B lo rechaza SIFEN con el código **1332** (validación D202b). Esa
+validación **no está en el cuerpo del MT v150** —que es de septiembre de 2019—: la agregó la **Nota
+Técnica N° 20** del 17/11/2023, vigente en producción desde el 31/01/2024. Copia local:
+`NT_E_KUATIA_020_MT_V150.pdf`, transcrita en el addendum B2G al final de `Manual Técnico Versión 150.md`.
+
+El dato vive en dos lugares, igual que el par `padron_ruc.estado` → `Cliente.situacion_tributaria`:
+`padron_ruc.es_oee` es la base de conocimiento compartida y `Cliente.es_oee` es la copia resuelta que
+lee `xmlBuilderService`. Ambas columnas son `Boolean?` y los tres estados significan cosas distintas:
+`NULL` = no lo sabemos, `false` = verificado que no lo es, `true` = OEE. Solo `true` cambia la emisión.
+
+Propiedades a preservar:
+
+- **No es un valor nuevo de `SituacionTributaria`.** Un OEE es un `CONTRIBUYENTE` normal en todo lo
+  demás (`iNatRec=1`, `dRucRec`/`dDVRec`, `iTiContRec=2`); agregarlo al enum rompería todos los
+  `=== "CONTRIBUYENTE"` del código, incluido el lookup de receptor acotado por situación tributaria.
+- **B2G solo sobre la rama contribuyente.** `mapearCliente` exige `contribuyente && es_oee === true`:
+  D202b se dispara por el RUC informado en D206, que solo existe con `iNatRec=1`. Un receptor
+  degradado a cédula por RUC bloqueado no informa RUC y no puede salir como B2G.
+- **`guardarLote` nunca borra la marca.** Ningún origen del padrón la conoce (el TXT del DNIT trae 5
+  campos y `siConsRUC` devuelve ContRUC01-06), así que los registros llegan con `esOee` undefined y
+  el `COALESCE(VALUES(es_oee), es_oee)` conserva lo que hubiera. Sin eso, la próxima importación
+  batch —o la simple revalidación de estado de un RUC ya marcado— nos deja emitiendo B2B a los
+  ministerios otra vez. Un registro puede pisar la marca seteando `esOee` explícitamente.
+- **`esOee` se captura de la lectura inicial del padrón y no se vuelve a leer.** `emitirFactura` y
+  `getDatosByRuc` reemplazan su registro cuando adoptan una respuesta de `siConsRUC`
+  (`adoptarRegistroDeSifen`), y ese objeto **no tiene `esOee`**: el WS devuelve ContRUC01-06 y no
+  informa nada de eso. Leerlo después de una adopción da `undefined` y degrada a `false` un receptor
+  correctamente marcado — el DE sale B2B, SIFEN lo rechaza con 1332, y el Cliente queda en `false`
+  contra un padrón que sigue en `true`. Conceptualmente: ser un organismo del Estado es propiedad del
+  RUC, no del estado tributario, así que una respuesta del WS no puede cambiarla.
+- **`buscarPorRuc` devuelve `esOee` con sus tres estados, sin normalizar a booleano.** Su resultado se
+  parece lo bastante a un registro de `guardarLote` como para que alguien lo reinyecte, y ahí un
+  `null` convertido en `false` pasaría de "no sabemos" a "verificado que no lo es", pisando la marca
+  real (el COALESCE solo protege contra `null`/`undefined`, no contra un `false` explícito).
+- **La automarcación por 1332 exige receptor `CONTRIBUYENTE`.** Para un receptor degradado a cédula,
+  `cliente.ruc` es el número de CI desnudo, que para una persona física es una clave válida de
+  `padron_ruc`: sin el guard, un 1332 marcaría el RUC de una persona como organismo del Estado en una
+  tabla que comparten todas las empresas. El UPDATE de la migración tiene el mismo recaudo.
+- **Se refresca en cada emisión y en cada búsqueda.** `emitirFactura` y `genericoService.getDatosByRuc`
+  releen `es_oee` del padrón y lo persisten en el `Cliente`, así que un RUC marcado después de haberse
+  creado el cliente se corrige solo en la siguiente factura, sin backfill. Los dos caminos tienen que
+  coincidir, por el mismo motivo que ya comparten la revalidación de estado y la degradación por cédula.
+
+**xmlgen no sabe emitir B2G sin datos DNCP.** Al ver `tipoOperacion == 3` la librería (a) EXIGE los
+datos de contratación pública en su validador (`jsonDeMainValidate.service.js:812-845`,
+`jsonDteItemValidate.service.js:277-305`, sin flag para saltearlo) y (b) si no se los pasan, los
+completa con valores por defecto. Pasarle un objeto vacío esquiva (b) pero choca con (a) — verificado.
+
+**Decisión tomada: se deja que la librería complete.** Es lo que hace la implementación de referencia
+del ecosistema, así que es razonable esperar que SIFEN lo acepte; queda **pendiente de confirmación
+con una emisión real**. Lo que sale en el XML de un DE B2G hoy:
+
+```xml
+<gCompPub><dModCont>11</dModCont><dEntCont>11111</dEntCont><dAnoCont>11</dAnoCont>
+          <dSecCont>1111111</dSecCont><dFeCodCont>{hoy-30d}</dFeCodCont></gCompPub>
+<!-- y por ítem: -->
+<dDncpG>00000000</dDncpG><dDncpE>000</dDncpE><dGtin>11111111</dGtin><dGtinPq>11111111</dGtinPq>
+```
+
+Si SIFEN rechazara por el grupo de Compras Públicas, hay dos salidas conocidas, en este orden:
+
+1. **Capturar los datos reales del contrato DNCP** en la emisión y pasarlos por `data.dncp` /
+   `item.dncp`. Es la correcta, y arrastra schema, ruta, validaciones y front.
+2. **Borrar los nodos del XML antes de firmar** (`gCompPub` entero más los cuatro por ítem), como
+   hacía el backend PHP legacy: sus **102 documentos B2G a ANDE y al BCP entre 03/2025 y 08/2026** no
+   llevan ninguno de esos nodos y SIFEN los aceptó 17 meses seguidos. Sería un post-proceso al lado
+   de `repararCTipRegVacio`. Formalmente el v150 exige el grupo (validaciones 1400 y 1800) y la NT 20
+   no las deroga, pero la evidencia de campo dice que no se aplica.
+
+#### De dónde sale la lista de OEE
+
+`src/data/oeeRucs.json` (392 RUC) se derivó cruzando el catálogo de entidades contratantes de la DNCP
+(descargas OCDS públicas 2024-2026) contra la razón social de nuestro padrón, porque **la DNCP
+identifica a sus entidades con un código interno y nunca publica su RUC**. Los ambiguos se revisaron
+a mano y se rechazaron los dudosos —sindicatos de funcionarios, fundaciones y empresas privadas con
+nombre parecido—: un falso negativo cuesta una reemisión, un falso positivo emite B2G a un privado.
+La derivación completa, los 23 matches rechazados y lo que el catálogo no cubre están en
+`src/data/README-oee.md`.
+
+**La siembra inicial va dentro de la propia migración** (`20260904120000_padron_ruc_cliente_es_oee`),
+no en un paso aparte: una `padron_ruc.es_oee` vacía no es un estado válido de la aplicación —sin la
+marca, todo DE a un organismo del Estado sale B2B y lo rechaza el 1332—, así que la columna y su
+contenido inicial son la misma unidad de despliegue. Mismo patrón que
+`20260828040000_add_admin_rol`. La migración también marca los `Cliente` ya existentes que apunten a
+esos RUC, normalizando el RUC a la BASE del padrón (sin DV ni ceros a la izquierda) y acotando a
+`CONTRIBUYENTE`.
+
+`npm run seed:oee` (`oeeService.sembrarCatalogoOee`) hace lo mismo y queda para resembrar cuando se
+agreguen RUC al catálogo. Ambos son idempotentes y **no** marcan `es_oee = false` en el resto del
+padrón (no verificamos 2M de RUC; el default es `NULL`).
+
+**La automarcación por 1332 es lo que evita que el catálogo se congele.** Cuando SIFEN rechaza un
+documento con ese código nos está afirmando con autoridad que el receptor es un OEE — el mismo tipo de
+hecho que el `estado` que ya cacheamos desde `siConsRUC`. `loteService.marcarReceptorComoOee` marca
+**los dos lugares**: `padron_ruc` (para toda emisión futura, de cualquier empresa) y el `Cliente`
+(porque `reintentarDocumento` re-firma ESE documento sin volver a pasar por `emitirFactura`, leyendo
+`cliente.es_oee` — sin esto, reemitir repetiría el mismo rechazo). El legacy resolvía esto con una
+lista blanca hardcodeada de dos RUC (`validacionesRucReceptor.php:36`) que solo crecía cuando alguien
+la editaba a mano tras un rechazo; por eso el MEC, dado de alta mucho después, nunca entró.
+
 ### Receptor fallback: RUC bloqueado en el padrón
 
 A RUC in a blocking state (`CANCELADO` / `CANCELADO DEFINITIVO` / `SUSPENSION TEMPORAL`, see `utils/sifen/estadoPadronRuc.js`) does **not** reject the emission anymore. `services/receptorFallbackService.js` degrades the receptor to a consumidor final identified by cédula: for a persona física the RUC base *is* the CI, so it is looked up against the identity registry (`URL_CI`) and, if found, `emitirFactura` rewrites `datos` in place to `NO_CONTRIBUYENTE` / `CEDULA`. SIFEN accepts this because D206c/d only run when the DE informs a RUC.

@@ -43,6 +43,14 @@ const ORIGENES = [ORIGEN_BATCH, ORIGEN_SIFEN, ORIGEN_FABRICADO];
  *    NULL y el COALESCE conserva el valor previo: una importación masiva no debe borrar el hecho
  *    de que un RUC se verificó individualmente contra el WS.
  *
+ * 3. **`es_oee`.** Ningún origen del padrón lo conoce: ni el TXT del DNIT (5 campos, ninguno es
+ *    este) ni `siConsRUC` (ContRUC01-06, tampoco). Por eso los registros que llegan acá lo traen
+ *    `undefined` y el COALESCE conserva lo que hubiera. Sin ese COALESCE, la próxima importación
+ *    batch —o la simple revalidación de estado de un RUC ya marcado— borraría la marca de OEE y
+ *    volveríamos a emitir B2B a un ministerio. Un registro puede setearlo explícitamente
+ *    (`esOee: true/false`) y entonces sí pisa: es la vía que usan la siembra desde
+ *    `data/oeeRucs.json` y la automarcación por rechazo 1332.
+ *
  * @param {Array<{ruc: string, razonSocial: string, digitoVerificador: string, rucAnterior: string|null, estado: string}>} registros
  * @param {'BATCH'|'SIFEN'|'FABRICADO'} origen - Procedencia del dato
  * @param {Object} [opciones]
@@ -64,7 +72,12 @@ const guardarLote = async (registros, origen, opciones = {}) => {
         ? origen === ORIGEN_BATCH
         : opciones.pisarRazonSocial === true;
 
-    const filas = registros.map((r) => Prisma.sql`(${r.ruc}, ${r.razonSocial}, ${r.digitoVerificador}, ${r.rucAnterior}, ${r.estado}, ${origen}, ${esSifen ? Prisma.sql`NOW()` : Prisma.sql`NULL`}, NOW(), NOW())`);
+    // `esOee` viaja como NULL salvo que el registro lo declare explícitamente. El COALESCE del
+    // UPDATE hace que un NULL no pise la marca existente (ver punto 3 de arriba).
+    const filas = registros.map((r) => {
+        const esOee = r.esOee === undefined || r.esOee === null ? null : Boolean(r.esOee);
+        return Prisma.sql`(${r.ruc}, ${r.razonSocial}, ${r.digitoVerificador}, ${r.rucAnterior}, ${r.estado}, ${origen}, ${esSifen ? Prisma.sql`NOW()` : Prisma.sql`NULL`}, ${esOee}, NOW(), NOW())`;
+    });
 
     // Solo el batch pisa la razón social; el resto la deja como está (ver el punto 1 de arriba).
     // `razon_social = razon_social` es un no-op explícito en el UPDATE: la fila nueva igual recibe
@@ -74,7 +87,7 @@ const guardarLote = async (registros, origen, opciones = {}) => {
         : Prisma.sql`razon_social = razon_social`;
 
     const query = Prisma.sql`
-        INSERT INTO padron_ruc (ruc, razon_social, digito_verificador, ruc_anterior, estado, origen, fecha_verificacion_sifen, fecha_creacion, fecha_modificacion)
+        INSERT INTO padron_ruc (ruc, razon_social, digito_verificador, ruc_anterior, estado, origen, fecha_verificacion_sifen, es_oee, fecha_creacion, fecha_modificacion)
         VALUES ${Prisma.join(filas)}
         ON DUPLICATE KEY UPDATE
             ${razonSocialUpdate},
@@ -83,6 +96,7 @@ const guardarLote = async (registros, origen, opciones = {}) => {
             estado = VALUES(estado),
             origen = VALUES(origen),
             fecha_verificacion_sifen = COALESCE(VALUES(fecha_verificacion_sifen), fecha_verificacion_sifen),
+            es_oee = COALESCE(VALUES(es_oee), es_oee),
             fecha_modificacion = NOW()
     `;
 
@@ -98,8 +112,15 @@ const guardarLote = async (registros, origen, opciones = {}) => {
  * el padrón se importa en batch (`importarPadronRuc`), así que esto es una lectura pura contra
  * la tabla ya poblada, sin llamada de red.
  *
+ * `esOee` se devuelve TAL CUAL, con sus tres estados (`true` / `false` / `null` = no lo sabemos), y
+ * NO normalizado a booleano. Normalizarlo acá sería una trampa: el resultado de esta función se
+ * parece lo bastante a un registro de `guardarLote` como para que alguien lo reinyecte, y ahí un
+ * `null` convertido en `false` pasaría de "no sabemos" a "verificado que no lo es", pisando la marca
+ * real vía el UPDATE (el COALESCE solo protege contra `null`/`undefined`, no contra un `false`).
+ * Los consumidores comparan con `=== true`, que trata `null` y `false` igual sin perder información.
+ *
  * @param {string} ruc
- * @returns {Promise<{ruc: string, razonSocial: string, digitoVerificador: string, rucAnterior: string|null, estado: string}|null>}
+ * @returns {Promise<{ruc: string, razonSocial: string, digitoVerificador: string, rucAnterior: string|null, estado: string, esOee: boolean|null}|null>}
  */
 const buscarPorRuc = async (ruc) => {
     const registro = await prisma.padronRuc.findUnique({ where: { ruc } });
@@ -111,7 +132,8 @@ const buscarPorRuc = async (ruc) => {
         razonSocial: registro.razon_social,
         digitoVerificador: registro.digito_verificador,
         rucAnterior: registro.ruc_anterior,
-        estado: registro.estado
+        estado: registro.estado,
+        esOee: registro.es_oee
     };
 };
 

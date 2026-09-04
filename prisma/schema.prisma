@@ -132,6 +132,19 @@ model Cliente {
   email                String?             @db.VarChar(255)
   telefono             String?             @db.VarChar(20)
   situacion_tributaria SituacionTributaria
+
+  // Copia resuelta de `padron_ruc.es_oee` para este receptor. Es lo que lee `xmlBuilderService`
+  // para decidir `iTiOpe=3` (B2G). Se persiste acá —en vez de consultar el padrón al armar el
+  // XML— por el mismo motivo que `situacion_tributaria`: el XML se construye desde el Cliente, no
+  // desde el padrón, y la emisión por lote corre en un cron mucho después del request.
+  //
+  // Se refresca en cada emisión desde el padrón, así que un RUC marcado como OEE más tarde se
+  // corrige solo en la siguiente factura, sin backfill. No se usa un valor nuevo de
+  // `SituacionTributaria`: un OEE sigue siendo CONTRIBUYENTE para todo lo demás (iNatRec=1,
+  // dRucRec/dDVRec, iTiContRec=2), y agregarlo al enum rompería todos los `=== "CONTRIBUYENTE"`
+  // del código, incluido el lookup de receptor acotado por situación tributaria.
+  es_oee               Boolean?
+
   fecha_creacion       DateTime            @default(now())
   fecha_modificacion   DateTime            @updatedAt
   empresas             ClienteEmpresa[]
@@ -741,11 +754,27 @@ model PadronRuc {
   // importación las 2M filas dicen "modificada hoy" y no sirve para medir frescura por RUC.
   fecha_verificacion_sifen DateTime?
 
+  // ¿Es un Organismo o Entidad del Estado? Determina `iTiOpe` (D202): un OEE exige B2G (=3) y
+  // cualquier otro tipo de operación lo rechaza SIFEN con el código 1332 (validación D202b, Nota
+  // Técnica N° 20 — ver el addendum B2G del Manual Técnico local).
+  //
+  // Nullable, y no solo por las ~2M filas preexistentes: los tres estados son semánticamente
+  // distintos. NULL = no lo sabemos (no está en la lista sembrada y nadie lo verificó), `false` =
+  // verificado que no lo es, `true` = OEE. Solo `true` cambia la emisión, así que un NULL se
+  // comporta como el comportamiento histórico (B2B).
+  //
+  // NINGUNA fuente automática lo provee: el TXT del DNIT trae 5 campos y ninguno es este, y
+  // `siConsRUC` devuelve solo ContRUC01-06 (tampoco). Se puebla desde `data/oeeRucs.json`
+  // (derivado del catálogo de entidades contratantes de la DNCP) y se autocorrige cuando SIFEN
+  // rechaza una emisión con 1332.
+  es_oee Boolean?
+
   fecha_creacion     DateTime @default(now())
   fecha_modificacion DateTime @updatedAt
 
   @@index([estado])
   // Soporta la query del cron diario: las FABRICADO, más viejas primero.
   @@index([origen, fecha_verificacion_sifen])
+  @@index([es_oee])
   @@map("padron_ruc")
 }

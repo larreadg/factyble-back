@@ -11,6 +11,7 @@
     "pass:cambiar": "node scripts/cambiarPassword.js",
     "db:limpiar": "node scripts/limpiarBd.js",
     "import:padron-ruc": "node scripts/importarPadronRuc.js",
+    "seed:oee": "node scripts/sembrarOee.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

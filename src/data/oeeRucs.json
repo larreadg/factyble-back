@@ -1,0 +1,2354 @@
+[
+ {
+  "ruc": "80000004",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE ENCARNACION",
+  "nombreDncp": "Municipalidad de Encarnación"
+ },
+ {
+  "ruc": "80000089",
+  "dv": "7",
+  "razonSocial": "INDUSTRIA NACIONAL DEL CEMENTO",
+  "nombreDncp": "Industria Nacional del Cemento (INC)"
+ },
+ {
+  "ruc": "80000124",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE J.AUGUSTO SALDIVAR",
+  "nombreDncp": "Municipalidad de J. Augusto Saldivar"
+ },
+ {
+  "ruc": "80000181",
+  "dv": "8",
+  "razonSocial": "COMANDO LOGISTICO",
+  "nombreDncp": "Comando Logistico Uoc 5 / Ministerio de Defensa Nacional"
+ },
+ {
+  "ruc": "80000215",
+  "dv": "6",
+  "razonSocial": "SERVICIO NACIONAL DE CALIDAD Y SALUD ANIMAL - SENACSA",
+  "nombreDncp": "Servicio Nacional de Calidad y Salud Animal (SENACSA)"
+ },
+ {
+  "ruc": "80000433",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE MARIANO ROQUE ALONSO",
+  "nombreDncp": "Municipalidad de Mariano Roque Alonso"
+ },
+ {
+  "ruc": "80000482",
+  "dv": "5",
+  "razonSocial": "MINISTERIO DE AGRICULTURA Y GANADERIA",
+  "nombreDncp": "Ministerio de Agricultura y Ganadería (MAG)"
+ },
+ {
+  "ruc": "80000489",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE LA CIUDAD DE ITA",
+  "nombreDncp": "Municipalidad de Itá"
+ },
+ {
+  "ruc": "80000492",
+  "dv": "2",
+  "razonSocial": "CAJA JUBILACIONES PENSIONES DEL PERSONAL MUNINCIPAL",
+  "nombreDncp": "Caja de Jubilaciones y Pensiones del Personal Municipal (CAJ.MUNIC.)"
+ },
+ {
+  "ruc": "80000493",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE SAN LORENZO",
+  "nombreDncp": "Municipalidad de San Lorenzo"
+ },
+ {
+  "ruc": "80000552",
+  "dv": "0",
+  "razonSocial": "COLEGIO EXPERIMENTAL PARAGUAY - BRASIL",
+  "nombreDncp": "Colegio Experimental Paraguay - Brasil (CEPB) / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80000564",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE LAMBARE",
+  "nombreDncp": "Municipalidad de Lambaré"
+ },
+ {
+  "ruc": "80000638",
+  "dv": "0",
+  "razonSocial": "INSTITUTO NACIONAL DE TECNOLOGIA, NORMALIZACION Y METROLOGIA  (INTN)",
+  "nombreDncp": "Instituto Nacional de Tecnología, Normalización y Metrología (INTN)"
+ },
+ {
+  "ruc": "80000643",
+  "dv": "7",
+  "razonSocial": "INSTITUTO PARAGUAYO DEL INDIGENA",
+  "nombreDncp": "Instituto Paraguayo del Indígena (INDI)"
+ },
+ {
+  "ruc": "80000725",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE PIRAYU",
+  "nombreDncp": "Municipalidad de Pirayú"
+ },
+ {
+  "ruc": "80000856",
+  "dv": "1",
+  "razonSocial": "BANCO NACIONAL DE FOMENTO",
+  "nombreDncp": "Banco Nacional de Fomento (BNF)"
+ },
+ {
+  "ruc": "80000905",
+  "dv": "3",
+  "razonSocial": "MINISTERIO DE SALUD PUBLICA Y BIENESTAR SOCIAL",
+  "nombreDncp": "Ministerio de Salud Pública y Bienestar Social (MSPBS)"
+ },
+ {
+  "ruc": "80001097",
+  "dv": "3",
+  "razonSocial": "FACULTAD DE ODONTOLOGIA",
+  "nombreDncp": "Facultad de Odontologia / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80001140",
+  "dv": "6",
+  "razonSocial": "MINISTERIO DEL INTERIOR",
+  "nombreDncp": "Ministerio del Interior (M.I.)"
+ },
+ {
+  "ruc": "80001176",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE TOBATI",
+  "nombreDncp": "Municipalidad de Tobatí"
+ },
+ {
+  "ruc": "80001180",
+  "dv": "5",
+  "razonSocial": "FACULTAD DE CIENCIAS MEDICAS",
+  "nombreDncp": "Facultad de Ciencias Medicas / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80001181",
+  "dv": "3",
+  "razonSocial": "FACULTAD POLITECNICA",
+  "nombreDncp": "Facultad Politecnica / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80001222",
+  "dv": "4",
+  "razonSocial": "CAJA SEGUROS SOC. EMPLEADOS Y OBREROS FERROVIARIOS",
+  "nombreDncp": "Caja de Seguridad Social de Empleados y Obreros Ferroviarios (CAJ.FERROV)"
+ },
+ {
+  "ruc": "80001262",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE ATYRA",
+  "nombreDncp": "Municipalidad de Atyra"
+ },
+ {
+  "ruc": "80001263",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE CAPIATA",
+  "nombreDncp": "Municipalidad de Capiatá"
+ },
+ {
+  "ruc": "80001269",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE BELLA VISTA ITAPUA",
+  "nombreDncp": "Municipalidad de Bella Vista - Itapúa"
+ },
+ {
+  "ruc": "80001386",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE HOHENAU",
+  "nombreDncp": "Municipalidad de Hohenau"
+ },
+ {
+  "ruc": "80001388",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE CORONEL OVIEDO",
+  "nombreDncp": "Municipalidad de Coronel Oviedo"
+ },
+ {
+  "ruc": "80001389",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE VILLA HAYES",
+  "nombreDncp": "Municipalidad de Villa Hayes"
+ },
+ {
+  "ruc": "80001463",
+  "dv": "4",
+  "razonSocial": "MINISTERIO DE JUSTICIA",
+  "nombreDncp": "Ministerio de Justicia  (MJ)"
+ },
+ {
+  "ruc": "80001464",
+  "dv": "2",
+  "razonSocial": "MINISTERIO DE RELACIONES EXTERIORES",
+  "nombreDncp": "Ministerio de Relaciones Exteriores (MRE)"
+ },
+ {
+  "ruc": "80001470",
+  "dv": "7",
+  "razonSocial": "SERVICIO NACIONAL DE SANEAMIENTO AMBIENTAL ( SENASA )",
+  "nombreDncp": "Servicio Nacional de Saneamiento Ambiental- SENASA (SENASA) / Ministerio de Salud Pública y Bienestar Social"
+ },
+ {
+  "ruc": "80001506",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE MARISCAL JOSE FELIX ESTIGARRIBIA",
+  "nombreDncp": "Municipalidad de Mcal Jose Félix Estigarribia"
+ },
+ {
+  "ruc": "80001896",
+  "dv": "6",
+  "razonSocial": "FACULTAD DE ENFERMERÍA Y OBSTETRICIA DE LA UNIVERSIDAD NACIONAL DE ASUNCIÓN",
+  "nombreDncp": "Facultad de enfermería y obstetricia de la Universidad Nacional de Asunción  / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80002269",
+  "dv": "6",
+  "razonSocial": "INSTITUTO DE PREVISION SOCIAL",
+  "nombreDncp": "Instituto de Previsión Social (IPS)"
+ },
+ {
+  "ruc": "80002274",
+  "dv": "2",
+  "razonSocial": "SERVICIO NACIONAL DE PROMOCION PROFESIONAL",
+  "nombreDncp": "Servicio Nacional de Promocion Profesional  (SNPP) / Ministerio de Trabajo, Empleo y Seguridad Social"
+ },
+ {
+  "ruc": "80002491",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE LA CIUDAD DE ASUNCION",
+  "nombreDncp": "Municipalidad de Asunción"
+ },
+ {
+  "ruc": "80002675",
+  "dv": "6",
+  "razonSocial": "PETROLEOS PARAGUAYOS",
+  "nombreDncp": "Petróleos Paraguayos (PETROPAR)"
+ },
+ {
+  "ruc": "80002761",
+  "dv": "2",
+  "razonSocial": "INSTITUTO NACIONAL DE ESTADÍSTICA",
+  "nombreDncp": "Instituto Nacional de Estadística (INE)"
+ },
+ {
+  "ruc": "80003360",
+  "dv": "4",
+  "razonSocial": "DELEGACION DE GOBIERNO DEL AMAMBAY",
+  "nombreDncp": "Gobierno Departamental de Amambay (AMAMBAY)"
+ },
+ {
+  "ruc": "80003468",
+  "dv": "6",
+  "razonSocial": "ADMINISTRACION NACIONAL DE NAVEGACION Y PUERTOS",
+  "nombreDncp": "Administración Nacional de Navegación y Puertos (ANNP)"
+ },
+ {
+  "ruc": "80003560",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE MBUYAPEY",
+  "nombreDncp": "Municipalidad de Mbuyapey"
+ },
+ {
+  "ruc": "80004194",
+  "dv": "1",
+  "razonSocial": "FACULTAD DE CIENCIAS EXACTAS Y NATURALES",
+  "nombreDncp": "Facultad de Ciencias Exactas y Naturales / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80004239",
+  "dv": "5",
+  "razonSocial": "MINISTERIO DE OBRAS PUBLICAS Y COMUNICACIONES",
+  "nombreDncp": "Ministerio de Obras Públicas y Comunicaciones (MOPC)"
+ },
+ {
+  "ruc": "80004726",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE CAACUPE",
+  "nombreDncp": "Municipalidad de Caacupé"
+ },
+ {
+  "ruc": "80004761",
+  "dv": "3",
+  "razonSocial": "GABINETE MILITAR- SERVICIOS DE LA PRESIDENCIA DE LA RCA.",
+  "nombreDncp": "Gabinete Militar / Presidencia de la República"
+ },
+ {
+  "ruc": "80005033",
+  "dv": "9",
+  "razonSocial": "HOSPITAL BARRIO OBRERO",
+  "nombreDncp": "Hospital de Barrio Obrero / Ministerio de Salud Pública y Bienestar Social"
+ },
+ {
+  "ruc": "80005190",
+  "dv": "4",
+  "razonSocial": "MINISTERIO DE EDUCACIÓN Y CIENCIAS",
+  "nombreDncp": "Ministerio de Educación y Ciencias (MEC)"
+ },
+ {
+  "ruc": "80005191",
+  "dv": "2",
+  "razonSocial": "CORTE SUPREMA DE JUSTICIA",
+  "nombreDncp": "Corte Suprema de Justicia (CSJ)"
+ },
+ {
+  "ruc": "80005380",
+  "dv": "0",
+  "razonSocial": "SECRETARIA NACIONAL POR LOS DERECHOS HUMANOS DE LAS PERSONAS CON DISCAPACIDAD  (SENADIS)",
+  "nombreDncp": "Secretaria Nacional por los Derechos Humanos de las Personas con Discapacidad (SENADIS) / Presidencia de la República"
+ },
+ {
+  "ruc": "80005553",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD  SAN ESTANISLAO",
+  "nombreDncp": "Municipalidad de San Estanislao"
+ },
+ {
+  "ruc": "80005559",
+  "dv": "4",
+  "razonSocial": "CREDITO AGRICOLA DE HABILITACION",
+  "nombreDncp": "Crédito Agrícola de Habilitación (CAH)"
+ },
+ {
+  "ruc": "80005563",
+  "dv": "2",
+  "razonSocial": "UNIVERSIDAD NACIONAL DE ASUNCION",
+  "nombreDncp": "Universidad Nacional de Asunción (UNA)"
+ },
+ {
+  "ruc": "80005585",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE JOSE LEANDRO OVIEDO.",
+  "nombreDncp": "Municipalidad de José Leandro Oviedo"
+ },
+ {
+  "ruc": "80005753",
+  "dv": "8",
+  "razonSocial": "HONORABLE CAMARA DE DIPUTADOS",
+  "nombreDncp": "Honorable Cámara de Diputados (DIPUTADOS)"
+ },
+ {
+  "ruc": "80005783",
+  "dv": "0",
+  "razonSocial": "DELEGACION DE GOBIERNO        DEL ALTO PARANA",
+  "nombreDncp": "Gobierno Departamental de Alto Paraná (A.PARANÁ)"
+ },
+ {
+  "ruc": "80005841",
+  "dv": "0",
+  "razonSocial": "DIRECCION NACIONAL DE CORREOS DEL PARAGUAY",
+  "nombreDncp": "Dirección Nacional de Correos del Paraguay (DINACOPA)"
+ },
+ {
+  "ruc": "80005978",
+  "dv": "6",
+  "razonSocial": "COMISION NACIONAL DE VALORES",
+  "nombreDncp": "Comisión Nacional de Valores (CNV)"
+ },
+ {
+  "ruc": "80006017",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE GRAL.FRANCISCO ISIDORO RESQUIN",
+  "nombreDncp": "Municipalidad de Gral. Francisco I. Resquin"
+ },
+ {
+  "ruc": "80006069",
+  "dv": "5",
+  "razonSocial": "FONDO GANADERO",
+  "nombreDncp": "Fondo Ganadero (FG.)"
+ },
+ {
+  "ruc": "80006072",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE CONCEPCION",
+  "nombreDncp": "Municipalidad de Concepción"
+ },
+ {
+  "ruc": "80006102",
+  "dv": "0",
+  "razonSocial": "COMANDO DEL EJERCITO.",
+  "nombreDncp": "Comando del Ejercito Uoc 2 / Ministerio de Defensa Nacional"
+ },
+ {
+  "ruc": "80006127",
+  "dv": "6",
+  "razonSocial": "COMANDO DE LA ARMADA",
+  "nombreDncp": "Comando de la Armada Uoc 3 / Ministerio de Defensa Nacional"
+ },
+ {
+  "ruc": "80006340",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE YPACARAI",
+  "nombreDncp": "Municipalidad de Ypacarai"
+ },
+ {
+  "ruc": "80006363",
+  "dv": "5",
+  "razonSocial": "HONORABLE CAMARA DE SENADORES",
+  "nombreDncp": "Honorable Cámara de Senadores"
+ },
+ {
+  "ruc": "80006415",
+  "dv": "1",
+  "razonSocial": "MINISTERIO DE DEFENSA NACIONAL",
+  "nombreDncp": "Ministerio de Defensa Nacional (MDN)"
+ },
+ {
+  "ruc": "80006444",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE UNION",
+  "nombreDncp": "Municipalidad de Unión"
+ },
+ {
+  "ruc": "80006537",
+  "dv": "9",
+  "razonSocial": "COMANDO DE LA FUERZA AEREA",
+  "nombreDncp": "Comando de la Fuerza Aerea Uoc 4 / Ministerio de Defensa Nacional"
+ },
+ {
+  "ruc": "80006571",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE CIUDAD PDTE. FRANCO .",
+  "nombreDncp": "Municipalidad de Presidente Franco"
+ },
+ {
+  "ruc": "80006716",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE ANTEQUERA",
+  "nombreDncp": "Municipalidad de Antequera"
+ },
+ {
+  "ruc": "80006752",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE CARAPEGUA",
+  "nombreDncp": "Municipalidad de Carapeguá"
+ },
+ {
+  "ruc": "80007034",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD  MBOCAYATY      YHAGUY",
+  "nombreDncp": "Municipalidad de Mbocayaty del Yhaguy"
+ },
+ {
+  "ruc": "80007145",
+  "dv": "0",
+  "razonSocial": "CENTRO FINANCIERO N° 1 COMANDO EN JEFE",
+  "nombreDncp": "Comando en Jefe Uoc 1 / Ministerio de Defensa Nacional"
+ },
+ {
+  "ruc": "80007322",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE NARANJAL",
+  "nombreDncp": "Municipalidad de Naranjal"
+ },
+ {
+  "ruc": "80007357",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE PIRAPO",
+  "nombreDncp": "Municipalidad de Pirapó"
+ },
+ {
+  "ruc": "80007414",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE LIMPIO",
+  "nombreDncp": "Municipalidad de Limpio"
+ },
+ {
+  "ruc": "80007577",
+  "dv": "3",
+  "razonSocial": "FACULTAD DE CIENCIAS VETERINARIAS",
+  "nombreDncp": "Facultad de Ciencias Veterinarias / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80007619",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE SAN JUAN BAUTISTA DE ÑEEMBUCU",
+  "nombreDncp": "Municipalidad de San Juan Bautista Ñeembucu"
+ },
+ {
+  "ruc": "80007680",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DOCTOR BOTRELL",
+  "nombreDncp": "Municipalidad de Dr. Bottrell"
+ },
+ {
+  "ruc": "80007821",
+  "dv": "7",
+  "razonSocial": "MINISTERIO PUBLICO",
+  "nombreDncp": "Ministerio Público - Fiscalía (FGE)"
+ },
+ {
+  "ruc": "80007878",
+  "dv": "0",
+  "razonSocial": "CONSEJO DE LA MAGISTRATURA",
+  "nombreDncp": "Consejo de la Magistratura (C.M.)"
+ },
+ {
+  "ruc": "80007900",
+  "dv": "0",
+  "razonSocial": "UNIVERSIDAD NACIONAL DEL ESTE",
+  "nombreDncp": "Universidad Nacional del Este (UNE)"
+ },
+ {
+  "ruc": "80008606",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE FRANCISCO    CABALLERO ALVAREZ.",
+  "nombreDncp": "Municipalidad de Gral. Francisco Caballero Alvarez"
+ },
+ {
+  "ruc": "80008641",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE SALTOS DEL GUAIRÁ",
+  "nombreDncp": "Municipalidad de Salto del Guairá"
+ },
+ {
+  "ruc": "80008643",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE SAN ROQUE GONZALEZ DE SANTA CRUZ",
+  "nombreDncp": "Municipalidad de San Roque González de Santa Cruz"
+ },
+ {
+  "ruc": "80008644",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE SAN BERNARDINO",
+  "nombreDncp": "Municipalidad de San Bernardino"
+ },
+ {
+  "ruc": "80008789",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE LORETO",
+  "nombreDncp": "Municipalidad de Loreto"
+ },
+ {
+  "ruc": "80008880",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE CORONEL BOGADO",
+  "nombreDncp": "Municipalidad de Coronel Bogado"
+ },
+ {
+  "ruc": "80008881",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE CIUDAD DEL ESTE",
+  "nombreDncp": "Municipalidad de Ciudad del Este"
+ },
+ {
+  "ruc": "80008886",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE ITAUGUÁ",
+  "nombreDncp": "Municipalidad de Itaugua"
+ },
+ {
+  "ruc": "80008887",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE LUQUE",
+  "nombreDncp": "Municipalidad de Luque"
+ },
+ {
+  "ruc": "80009022",
+  "dv": "5",
+  "razonSocial": "MINISTERIO DE INDUSTRIA  Y    COMERCIO.",
+  "nombreDncp": "Ministerio de Industria y Comercio (MIC)"
+ },
+ {
+  "ruc": "80009049",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE AREGUA",
+  "nombreDncp": "Municipalidad de Aregua"
+ },
+ {
+  "ruc": "80009124",
+  "dv": "8",
+  "razonSocial": "CONTRALORIA GENERAL DE LA REPUBLICA",
+  "nombreDncp": "Contraloría General de la República (C.G.R.)"
+ },
+ {
+  "ruc": "80009306",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE YATAITY DEL NORTE",
+  "nombreDncp": "Municipalidad de Yataity del Norte"
+ },
+ {
+  "ruc": "80009325",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD SANTA ROSA DEL  MBUTUY",
+  "nombreDncp": "Municipalidad de Santa Rosa del Mbutuy"
+ },
+ {
+  "ruc": "80009620",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE HORQUETA",
+  "nombreDncp": "Municipalidad de Horqueta"
+ },
+ {
+  "ruc": "80009626",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE VILLETA",
+  "nombreDncp": "Municipalidad de Villeta"
+ },
+ {
+  "ruc": "80009700",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE CAAPUCU",
+  "nombreDncp": "Municipalidad de Caapucú"
+ },
+ {
+  "ruc": "80009704",
+  "dv": "1",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE BOQUERON",
+  "nombreDncp": "Gobierno Departamental de Boquerón"
+ },
+ {
+  "ruc": "80009715",
+  "dv": "7",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE CONCEPCION",
+  "nombreDncp": "Gobierno Departamental de Concepción (CONCEPCIÓN)"
+ },
+ {
+  "ruc": "80009716",
+  "dv": "5",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE SAN PEDRO",
+  "nombreDncp": "Gobierno Departamental de San Pedro (S.PEDRO)"
+ },
+ {
+  "ruc": "80009717",
+  "dv": "3",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE LA CORDILLERA",
+  "nombreDncp": "Gobierno Departamental de Cordillera (CORDILLERA)"
+ },
+ {
+  "ruc": "80009718",
+  "dv": "1",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DEL GUAIRA",
+  "nombreDncp": "Gobierno Departamental de Guairá (GUAIRÁ)"
+ },
+ {
+  "ruc": "80009719",
+  "dv": "0",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE CAAGUAZU",
+  "nombreDncp": "Gobierno Departamental de Caaguazú (CAAGUAZÚ)"
+ },
+ {
+  "ruc": "80009720",
+  "dv": "3",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE CAAZAPA",
+  "nombreDncp": "Gobierno Departamental de Caazapá (CAAZAPÁ)"
+ },
+ {
+  "ruc": "80009721",
+  "dv": "1",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE ITAPUA",
+  "nombreDncp": "Gobierno Departamental de Itapua (ITAPÚA)"
+ },
+ {
+  "ruc": "80009722",
+  "dv": "0",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE MISIONES",
+  "nombreDncp": "Gobierno Departamental de Misiones (MISIONES)"
+ },
+ {
+  "ruc": "80009723",
+  "dv": "8",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE PARAGUARI",
+  "nombreDncp": "Gobierno Departamental de Paraguarí (PARAGUARÍ)"
+ },
+ {
+  "ruc": "80009724",
+  "dv": "6",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE ÑEEMBUCU",
+  "nombreDncp": "Gobierno Departamental de Ñeembucú (ÑEEMBUCÚ)"
+ },
+ {
+  "ruc": "80009725",
+  "dv": "4",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE CANINDEYU",
+  "nombreDncp": "Gobierno Departamental de Canindeyú (CANINDEYÚ)"
+ },
+ {
+  "ruc": "80009726",
+  "dv": "2",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE PRESIDENTE HAYES",
+  "nombreDncp": "Gobierno Departamental de Presidente Hayes (PTE.HAYES)"
+ },
+ {
+  "ruc": "80009727",
+  "dv": "0",
+  "razonSocial": "GOBIERNO DEPARTAMENTAL DE ALTO PARAGUAY",
+  "nombreDncp": "Gobierno Departamental de Alto Paraguay (GOBALTOPY)"
+ },
+ {
+  "ruc": "80009735",
+  "dv": "1",
+  "razonSocial": "ADMINISTRACION NACIONAL DE ELECTRICIDAD - ANDE",
+  "nombreDncp": "Administración Nacional de Electricidad (ANDE)"
+ },
+ {
+  "ruc": "80009755",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE HERNANDARIAS",
+  "nombreDncp": "Municipalidad de Hernandarias"
+ },
+ {
+  "ruc": "80009769",
+  "dv": "6",
+  "razonSocial": "BANCO CENTRAL DEL PARAGUAY",
+  "nombreDncp": "Banco Central del Paraguay (BCP)"
+ },
+ {
+  "ruc": "80009774",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE LOS CEDRALES",
+  "nombreDncp": "Municipalidad de los Cedrales"
+ },
+ {
+  "ruc": "80009878",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE QUYQUYHO",
+  "nombreDncp": "Municipalidad de Quyquyho"
+ },
+ {
+  "ruc": "80009881",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE IRUÑA",
+  "nombreDncp": "Municipalidad de Iruña"
+ },
+ {
+  "ruc": "80009952",
+  "dv": "4",
+  "razonSocial": "POLICIA NACIONAL",
+  "nombreDncp": "Policia Nacional / Ministerio del Interior"
+ },
+ {
+  "ruc": "80009971",
+  "dv": "0",
+  "razonSocial": "MINISTERIO DE LA MUJER",
+  "nombreDncp": "Ministerio de la Mujer (MM)"
+ },
+ {
+  "ruc": "80010049",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE SAN JOAQUIN",
+  "nombreDncp": "Municipalidad de San Joaquín"
+ },
+ {
+  "ruc": "80010077",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE PILAR",
+  "nombreDncp": "Municipalidad de Pilar"
+ },
+ {
+  "ruc": "80010078",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE PEDRO JUAN CABALLERO",
+  "nombreDncp": "Municipalidad de Pedro Juan Caballero"
+ },
+ {
+  "ruc": "80010079",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE TOMAS ROMERO PEREIRA",
+  "nombreDncp": "Municipalidad de Tomás Romero Pereira"
+ },
+ {
+  "ruc": "80010080",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE YPANE",
+  "nombreDncp": "Municipalidad de Ypané"
+ },
+ {
+  "ruc": "80010105",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE ÑEMBY",
+  "nombreDncp": "Municipalidad de Ñemby"
+ },
+ {
+  "ruc": "80010134",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE BENJAMIN ACEVAL",
+  "nombreDncp": "Municipalidad de Benjamín Aceval"
+ },
+ {
+  "ruc": "80010191",
+  "dv": "0",
+  "razonSocial": "PROCURADURIA GENERAL DE LA REPUBLICA",
+  "nombreDncp": "Procuraduria General de la Republica (PGR) / Presidencia de la República"
+ },
+ {
+  "ruc": "80010222",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE NUEVA COLOMBIA",
+  "nombreDncp": "Municipalidad de Nueva Colombia"
+ },
+ {
+  "ruc": "80010247",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE PUERTO PINASCO",
+  "nombreDncp": "Municipalidad de Puerto Pinasco"
+ },
+ {
+  "ruc": "80010248",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE ACAHAY",
+  "nombreDncp": "Municipalidad de Acahay"
+ },
+ {
+  "ruc": "80010279",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE CERRITO",
+  "nombreDncp": "Municipalidad de Cerrito"
+ },
+ {
+  "ruc": "80010470",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE CAAGUAZU",
+  "nombreDncp": "Municipalidad de Caaguazú"
+ },
+ {
+  "ruc": "80010471",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE EUSEBIO AYALA",
+  "nombreDncp": "Municipalidad de Eusebio Ayala"
+ },
+ {
+  "ruc": "80010477",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE ITACURUBI DEL ROSARIO",
+  "nombreDncp": "Municipalidad de Itacurubí del Rosario"
+ },
+ {
+  "ruc": "80010478",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE MINGA GUAZU",
+  "nombreDncp": "Municipalidad de Minga Guazú"
+ },
+ {
+  "ruc": "80010479",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE NUEVA ITALIA",
+  "nombreDncp": "Municipalidad de Nueva Italia"
+ },
+ {
+  "ruc": "80010505",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE SAPUCAI",
+  "nombreDncp": "Municipalidad de Sapucai"
+ },
+ {
+  "ruc": "80010506",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE SAN ANTONIO",
+  "nombreDncp": "Municipalidad de San Antonio"
+ },
+ {
+  "ruc": "80010507",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE SAN JUAN BAUTISTA, MISIONES",
+  "nombreDncp": "Municipalidad de San Juan Bautista"
+ },
+ {
+  "ruc": "80010509",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE SANTA ROSA MISIONES",
+  "nombreDncp": "Municipalidad de Santa Rosa Misiones"
+ },
+ {
+  "ruc": "80010887",
+  "dv": "6",
+  "razonSocial": "FACULTAD DE CIENCIAS QUIMICAS",
+  "nombreDncp": "Facultad de Ciencias Quimicas / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80010984",
+  "dv": "8",
+  "razonSocial": "DIRECCION NACIONAL DE MIGRACIONES",
+  "nombreDncp": "Dirección Nacional de Migraciones (DNM)"
+ },
+ {
+  "ruc": "80011289",
+  "dv": "0",
+  "razonSocial": "FACULTAD DE FILOSOFIA - UNIVERSIDAD NACIONAL DEL ESTE",
+  "nombreDncp": "Facultad de Filosofia / Universidad Nacional del Este"
+ },
+ {
+  "ruc": "80011326",
+  "dv": "8",
+  "razonSocial": "FACULTAD DE DERECHO Y CIENCIAS SOCIALES (U.N.E.)",
+  "nombreDncp": "Facultad de Derecho y Ciencias Sociales / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80011609",
+  "dv": "7",
+  "razonSocial": "TRIBUNAL SUPERIOR DE JUSTICIA ELECTORAL",
+  "nombreDncp": "Tribunal Superior de Justicia Electoral (TSJE)"
+ },
+ {
+  "ruc": "80012010",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE PRIMERO DE   MARZO.",
+  "nombreDncp": "Municipalidad de Primero de Marzo"
+ },
+ {
+  "ruc": "80012011",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE ISLA PUCU",
+  "nombreDncp": "Municipalidad de Isla Pucú"
+ },
+ {
+  "ruc": "80013205",
+  "dv": "0",
+  "razonSocial": "JURADO DE ENJUICIAMIENTO DE MAGISTRADOS",
+  "nombreDncp": "Jurado de Enjuiciamiento de Magistrados (JEM)"
+ },
+ {
+  "ruc": "80013393",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD SANTA ROSA DEL MONDAY",
+  "nombreDncp": "Municipalidad de Santa Rosa del Monday"
+ },
+ {
+  "ruc": "80013719",
+  "dv": "1",
+  "razonSocial": "FACULTAD DE CIENCIAS AGRARIAS - U.N.A.",
+  "nombreDncp": "Facultad de Ciencias Agrarias / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80013957",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE JUAN LEON MALLORQUIN",
+  "nombreDncp": "Municipalidad de Juan León Mallorquín"
+ },
+ {
+  "ruc": "80013961",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE JUAN E. O' LEARY",
+  "nombreDncp": "Municipalidad de Juan E. O'Leary"
+ },
+ {
+  "ruc": "80013971",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE ÑACUNDAY",
+  "nombreDncp": "Municipalidad de Ñacunday"
+ },
+ {
+  "ruc": "80014036",
+  "dv": "2",
+  "razonSocial": "COMISION NACIONAL DE TELECOMUNICACIONES (CONATEL)",
+  "nombreDncp": "Comisión Nacional de Telecomunicaciones (CONATEL)"
+ },
+ {
+  "ruc": "80014496",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE MARISCAL FRANCISCO SOLANO LOPEZ",
+  "nombreDncp": "Municipalidad de Mcal. Francisco Solano López"
+ },
+ {
+  "ruc": "80014634",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE JOSE DOMINGO OCAMPOS",
+  "nombreDncp": "Municipalidad de José Domingo Ocampos"
+ },
+ {
+  "ruc": "80015037",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE VILLA FLORIDA",
+  "nombreDncp": "Municipalidad de Villa Florida"
+ },
+ {
+  "ruc": "80015275",
+  "dv": "1",
+  "razonSocial": "MINISTERIO DE DESARROLLO SOCIAL",
+  "nombreDncp": "Ministerio de Desarrollo Social (MDS)"
+ },
+ {
+  "ruc": "80015397",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE KATUETE",
+  "nombreDncp": "Municipalidad de Katuete"
+ },
+ {
+  "ruc": "80015647",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE FRAM",
+  "nombreDncp": "Municipalidad de Fram"
+ },
+ {
+  "ruc": "80015708",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE LA PALOMA DEL ESPIRITU SANTO",
+  "nombreDncp": "Municipalidad de la Paloma del Espiritu Santo"
+ },
+ {
+  "ruc": "80015731",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE ALTOS",
+  "nombreDncp": "Municipalidad de Altos"
+ },
+ {
+  "ruc": "80015760",
+  "dv": "5",
+  "razonSocial": "UNIVERSIDAD NACIONAL DE PILAR",
+  "nombreDncp": "Universidad Nacional de Pilar (UNP)"
+ },
+ {
+  "ruc": "80015840",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE SIMON BOLIVAR",
+  "nombreDncp": "Municipalidad de Simón Bolivar"
+ },
+ {
+  "ruc": "80015897",
+  "dv": "0",
+  "razonSocial": "UNIVERSIDAD NACIONAL DE ITAPUA",
+  "nombreDncp": "Universidad Nacional de Itapúa (UNI)"
+ },
+ {
+  "ruc": "80016603",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE LA COLMENA",
+  "nombreDncp": "Municipalidad de la Colmena"
+ },
+ {
+  "ruc": "80016915",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE ARROYOS Y ESTEROS",
+  "nombreDncp": "Municipalidad de Arroyos y Esteros"
+ },
+ {
+  "ruc": "80016961",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE MBARACAYU",
+  "nombreDncp": "Municipalidad de Mbaracayú"
+ },
+ {
+  "ruc": "80017101",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE CAPITAN BADO",
+  "nombreDncp": "Municipalidad de Capitán Bado"
+ },
+ {
+  "ruc": "80017140",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE GRAL. BERNARDINO CABALLERO",
+  "nombreDncp": "Municipalidad de Gral. Bernardino Caballero"
+ },
+ {
+  "ruc": "80017268",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE TACUARAS",
+  "nombreDncp": "Municipalidad de Tacuaras"
+ },
+ {
+  "ruc": "80017766",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DOMINGO MARTINEZ DE IRALA",
+  "nombreDncp": "Municipalidad de Domingo Martínez de Irala"
+ },
+ {
+  "ruc": "80018010",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE NUEVA GERMANIA",
+  "nombreDncp": "Municipalidad de Nueva Germania"
+ },
+ {
+  "ruc": "80018025",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE ITAPUA POTY",
+  "nombreDncp": "Municipalidad de Itapúa Poty"
+ },
+ {
+  "ruc": "80018266",
+  "dv": "9",
+  "razonSocial": "ESCRIBANIA MAYOR DE GOBIERNO",
+  "nombreDncp": "Escribania Mayor de Gobierno / Presidencia de la República"
+ },
+ {
+  "ruc": "80018272",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE VAQUERIA",
+  "nombreDncp": "Municipalidad de Vaquería"
+ },
+ {
+  "ruc": "80018386",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DEL DISTRITO DE GUAZU CUA",
+  "nombreDncp": "Municipalidad de Guazu Cuá"
+ },
+ {
+  "ruc": "80018515",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE MBOCAYATY",
+  "nombreDncp": "Municipalidad de Mbocayaty del Guairá"
+ },
+ {
+  "ruc": "80018719",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE LA PASTORA",
+  "nombreDncp": "Municipalidad de la Pastora"
+ },
+ {
+  "ruc": "80018734",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD  DE  CORPUS     CHRISTI",
+  "nombreDncp": "Municipalidad de Corpus Christi"
+ },
+ {
+  "ruc": "80018809",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE ÑUMI",
+  "nombreDncp": "Municipalidad de Ñumi"
+ },
+ {
+  "ruc": "80018852",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE SAN SALVADOR",
+  "nombreDncp": "Municipalidad de San Salvador"
+ },
+ {
+  "ruc": "80018932",
+  "dv": "9",
+  "razonSocial": "FACULTAD DE CIENCIAS DE LA SALUD - UNIVERSIDAD NAC. DEL ESTE",
+  "nombreDncp": "Facultad de Ciencias de la Salud / Universidad Nacional del Este"
+ },
+ {
+  "ruc": "80019099",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE ITURBE",
+  "nombreDncp": "Municipalidad de Iturbe"
+ },
+ {
+  "ruc": "80019187",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE CORONEL MACIEL",
+  "nombreDncp": "Municipalidad de Maciel"
+ },
+ {
+  "ruc": "80019195",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE BUENA VISTA",
+  "nombreDncp": "Municipalidad de Buena Vista"
+ },
+ {
+  "ruc": "80019262",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE ISLA UMBU",
+  "nombreDncp": "Municipalidad de Isla Umbú"
+ },
+ {
+  "ruc": "80019280",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE PASO YOBAI",
+  "nombreDncp": "Municipalidad de Paso Yobai"
+ },
+ {
+  "ruc": "80019300",
+  "dv": "8",
+  "razonSocial": "CONSEJO NACIONAL DE CIENCIA Y TECNOLOGIA (CONACYT)",
+  "nombreDncp": "Consejo Nacional de Ciencia y Tecnología (CONACYT) / Presidencia de la República"
+ },
+ {
+  "ruc": "80019423",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE TEBICUARY-MI",
+  "nombreDncp": "Municipalidad de Tebicuary"
+ },
+ {
+  "ruc": "80019487",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE JOSE FALCON",
+  "nombreDncp": "Municipalidad de José Falcón"
+ },
+ {
+  "ruc": "80019948",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE SAN ALBERTO",
+  "nombreDncp": "Municipalidad de San Alberto"
+ },
+ {
+  "ruc": "80020056",
+  "dv": "0",
+  "razonSocial": "PRESIDENCIA DE LA REPUBLICA - GABINETE CIVIL",
+  "nombreDncp": "Presidencia de la República"
+ },
+ {
+  "ruc": "80020255",
+  "dv": "4",
+  "razonSocial": "FONDO NACIONAL DE LA CULTURA Y LAS ARTES FONDEC",
+  "nombreDncp": "Fondo Nacional de la Cultura y las Artes (FONDEC)"
+ },
+ {
+  "ruc": "80020290",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE CORONEL MARTINEZ",
+  "nombreDncp": "Municipalidad de Coronel Martínez"
+ },
+ {
+  "ruc": "80020524",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD NUEVA ESPERANZA",
+  "nombreDncp": "Municipalidad de Nueva Esperanza"
+ },
+ {
+  "ruc": "80020696",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE NUEVA ALBORADA",
+  "nombreDncp": "Municipalidad de Nueva Alborada"
+ },
+ {
+  "ruc": "80020713",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD YABEBYRY",
+  "nombreDncp": "Municipalidad de Yabebyry"
+ },
+ {
+  "ruc": "80020934",
+  "dv": "6",
+  "razonSocial": "SECRETARIA NACIONAL DE TURISMO",
+  "nombreDncp": "Secretaria Nacional de Turismo (SENATUR) / Presidencia de la República"
+ },
+ {
+  "ruc": "80020947",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD RAUL ARSENIO OVIEDO",
+  "nombreDncp": "Municipalidad de Raúl Arsenio Oviedo"
+ },
+ {
+  "ruc": "80020961",
+  "dv": "3",
+  "razonSocial": "SECRETARIA DE PREVENCION DE LAVADO DE DINERO O BIENES",
+  "nombreDncp": "Secretaria de Prevención de Lavado de Dinero (SEPRELAD) / Presidencia de la República"
+ },
+ {
+  "ruc": "80021421",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE VILLA DEL ROSARIO",
+  "nombreDncp": "Municipalidad de Villa del Rosario"
+ },
+ {
+  "ruc": "80021483",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE LAURELES ÑEEMBUCU",
+  "nombreDncp": "Municipalidad de Laureles"
+ },
+ {
+  "ruc": "80021572",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE GRAL. ELIZARDO AQUINO",
+  "nombreDncp": "Municipalidad de Gral. Elizardo Aquino"
+ },
+ {
+  "ruc": "80021768",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE NATALICIO TALAVERA",
+  "nombreDncp": "Municipalidad de Natalicio Talavera"
+ },
+ {
+  "ruc": "80021769",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE TAVAI",
+  "nombreDncp": "Municipalidad de Tavaí"
+ },
+ {
+  "ruc": "80021928",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE EDELIRA",
+  "nombreDncp": "Municipalidad de Edelira"
+ },
+ {
+  "ruc": "80022066",
+  "dv": "8",
+  "razonSocial": "MINISTERIO DEL AMBIENTE Y DESARROLLO SOSTENIBLE",
+  "nombreDncp": "Ministerio del Ambiente y Desarrollo Sostenible (MADES)"
+ },
+ {
+  "ruc": "80022368",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE PIRIBEBUY.",
+  "nombreDncp": "Municipalidad de Piribebuy"
+ },
+ {
+  "ruc": "80022399",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE VILLA FRANCA",
+  "nombreDncp": "Municipalidad de Villa Franca"
+ },
+ {
+  "ruc": "80022453",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE SAN JUAN     NEPOMUCENO",
+  "nombreDncp": "Municipalidad de San Juan Nepomuceno"
+ },
+ {
+  "ruc": "80022581",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE SAN PEDRO",
+  "nombreDncp": "Municipalidad de San Pedro del Ycuamandiyú"
+ },
+ {
+  "ruc": "80022715",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE CAPIIBARY",
+  "nombreDncp": "Municipalidad de Capiibary"
+ },
+ {
+  "ruc": "80022741",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE SAN JUAN DEL PARANA",
+  "nombreDncp": "Municipalidad de San Juan del Paraná"
+ },
+ {
+  "ruc": "80022761",
+  "dv": "1",
+  "razonSocial": "FACULTAD DE INGENIERÍA",
+  "nombreDncp": "Facultad de Ingenieria / Universidad Nacional de Asunción"
+ },
+ {
+  "ruc": "80022784",
+  "dv": "0",
+  "razonSocial": "AUDITORIA GENERAL DEL PODER EJECUTIVO",
+  "nombreDncp": "Auditoria General del Poder Ejecutivo (AGPE) / Presidencia de la República"
+ },
+ {
+  "ruc": "80022834",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE VILLA ELISA",
+  "nombreDncp": "Municipalidad de Villa Elisa"
+ },
+ {
+  "ruc": "80022925",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE FUERTE OLIMPO",
+  "nombreDncp": "Municipalidad de Fuerte Olimpo"
+ },
+ {
+  "ruc": "80022949",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE VILLARRICA",
+  "nombreDncp": "Municipalidad de Villarrica"
+ },
+ {
+  "ruc": "80022992",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DR. CECILIO BAEZ",
+  "nombreDncp": "Municipalidad de Dr. Cecilio Báez"
+ },
+ {
+  "ruc": "80022997",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE GUARAMBARE",
+  "nombreDncp": "Municipalidad de Guarambaré"
+ },
+ {
+  "ruc": "80023186",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE YPEJHU",
+  "nombreDncp": "Municipalidad de Ypejhu"
+ },
+ {
+  "ruc": "80023431",
+  "dv": "6",
+  "razonSocial": "DIRECCION NACIONAL DE TRANSPORTE",
+  "nombreDncp": "Direccion Nacional de Transporte (DINATRAN)"
+ },
+ {
+  "ruc": "80023440",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE MAYOR OTAÑO",
+  "nombreDncp": "Municipalidad de Mayor Otaño"
+ },
+ {
+  "ruc": "80023539",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE CARMEN DEL PARANA",
+  "nombreDncp": "Municipalidad de Carmen del Paraná"
+ },
+ {
+  "ruc": "80023541",
+  "dv": "0",
+  "razonSocial": "COMPAÑIA PARAGUAYA DE COMUNICACIONES SA (COPACO SA)",
+  "nombreDncp": "Compañía Paraguaya de Comunicaciones (COPACO)"
+ },
+ {
+  "ruc": "80023577",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE QUIINDY",
+  "nombreDncp": "Municipalidad de Quiindy"
+ },
+ {
+  "ruc": "80023592",
+  "dv": "4",
+  "razonSocial": "CIRCUNSCRIPCION JUDICIAL DE ÑEEMBUCU",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Ñeembucu / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80023627",
+  "dv": "0",
+  "razonSocial": "CIRCUNSCRIPCION JUDICIAL DEL GUAIRA",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Guaira / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80023643",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE VILLA YGATIMI",
+  "nombreDncp": "Municipalidad de Villa Ygatimí"
+ },
+ {
+  "ruc": "80023652",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE REPATRIACION",
+  "nombreDncp": "Municipalidad de Repatriación"
+ },
+ {
+  "ruc": "80023658",
+  "dv": "0",
+  "razonSocial": "DEFENSORIA DEL PUEBLO",
+  "nombreDncp": "Defensoría del Pueblo"
+ },
+ {
+  "ruc": "80023674",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE YUTY",
+  "nombreDncp": "Municipalidad de Yuty"
+ },
+ {
+  "ruc": "80023677",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE EMBOSCADA",
+  "nombreDncp": "Municipalidad de Emboscada"
+ },
+ {
+  "ruc": "80023685",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE JESUS",
+  "nombreDncp": "Municipalidad de Jesús"
+ },
+ {
+  "ruc": "80023725",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE LOMA GRANDE",
+  "nombreDncp": "Municipalidad de Loma Grande"
+ },
+ {
+  "ruc": "80023736",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE JUAN DE MENA",
+  "nombreDncp": "Municipalidad de Juan de Mena"
+ },
+ {
+  "ruc": "80023759",
+  "dv": "5",
+  "razonSocial": "CIRCUNSCRIPCION JUDICIAL DE MISIONES",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Misiones / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80023761",
+  "dv": "7",
+  "razonSocial": "CIRCUNSCRIPCION JUDICIAL DE ALTO PARANA",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Alto Parana / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80023762",
+  "dv": "5",
+  "razonSocial": "CIRCUNSCRIPCION JUDICIAL DE CONCEPCION",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Concepción / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80023763",
+  "dv": "3",
+  "razonSocial": "CIRCUNSCRIPCION JUDICIAL DE ENCARNACION",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Encarnación / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80023806",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE ALTO VERA",
+  "nombreDncp": "Municipalidad de Alto Verá"
+ },
+ {
+  "ruc": "80023812",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE SAN LAZARO",
+  "nombreDncp": "Municipalidad de San Lázaro"
+ },
+ {
+  "ruc": "80023887",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE CARAGUATAY",
+  "nombreDncp": "Municipalidad de Caraguatay"
+ },
+ {
+  "ruc": "80023896",
+  "dv": "6",
+  "razonSocial": "CIRCUNSCRIPCION JUDICIAL DE AMAMBAY",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Amambay / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80023897",
+  "dv": "4",
+  "razonSocial": "CIRCUNSCRIPCION JUDICIAL DE CAAGUAZU.",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Caaguazu / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80023916",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE TACUATI",
+  "nombreDncp": "Municipalidad de Tacuatí"
+ },
+ {
+  "ruc": "80023924",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE SAN JOSE OBRERO",
+  "nombreDncp": "Municipalidad de San José Obrero"
+ },
+ {
+  "ruc": "80023935",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE VILLA CURUGUATY",
+  "nombreDncp": "Municipalidad de Villa Curuguaty"
+ },
+ {
+  "ruc": "80023994",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE SAN PABLO",
+  "nombreDncp": "Municipalidad de San Pablo"
+ },
+ {
+  "ruc": "80024012",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE CAPITAN MIRANDA",
+  "nombreDncp": "Municipalidad de Capitán Miranda"
+ },
+ {
+  "ruc": "80024013",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD  DISTRITO       YGUAZU",
+  "nombreDncp": "Municipalidad de Yguazú"
+ },
+ {
+  "ruc": "80024064",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE CAMBYRETA",
+  "nombreDncp": "Municipalidad de Cambyretá"
+ },
+ {
+  "ruc": "80024078",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DEL DISTRITO DE SANTA RITA",
+  "nombreDncp": "Municipalidad de Santa Rita"
+ },
+ {
+  "ruc": "80024120",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE YAGUARON",
+  "nombreDncp": "Municipalidad de Yaguaron"
+ },
+ {
+  "ruc": "80024157",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE CAAZAPA",
+  "nombreDncp": "Municipalidad de Caazapá"
+ },
+ {
+  "ruc": "80024184",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE INDEPENDENCIA",
+  "nombreDncp": "Municipalidad de Independencia"
+ },
+ {
+  "ruc": "80024191",
+  "dv": "6",
+  "razonSocial": "EMPRESA DE SERVICIOS SANITARIOS DEL PARAGUAY SA (ESSAP SA)",
+  "nombreDncp": "Empresa de Servicios Sanitarios del Paraguay (ESSAP)"
+ },
+ {
+  "ruc": "80024324",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE ITACURUBI DE LA CORDILLERA",
+  "nombreDncp": "Municipalidad de Itacurubí de las Cordilleras"
+ },
+ {
+  "ruc": "80024464",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE GENERAL ARTIGAS",
+  "nombreDncp": "Municipalidad de General Artigas"
+ },
+ {
+  "ruc": "80024505",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE NUEVA LONDRES",
+  "nombreDncp": "Municipalidad de Nueva Londres"
+ },
+ {
+  "ruc": "80024534",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE DR. JUAN E. ESTIGARRIBIA",
+  "nombreDncp": "Municipalidad de Juan Eulogio Estigarribia"
+ },
+ {
+  "ruc": "80024568",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD MOISES SANTIAGO BERTONI",
+  "nombreDncp": "Municipalidad de Moisés Bertoni"
+ },
+ {
+  "ruc": "80024586",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE GRAL.HIGINIO MORINIGO",
+  "nombreDncp": "Municipalidad de Gral. Higinio Morínigo"
+ },
+ {
+  "ruc": "80024627",
+  "dv": "6",
+  "razonSocial": "MINISTERIO DE ECONOMIA Y FINANZAS",
+  "nombreDncp": "Ministerio de Economía y Finanzas"
+ },
+ {
+  "ruc": "80024684",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE FULGENCIO YEGROS",
+  "nombreDncp": "Municipalidad de Fulgencio Yegros"
+ },
+ {
+  "ruc": "80024740",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD JOSE FASSARDI",
+  "nombreDncp": "Municipalidad de José Fassardi"
+ },
+ {
+  "ruc": "80024845",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE OBLIGADO",
+  "nombreDncp": "Municipalidad de Obligado"
+ },
+ {
+  "ruc": "80024911",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE PASO DE PATRIA",
+  "nombreDncp": "Municipalidad de Paso de Patria"
+ },
+ {
+  "ruc": "80025022",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE YHU",
+  "nombreDncp": "Municipalidad de Yhú"
+ },
+ {
+  "ruc": "80025109",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE SANTIAGO MISIONES",
+  "nombreDncp": "Municipalidad de Santiago"
+ },
+ {
+  "ruc": "80025147",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE BELEN",
+  "nombreDncp": "Municipalidad de Belén"
+ },
+ {
+  "ruc": "80025366",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE AYOLAS",
+  "nombreDncp": "Municipalidad de Ayolas"
+ },
+ {
+  "ruc": "80025453",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE YRYBUCUA",
+  "nombreDncp": "Municipalidad de Yrybucuá"
+ },
+ {
+  "ruc": "80025526",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE SANTA ROSA DEL AGUARAY",
+  "nombreDncp": "Municipalidad de Santa Rosa del Aguaray"
+ },
+ {
+  "ruc": "80025598",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE TRINIDAD",
+  "nombreDncp": "Municipalidad de Trinidad"
+ },
+ {
+  "ruc": "80025704",
+  "dv": "9",
+  "razonSocial": "MINISTERIO DE LA NIÑEZ Y LA ADOLESCENCIA (MINNA)",
+  "nombreDncp": "Ministerio de la Niñez y la Adolescencia (MINNA)"
+ },
+ {
+  "ruc": "80025835",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE ITAPE",
+  "nombreDncp": "Municipalidad de Itapé"
+ },
+ {
+  "ruc": "80025868",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE 25 DE DICIEMBRE",
+  "nombreDncp": "Municipalidad de 25 de Diciembre"
+ },
+ {
+  "ruc": "80026323",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE LA CIUDAD DE 3 DE FEBRERO",
+  "nombreDncp": "Municipalidad de 3 de Febrero"
+ },
+ {
+  "ruc": "80026362",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE SAN JOSE DE LOS ARROYOS",
+  "nombreDncp": "Municipalidad de San José de los Arroyos"
+ },
+ {
+  "ruc": "80026400",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE CARAYAO",
+  "nombreDncp": "Municipalidad de Carayaó"
+ },
+ {
+  "ruc": "80026451",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE BORJA",
+  "nombreDncp": "Municipalidad de Borja"
+ },
+ {
+  "ruc": "80026544",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE YASY CAÑY",
+  "nombreDncp": "Municipalidad de Yasy Cañy"
+ },
+ {
+  "ruc": "80026746",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE MINGA PORA",
+  "nombreDncp": "Municipalidad de Minga Porá"
+ },
+ {
+  "ruc": "80026766",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE DR. JUAN MANUEL FRUTOS",
+  "nombreDncp": "Municipalidad de Juan Manuel Frutos"
+ },
+ {
+  "ruc": "80026888",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE SAN PATRICIO MISIONES",
+  "nombreDncp": "Municipalidad de San Patricio"
+ },
+ {
+  "ruc": "80026894",
+  "dv": "6",
+  "razonSocial": "INSTITUTO NACIONAL DE COOPERATIVISMO (INCOOP)",
+  "nombreDncp": "Instituto Nacional de Cooperativismo (INCOOP)"
+ },
+ {
+  "ruc": "80026906",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD SANTA FE DEL PARANA",
+  "nombreDncp": "Municipalidad de Santa Fé del Paraná"
+ },
+ {
+  "ruc": "80027019",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE SANTA ELENA",
+  "nombreDncp": "Municipalidad de Santa Elena"
+ },
+ {
+  "ruc": "80027331",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE LA PAZ",
+  "nombreDncp": "Municipalidad de la Paz"
+ },
+ {
+  "ruc": "80027442",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE MAYOR JOSE DE JESUS MARTINEZ",
+  "nombreDncp": "Municipalidad de Mayor José D. Martinez"
+ },
+ {
+  "ruc": "80027501",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE PARAGUARI",
+  "nombreDncp": "Municipalidad de Paraguarí"
+ },
+ {
+  "ruc": "80027626",
+  "dv": "4",
+  "razonSocial": "INSTITUTO NACIONAL DE DESARR.RURAL Y DE LA TIERRA (INDERT)",
+  "nombreDncp": "Instituto Nacional de Desarrollo Rural y de la Tierra (INDERT)"
+ },
+ {
+  "ruc": "80027727",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE ALBERDI",
+  "nombreDncp": "Municipalidad de Alberdi"
+ },
+ {
+  "ruc": "80027996",
+  "dv": "4",
+  "razonSocial": "INSTITUTO PARAGUAYO DE ARTESANIA",
+  "nombreDncp": "Instituto Paraguayo de Artesania (IPA)"
+ },
+ {
+  "ruc": "80028306",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE CAPITAN MEZA",
+  "nombreDncp": "Municipalidad de Capitán Meza"
+ },
+ {
+  "ruc": "80028379",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE YATAITY",
+  "nombreDncp": "Municipalidad de Yataity del Guairá"
+ },
+ {
+  "ruc": "80028388",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE BELLA VISTA (AMAMBAY)",
+  "nombreDncp": "Municipalidad de Bella Vista - Amambay"
+ },
+ {
+  "ruc": "80028975",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE SANTA MARIA ( MISIONES )",
+  "nombreDncp": "Municipalidad de Santa María"
+ },
+ {
+  "ruc": "80029786",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE SAN RAFAEL DEL PARANA",
+  "nombreDncp": "Municipalidad de San Rafael del Paraná"
+ },
+ {
+  "ruc": "80032800",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE LA CIUDAD DE LIMA",
+  "nombreDncp": "Municipalidad de Lima"
+ },
+ {
+  "ruc": "80033587",
+  "dv": "2",
+  "razonSocial": "SECRETARIA DE EMERGENCIA NACIONAL",
+  "nombreDncp": "Secretaria de Emergencia Nacional (SEN) / Presidencia de la República"
+ },
+ {
+  "ruc": "80035096",
+  "dv": "0",
+  "razonSocial": "CONGRESO NACIONAL",
+  "nombreDncp": "Congreso Nacional (C.N.)"
+ },
+ {
+  "ruc": "80035190",
+  "dv": "8",
+  "razonSocial": "AGENCIA FINANCIERA DE DESARROLLO",
+  "nombreDncp": "Agencia Financiera de Desarrollo (AFD)"
+ },
+ {
+  "ruc": "80038030",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE MAURICIO JOSE TROCHE",
+  "nombreDncp": "Municipalidad de Mauricio José Troche"
+ },
+ {
+  "ruc": "80038382",
+  "dv": "6",
+  "razonSocial": "SECRETARIA NACIONAL DE DEPORTES",
+  "nombreDncp": "Secretaria Nacional de Deportes (SND) / Presidencia de la República"
+ },
+ {
+  "ruc": "80038780",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE YBY YAU",
+  "nombreDncp": "Municipalidad de Yby Yaú"
+ },
+ {
+  "ruc": "80039117",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE TTE 1 MANUEL IRALA FERNANDEZ",
+  "nombreDncp": "Municipalidad de Tte Irala Fernandez"
+ },
+ {
+  "ruc": "80039373",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE BAHIA NEGRA",
+  "nombreDncp": "Municipalidad de Bahía Negra"
+ },
+ {
+  "ruc": "80039428",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE FILADELFIA",
+  "nombreDncp": "Municipalidad de Filadelfia"
+ },
+ {
+  "ruc": "80044148",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD DE LOMA PLATA",
+  "nombreDncp": "Municipalidad de Loma Plata"
+ },
+ {
+  "ruc": "80044347",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE SAN CRISTOBAL",
+  "nombreDncp": "Municipalidad de San Cristobal"
+ },
+ {
+  "ruc": "80044687",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE VILLALBIN",
+  "nombreDncp": "Municipalidad de Villalbín"
+ },
+ {
+  "ruc": "80044798",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE SAN COSME Y DAMIAN",
+  "nombreDncp": "Municipalidad de San Cosme y Damián"
+ },
+ {
+  "ruc": "80044853",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE YATYTAY",
+  "nombreDncp": "Municipalidad de Yatytay"
+ },
+ {
+  "ruc": "80044855",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE NATALIO",
+  "nombreDncp": "Municipalidad de Natalio"
+ },
+ {
+  "ruc": "80044947",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE ITAKYRY",
+  "nombreDncp": "Municipalidad de Itakyry"
+ },
+ {
+  "ruc": "80045358",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD DE SAN MIGUEL MISIONES",
+  "nombreDncp": "Municipalidad de San Miguel"
+ },
+ {
+  "ruc": "80045632",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE HUMAITA",
+  "nombreDncp": "Municipalidad de Humaitá"
+ },
+ {
+  "ruc": "80045757",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE SAN PEDRO DEL PARANA",
+  "nombreDncp": "Municipalidad de San Pedro del Paraná"
+ },
+ {
+  "ruc": "80045779",
+  "dv": "0",
+  "razonSocial": "UNIVERSIDAD NACIONAL DE CONCEPCION",
+  "nombreDncp": "Universidad Nacional de Concepción (UNC)"
+ },
+ {
+  "ruc": "80046004",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD GENERAL EUGENIO A. GARAY",
+  "nombreDncp": "Municipalidad de Gral. Eugenio A. Garay"
+ },
+ {
+  "ruc": "80046257",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD GENERAL DELGADO",
+  "nombreDncp": "Municipalidad de General Delgado"
+ },
+ {
+  "ruc": "80047620",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD GRAL. JOSE EDUVIGIS DIAZ",
+  "nombreDncp": "Municipalidad de Gral. José Eduvigis Díaz"
+ },
+ {
+  "ruc": "80048695",
+  "dv": "1",
+  "razonSocial": "MUNICIPALIDAD TENIENTE ESTEBAN MARTINEZ",
+  "nombreDncp": "Municipalidad de Tte Esteban Martinez"
+ },
+ {
+  "ruc": "80048717",
+  "dv": "6",
+  "razonSocial": "DIRECCION NACIONAL DE CONTRATACIONES PUBLICAS ( DNCP)",
+  "nombreDncp": "Dirección Nacional de Contrataciones Públicas (DNCP)"
+ },
+ {
+  "ruc": "80048796",
+  "dv": "6",
+  "razonSocial": "UNIVERSIDAD NACIONAL DE VILLARRICA DEL ESPIRITU SANTO",
+  "nombreDncp": "Universidad Nacional de Villarrica del Espiritu Santo (UNVES)"
+ },
+ {
+  "ruc": "80048912",
+  "dv": "8",
+  "razonSocial": "CIRCUNSCRIPCION JUDICIAL DE PARAGUARI",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Paraguarí / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80049849",
+  "dv": "6",
+  "razonSocial": "UNIVERSIDAD NACIONAL DE CAAGUAZU",
+  "nombreDncp": "Universidad Nacional de Caaguazu (UNCA)"
+ },
+ {
+  "ruc": "80050610",
+  "dv": "3",
+  "razonSocial": "SECRETARIA NACIONAL DE CULTURA",
+  "nombreDncp": "Secretaria Nacional de Cultura (SNC) / Presidencia de la República"
+ },
+ {
+  "ruc": "80051259",
+  "dv": "6",
+  "razonSocial": "CIRCUNSCRIPCION JUDICIAL DE CANINDEYU",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Canindeyu / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80052825",
+  "dv": "5",
+  "razonSocial": "CIRCUNSCRIPCIÓN JUDICIAL DE SAN PEDRO",
+  "nombreDncp": "Circunscripción Judicial del Dpto. San Pedro / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80052827",
+  "dv": "1",
+  "razonSocial": "CIRCUNSCRIPCIÓN JUDICIAL DE CAAZAPA",
+  "nombreDncp": "Circunscripción Judicial del Dpto. Caazapa / Corte Suprema de Justicia"
+ },
+ {
+  "ruc": "80053688",
+  "dv": "6",
+  "razonSocial": "INSTITUTO FORESTAL NACIONAL -INFONA",
+  "nombreDncp": "Instituto Forestal Nacional (INFONA)"
+ },
+ {
+  "ruc": "80053760",
+  "dv": "2",
+  "razonSocial": "FACULTAD CIENCIAS DE LA PRODUCCION",
+  "nombreDncp": "Facultad de Ciencias de la Producción / Universidad Nacional de Caaguazu"
+ },
+ {
+  "ruc": "80054344",
+  "dv": "0",
+  "razonSocial": "MUNICIPIO DE CARMELO PERALTA",
+  "nombreDncp": "Municipalidad de Carmelo Peralta"
+ },
+ {
+  "ruc": "80054381",
+  "dv": "5",
+  "razonSocial": "MUNICIPALIDAD DE TEMBIAPORA",
+  "nombreDncp": "Municipalidad de Tembiapora"
+ },
+ {
+  "ruc": "80056140",
+  "dv": "6",
+  "razonSocial": "MUNICIPALIDAD GENERAL JOSE MARIA BRUGUEZ.",
+  "nombreDncp": "Municipalidad de Gral Jose M. Bruguez"
+ },
+ {
+  "ruc": "80058930",
+  "dv": "0",
+  "razonSocial": "FACULTAD DE CIENCIAS TECNOLÓGICAS",
+  "nombreDncp": "Facultad de Ciencias Tecnologicas / Universidad Nacional de Caaguazu"
+ },
+ {
+  "ruc": "80061133",
+  "dv": "0",
+  "razonSocial": "MINISTERIO DE URBANISMO, VIVIENDA Y HABITAT (MUVH)",
+  "nombreDncp": "Ministerio de Urbanismo, Vivienda y Habitat (MUVH)"
+ },
+ {
+  "ruc": "80061483",
+  "dv": "6",
+  "razonSocial": "UNIVERSIDAD NACIONAL DE CANINDEYU",
+  "nombreDncp": "Universidad Nacional de Canindeyu (UNICAN)"
+ },
+ {
+  "ruc": "80063744",
+  "dv": "5",
+  "razonSocial": "INSTITUTO PARAGUAYO DE TECNOLOGIA AGRARIA (IPTA)",
+  "nombreDncp": "Instituto Paraguayo de Tecnologia Agraria (IPTA)"
+ },
+ {
+  "ruc": "80064384",
+  "dv": "4",
+  "razonSocial": "FACULTAD DE ODONTOLOGIA \"SANTO TOMAS DE AQUINO\" DE LA UNCA",
+  "nombreDncp": "Facultad de Odontologia Santo Tomas de Aquino / Universidad Nacional de Caaguazu"
+ },
+ {
+  "ruc": "80070094",
+  "dv": "5",
+  "razonSocial": "MINISTERIO DE LA DEFENSA PUBLICA",
+  "nombreDncp": "Ministerio de la Defensa Pública - Defensoría (MDP)"
+ },
+ {
+  "ruc": "80070494",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE TAVAPY",
+  "nombreDncp": "Municipalidad de Tavapy"
+ },
+ {
+  "ruc": "80070515",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE LIBERACIÓN",
+  "nombreDncp": "Municipalidad de Liberacion"
+ },
+ {
+  "ruc": "80071876",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE ZANJA PYTA",
+  "nombreDncp": "Municipalidad de Zanja Pyta"
+ },
+ {
+  "ruc": "80072193",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE SARGENTO JOSE FELIX LOPEZ",
+  "nombreDncp": "Municipalidad de Sargento Jóse Félix López"
+ },
+ {
+  "ruc": "80072572",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE NUEVA TOLEDO",
+  "nombreDncp": "Municipalidad de Nueva Toledo"
+ },
+ {
+  "ruc": "80077358",
+  "dv": "6",
+  "razonSocial": "COMISION NACIONAL DE PREVENCION CONTRA LA TORTURA Y OTROS TRATOS O PENAS",
+  "nombreDncp": "Comisión Nac. de Prevención contra la Tortura y Otros Tratos"
+ },
+ {
+  "ruc": "80077458",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DE 3 DE MAYO",
+  "nombreDncp": "Municipalidad de 3 de Mayo"
+ },
+ {
+  "ruc": "80078030",
+  "dv": "2",
+  "razonSocial": "MUNICIPALIDAD DR. RAUL PEÑA",
+  "nombreDncp": "Municipalidad de Dr. Raul Peña"
+ },
+ {
+  "ruc": "80078738",
+  "dv": "2",
+  "razonSocial": "SECRETARIA DE POLITICAS LINGUISTICAS",
+  "nombreDncp": "Secretaria de Politicas Linguisticas / Presidencia de la República"
+ },
+ {
+  "ruc": "80080881",
+  "dv": "9",
+  "razonSocial": "SECRETARIA NACIONAL ANTICORRUPCION",
+  "nombreDncp": "Secretaria Nacional Anticorrupcion (SENAC) / Presidencia de la República"
+ },
+ {
+  "ruc": "80081292",
+  "dv": "1",
+  "razonSocial": "SECRETARIA NACIONAL DE LA JUVENTUD",
+  "nombreDncp": "Secretaria Nacional de la Juventud  (SNJ) / Presidencia de la República"
+ },
+ {
+  "ruc": "80081909",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE PASO BARRETO",
+  "nombreDncp": "Municipalidad de Paso Barreto"
+ },
+ {
+  "ruc": "80082103",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE YBY PYTA",
+  "nombreDncp": "Municipalidad de Yby Pyta"
+ },
+ {
+  "ruc": "80082151",
+  "dv": "3",
+  "razonSocial": "DIRECCION NACIONAL DE PROPIEDAD INTELECTUAL",
+  "nombreDncp": "Direccion Nacional de Propiedad Intelectual (DINAPI)"
+ },
+ {
+  "ruc": "80082365",
+  "dv": "6",
+  "razonSocial": "MINISTERIO DEL TRABAJO, EMPLEO Y SEGURIDAD SOCIAL",
+  "nombreDncp": "Ministerio de Trabajo, Empleo y Seguridad Social (MTESS)"
+ },
+ {
+  "ruc": "80082531",
+  "dv": "4",
+  "razonSocial": "SECRETARIA DE DEFENSA DEL CONSUMIDOR Y EL USUARIO",
+  "nombreDncp": "Secretaria de Defensa del Consumidor y el Usuario (SEDECO)"
+ },
+ {
+  "ruc": "80087332",
+  "dv": "7",
+  "razonSocial": "AGENCIA NACIONAL DE TRANSITO Y SEGURIDAD VIAL (ANTSV)",
+  "nombreDncp": "Agencia Nacional de Transito y Seguridad Vial (ANTSV)"
+ },
+ {
+  "ruc": "80087571",
+  "dv": "0",
+  "razonSocial": "CONSEJO NACIONAL DE EDUCACION SUPERIOR",
+  "nombreDncp": "Consejo Nacional de Educación Superior (CONES)"
+ },
+ {
+  "ruc": "80088239",
+  "dv": "3",
+  "razonSocial": "AGENCIA NACIONAL DE EVALUACION Y ACREDITACION DE LA EDUCACION SUPERIOR",
+  "nombreDncp": "Ag. Nac. de Eval. y Acreditación de la Educación Superior (ANEAES)"
+ },
+ {
+  "ruc": "80090677",
+  "dv": "2",
+  "razonSocial": "COMISION NACIONAL DE LA COMPETENCIA (CONACOM)",
+  "nombreDncp": "Comisión Nacional de Competencia (CONACOM)"
+ },
+ {
+  "ruc": "80091035",
+  "dv": "4",
+  "razonSocial": "AUTORIDAD REGULADORA RADIOLOGICA Y NUCLEAR - ARRN",
+  "nombreDncp": "Autoridad Reguladora Radiologica y Nuclear (ARRN)"
+ },
+ {
+  "ruc": "80097293",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD  DE MARACANA",
+  "nombreDncp": "Municipalidad de Maracaná"
+ },
+ {
+  "ruc": "80097437",
+  "dv": "9",
+  "razonSocial": "MUNICIPALIDAD DE MARIA ANTONIA",
+  "nombreDncp": "Municipalidad de Maria Antonia"
+ },
+ {
+  "ruc": "80097459",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE SAN VICENTE PANCHOLO",
+  "nombreDncp": "Municipalidad de San Vicente Pancholo"
+ },
+ {
+  "ruc": "80099391",
+  "dv": "8",
+  "razonSocial": "SINDICATURA GENERAL DE QUIEBRAS",
+  "nombreDncp": "Sindicatura General de Quiebras"
+ },
+ {
+  "ruc": "80100608",
+  "dv": "2",
+  "razonSocial": "SECRETARIA NACIONAL DE ADMINISTRACIÓN DE BIENES INCAUTADOS Y COMISADOS (SENABICO)",
+  "nombreDncp": "Secretaria Nacional de Bienes Incautados y Comisados (SENABICO) / Presidencia de la República"
+ },
+ {
+  "ruc": "80101644",
+  "dv": "4",
+  "razonSocial": "DIRECCIÓN GENERAL DEL REGISTRO DEL ESTADO CIVIL",
+  "nombreDncp": "Direccion General del Registro del Estado Civil / Ministerio de Justicia"
+ },
+ {
+  "ruc": "80103380",
+  "dv": "2",
+  "razonSocial": "SECRETARÍA NACIONAL DE INTELIGENCIA",
+  "nombreDncp": "Secretaría Nacional de Inteligencia (SNI)"
+ },
+ {
+  "ruc": "80105217",
+  "dv": "3",
+  "razonSocial": "MINISTERIO DE TECNOLOGÍAS DE LA INFORMACIÓN Y COMUNICACIÓN",
+  "nombreDncp": "Ministerio de Tecnologías de la Información y Comunicación (MITIC)"
+ },
+ {
+  "ruc": "80105341",
+  "dv": "2",
+  "razonSocial": "INSTITUTO NACIONAL DE EDUCACION SUPERIOR DR. RAUL PEÑA",
+  "nombreDncp": "Instituto Nacional de Educación Superior \"Dr. Raul Peña\" (INAES)"
+ },
+ {
+  "ruc": "80105342",
+  "dv": "0",
+  "razonSocial": "INSTITUTO  SUPERIOR DE BELLAS ARTES",
+  "nombreDncp": "Instituto Superior de Bellas Artes (ISBA)"
+ },
+ {
+  "ruc": "80105674",
+  "dv": "8",
+  "razonSocial": "MUNICIPALIDAD DE PUERTO ADELA",
+  "nombreDncp": "Municipalidad de Puerto Adela"
+ },
+ {
+  "ruc": "80107347",
+  "dv": "2",
+  "razonSocial": "UNIVERSIDAD POLITÉCNICA TAIWAN PARAGUAY",
+  "nombreDncp": "Universidad Politécnica Taiwán – Paraguay (UPTP)"
+ },
+ {
+  "ruc": "80109410",
+  "dv": "0",
+  "razonSocial": "DIRECCIÓN NACIONAL DE DEFENSA, SALUD Y BIENESTAR ANIMAL",
+  "nombreDncp": "Dirección Nacional de Defensa, Salud y Bienestar Animal (DNDSBA)"
+ },
+ {
+  "ruc": "80110553",
+  "dv": "6",
+  "razonSocial": "SISTEMA NACIONAL DE FORMACION Y CAPACITACION LABORAL",
+  "nombreDncp": "Sistema Nacional de Formación y Capacitación Laboral (SINAFOCAL) / Ministerio de Trabajo, Empleo y Seguridad Social"
+ },
+ {
+  "ruc": "80120682",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE CERRO CORA",
+  "nombreDncp": "Municipalidad de Cerro Cora"
+ },
+ {
+  "ruc": "80120684",
+  "dv": "7",
+  "razonSocial": "MUNICIPALIDAD DE SAN JOSE DEL ROSARIO",
+  "nombreDncp": "Municipalidad de San Jose Del Rosario"
+ },
+ {
+  "ruc": "80120775",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE BOQUERON",
+  "nombreDncp": "Municipalidad de Boquerón"
+ },
+ {
+  "ruc": "80120792",
+  "dv": "4",
+  "razonSocial": "MUNICIPALIDAD DE CAMPO ACEVAL",
+  "nombreDncp": "Municipalidad de Campo Aceval"
+ },
+ {
+  "ruc": "80120819",
+  "dv": "0",
+  "razonSocial": "MUNICIPALIDAD DE PASO HORQUETA",
+  "nombreDncp": "Municipalidad de Paso Horqueta"
+ },
+ {
+  "ruc": "80122249",
+  "dv": "4",
+  "razonSocial": "INSTITUTO NACIONAL DEL AUDIOVISUAL PARAGUAYO (INAP)",
+  "nombreDncp": "Instituto Nacional del Audiovisual Paraguayo (INAP)"
+ },
+ {
+  "ruc": "80124513",
+  "dv": "3",
+  "razonSocial": "MUNICIPALIDAD DE NUEVA ASUNCIÓN",
+  "nombreDncp": "Municipalidad de Nueva Asunción"
+ },
+ {
+  "ruc": "80131004",
+  "dv": "0",
+  "razonSocial": "DIRECCION NACIONAL DE VIGILANCIA SANITARIA",
+  "nombreDncp": "Dirección Nacional de Vigilancia Sanitaria  (DINAVISA)"
+ },
+ {
+  "ruc": "80131029",
+  "dv": "6",
+  "razonSocial": "UNIVERSIDAD NACIONAL DE MISIONES",
+  "nombreDncp": "Universidad Nacional de Misiones (UNAMIS)"
+ },
+ {
+  "ruc": "80137559",
+  "dv": "2",
+  "razonSocial": "DIRECCIÓN NACIONAL DE INGRESOS TRIBUTARIOS",
+  "nombreDncp": "Dirección Nacional de Ingresos Tributarios (DNIT)"
+ }
+]
