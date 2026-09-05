@@ -1,5 +1,6 @@
 const { body } = require('express-validator');
 const { validarCantidad } = require('../utils/facturacion');
+const { FUENTES_DOCUMENTO } = require('../utils/fuenteDocumento');
 
 // Para una factura innominada (consumidor final no identificado) los datos del receptor no aplican:
 // el receptor se emite como "Sin Nombre" (SIFEN iTipIDRec=5). Cuando `innominado` es true se omiten las
@@ -45,7 +46,13 @@ const validadoresFacturaSimple = [
         return true
     }).withMessage('Parámetro caja inválido'),
     body('idExterno', 'Parámetro idExterno inválido').optional({ checkFalsy: true })
-    .custom(v => ['string', 'number'].includes(typeof v)).customSanitizer(v => String(v)).isLength({ max: 255 }),
+    .custom(v => ['string', 'number'].includes(typeof v)).customSanitizer(v => String(v).trim()).isLength({ max: 255 }),
+    // `fuente` marca el origen del documento. Opcional: si no viene (o viene vacío) el service cae a
+    // FUENTE_SIMPLE_POR_DEFECTO ("BOT"), que es el valor que estos endpoints escribían hardcodeado.
+    // Ojo: no es solo una etiqueta — solo los documentos con fuente BOT se reenvían al bot de WhatsApp
+    // con el resultado de SIFEN (loteService.notificarResultadoDocumento). Ver utils/fuenteDocumento.js.
+    body('fuente', 'Parámetro fuente inválido, valores permitidos: APP, API, BOT')
+        .optional({ checkFalsy: true }).isIn(FUENTES_DOCUMENTO),
 ];
 
 module.exports = { validadoresFacturaSimple, noInnominado };

@@ -9,8 +9,10 @@ const { validadoresRecibo } = require("../validators/reciboValidators");
 const { NumerosALetras } = require("numero-a-letras");
 const { parseEntero } = require("../utils/number");
 const { formatNumeroDocumento } = require("../utils/format");
+const { formatearFechaCalendario } = require("../utils/fechaCalendario");
 const { separarCajaEstablecimiento, parseNumeroCompuesto } = require("../utils/documento");
 const { parsearFields, proyectar } = require("../utils/fields");
+const { indexarPorIdExterno, armarRespuestaConsultaLote } = require("../utils/consultaLote");
 const generarPdfRecibo = require("../utils/generarPdfRecibo");
 const { enviarRecibo } = require("./correoService");
 const { obtenerCertificadoActivo } = require("./sifen/certificadoService");
@@ -119,6 +121,42 @@ const CAMPOS_RECIBO = [
   "id_externo", "fecha_emision", "fecha_creacion", "fecha_modificacion", "caja_id",
   "cliente_empresa", "facturas", "notas_credito", "cheques", "transferencias", "caja", "establecimiento",
 ];
+
+// Lista cerrada de atributos que `fields` puede pedir en POST /recibo/id-externo/consultar-lote.
+// Subconjunto deliberadamente más chico que CAMPOS_RECIBO: el endpoint resuelve hasta 100 recibos por
+// request, así que deja afuera las relaciones (cliente_empresa, facturas, notas_credito, cheques,
+// transferencias) y el `xml_firmado`. Quien necesite el recibo completo con sus documentos imputados
+// tiene el GET unitario por id_externo. A diferencia de factura y nota de crédito no hay `estado`: un
+// recibo NO es un documento electrónico SIFEN (no hay DE/CDC/timbrado ni envío a la SET), así que no
+// tiene estado que consultar. Sin `fields` se devuelven todos estos atributos. Ver src/utils/fields.js.
+const CAMPOS_CONSULTA_LOTE_RECIBO = [
+  "id", "numero_recibo", "id_externo", "concepto", "total", "total_efectivo", "total_cheques",
+  "total_transferencias", "total_letras", "fecha_emision", "fecha_creacion", "fecha_firma",
+];
+
+// Columnas que trae la consulta en lote. Es un `select` explícito (no un `include`) para que el
+// payload quede acotado a CAMPOS_CONSULTA_LOTE_RECIBO aun cuando no se pase `fields`. `caja` entra
+// solo para poder formatear el número impreso y se descarta después.
+const SELECT_CONSULTA_LOTE_RECIBO = {
+  id: true,
+  numero_recibo: true,
+  id_externo: true,
+  concepto: true,
+  total: true,
+  total_efectivo: true,
+  total_cheques: true,
+  total_transferencias: true,
+  total_letras: true,
+  fecha_emision: true,
+  fecha_creacion: true,
+  fecha_firma: true,
+  caja: {
+    select: {
+      codigo: true,
+      establecimiento: { select: { codigo: true } },
+    },
+  },
+};
 
 const isEmailValido = (email) => {
   if (!email) return false;
@@ -598,7 +636,9 @@ const emitirRecibo = async (datos, datosUsuario) => {
       total: totalRecibo,
       empresaRuc: usuario.empresa.ruc,
       empresaTimbrado: usuario.empresa.timbrado,
-      empresaVigenteDesde: dayjs(usuario.empresa.vigente_desde).format("YYYY-MM-DD"),
+      // dayjs.utc, no local: ver formatearFechaCalendario (el valor es medianoche UTC del día real y
+      // en UTC-3 los getters locales devuelven el día anterior).
+      empresaVigenteDesde: formatearFechaCalendario(usuario.empresa.vigente_desde),
       empresaNombre: usuario.empresa.nombre_empresa,
       empresaDireccion: usuario.empresa.direccion,
       empresaCorreoElectronico: usuario.empresa.email,
@@ -986,10 +1026,57 @@ const emitirRecibosBulk = async (recibos, datosUsuario) => {
   }
 };
 
+// Versión en lote de getReciboByIdExterno: resuelve hasta 100 `id_externo` en una sola consulta.
+// Devuelve un ítem por cada valor pedido, en el MISMO orden y conservando duplicados; los que no
+// existen (o son de otra empresa) vienen con `encontrado: false` en vez de cortar la respuesta con un
+// 404 — un id_externo inexistente no puede tumbar la consulta de los otros. Ver utils/consultaLote.js.
+const consultarRecibosPorIdExterno = async (numeros, empresaId, fields = null) => {
+  try {
+    const campos = parsearFields(fields);
+    // Se consulta una sola vez con el set único; el orden y los duplicados de la request se
+    // reconstruyen después sobre el índice.
+    const unicos = [...new Set(numeros)];
+
+    const recibos = await prisma.recibo.findMany({
+      where: {
+        id_externo: { in: unicos },
+        // Mismo acotamiento por empresa que getReciboByIdExterno. Ojo: el recibo se acota por
+        // cliente_empresa.empresa_id (no por usuario.empresa_id como factura/nota de crédito) —
+        // es el criterio que ya usan todas las lecturas de este servicio, no cambiarlo acá.
+        cliente_empresa: { empresa_id: empresaId },
+      },
+      // ASC a propósito: ante varios recibos con el mismo id_externo (la columna no es única), el
+      // último `set` del índice gana, y ese es el de mayor id — el mismo recibo que devuelve el GET
+      // unitario con su `orderBy: { id: "desc" }`.
+      orderBy: { id: "asc" },
+      select: SELECT_CONSULTA_LOTE_RECIBO,
+    });
+
+    const indice = indexarPorIdExterno(
+      recibos.map(({ caja, ...recibo }) => ({
+        ...recibo,
+        // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
+        // Cae al número crudo cuando no se puede formatear (recibos legacy con caja_id NULL).
+        numero_recibo: formatNumeroDocumento(
+          caja?.establecimiento?.codigo,
+          caja?.codigo,
+          recibo.numero_recibo
+        ) ?? recibo.numero_recibo,
+      }))
+    );
+
+    return armarRespuestaConsultaLote(numeros, indice, campos);
+  } catch (error) {
+    ErrorApp.handleServiceError(error, "Error al consultar recibos por id externo");
+  }
+};
+
 module.exports = {
   emitirRecibo,
   emitirRecibosBulk,
   getRecibos,
   getReciboByIdExterno,
+  consultarRecibosPorIdExterno,
   CAMPOS_RECIBO,
+  CAMPOS_CONSULTA_LOTE_RECIBO,
 };

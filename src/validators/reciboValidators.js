@@ -76,7 +76,7 @@ const validadoresRecibo = [
   body('razonSocial', 'Parametro razonSocial requerido').notEmpty().isString(),
   body('email', 'Parametro email requerido').isEmail(),
   body('idExterno', 'Parametro idExterno invalido').optional({ checkFalsy: true })
-    .custom((v) => ['string', 'number'].includes(typeof v)).customSanitizer((v) => String(v)).isLength({ max: 255 }),
+    .custom((v) => ['string', 'number'].includes(typeof v)).customSanitizer((v) => String(v).trim()).isLength({ max: 255 }),
 ];
 
 module.exports = {

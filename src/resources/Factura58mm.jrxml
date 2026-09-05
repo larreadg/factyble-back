@@ -75,6 +75,9 @@
     <parameter name="empresaRuc" class="java.lang.String"/>
     <parameter name="empresaTimbrado" class="java.lang.String"/>
     <parameter name="empresaVigenteDesde" class="java.lang.String"/>
+    <parameter name="empresaVigenteHasta" class="java.lang.String"/>
+    <parameter name="empresaActEc1" class="java.lang.String"/>
+    <parameter name="empresaActEc2" class="java.lang.String"/>
     <parameter name="empresaNombre" class="java.lang.String"/>
     <parameter name="empresaDireccion" class="java.lang.String"/>
     <parameter name="empresaCorreoElectronico" class="java.lang.String"/>
@@ -202,7 +205,7 @@
     </group>
 
     <title>
-        <band height="131">
+        <band height="164">
             <textField textAdjust="StretchHeight">
                 <reportElement x="0" y="0" width="136" height="11"/>
                 <textElement textAlignment="Center" verticalAlignment="Middle"><font size="6"/></textElement>
@@ -230,31 +233,52 @@
                 <textElement textAlignment="Center"><font size="6"/></textElement>
                 <textFieldExpression><![CDATA[$P{empresaCorreoElectronico}]]></textFieldExpression>
             </textField>
+            <textField textAdjust="StretchHeight" isBlankWhenNull="true">
+                <reportElement positionType="Float" x="0" y="64" width="136" height="10" isRemoveLineWhenBlank="true">
+                    <printWhenExpression><![CDATA[$P{empresaActEc1} != null && !$P{empresaActEc1}.trim().isEmpty()]]></printWhenExpression>
+                </reportElement>
+                <textElement textAlignment="Center"><font size="6"/></textElement>
+                <textFieldExpression><![CDATA[$P{empresaActEc1}]]></textFieldExpression>
+            </textField>
+            <textField textAdjust="StretchHeight" isBlankWhenNull="true">
+                <reportElement positionType="Float" x="0" y="75" width="136" height="10" isRemoveLineWhenBlank="true">
+                    <printWhenExpression><![CDATA[$P{empresaActEc2} != null && !$P{empresaActEc2}.trim().isEmpty()]]></printWhenExpression>
+                </reportElement>
+                <textElement textAlignment="Center"><font size="6"/></textElement>
+                <textFieldExpression><![CDATA[$P{empresaActEc2}]]></textFieldExpression>
+            </textField>
 
             <!-- RUC y Timbrado en líneas separadas: no entran juntos en 136 pt. -->
             <textField>
-                <reportElement positionType="Float" x="0" y="64" width="136" height="10"/>
+                <reportElement positionType="Float" x="0" y="86" width="136" height="10"/>
                 <textElement textAlignment="Center"><font size="6"/></textElement>
                 <textFieldExpression><![CDATA["RUC: " + ($P{empresaRuc} == null ? "" : $P{empresaRuc})]]></textFieldExpression>
             </textField>
             <textField>
-                <reportElement positionType="Float" x="0" y="75" width="136" height="10"/>
+                <reportElement positionType="Float" x="0" y="97" width="136" height="10"/>
                 <textElement textAlignment="Center"><font size="6"/></textElement>
                 <textFieldExpression><![CDATA["Timbrado: " + ($P{empresaTimbrado} == null ? "" : $P{empresaTimbrado})]]></textFieldExpression>
             </textField>
             <textField>
-                <reportElement positionType="Float" x="0" y="86" width="136" height="10"/>
+                <reportElement positionType="Float" x="0" y="108" width="136" height="10"/>
                 <textElement textAlignment="Center"><font size="6"/></textElement>
-                <textFieldExpression><![CDATA["Vigente desde: " + ($P{empresaVigenteDesde} == null ? "" : $P{empresaVigenteDesde})]]></textFieldExpression>
+                <textFieldExpression><![CDATA["Fecha Inicio Vigencia: " + ($P{empresaVigenteDesde} == null ? "" : $P{empresaVigenteDesde})]]></textFieldExpression>
+            </textField>
+            <textField isBlankWhenNull="true">
+                <reportElement positionType="Float" x="0" y="119" width="136" height="10" isRemoveLineWhenBlank="true">
+                    <printWhenExpression><![CDATA[$P{empresaVigenteHasta} != null && !$P{empresaVigenteHasta}.trim().isEmpty()]]></printWhenExpression>
+                </reportElement>
+                <textElement textAlignment="Center"><font size="6"/></textElement>
+                <textFieldExpression><![CDATA["Fecha Fin Vigencia: " + $P{empresaVigenteHasta}]]></textFieldExpression>
             </textField>
 
             <textField textAdjust="StretchHeight">
-                <reportElement positionType="Float" x="0" y="100" width="136" height="15"/>
+                <reportElement positionType="Float" x="0" y="133" width="136" height="15"/>
                 <textElement textAlignment="Center" verticalAlignment="Middle"><font size="10" isBold="true"/></textElement>
                 <textFieldExpression><![CDATA[$P{tipoDocumento}]]></textFieldExpression>
             </textField>
             <textField>
-                <reportElement positionType="Float" x="0" y="117" width="136" height="12"/>
+                <reportElement positionType="Float" x="0" y="150" width="136" height="12"/>
                 <textElement textAlignment="Center"><font size="8" isBold="true"/></textElement>
                 <textFieldExpression><![CDATA[$P{facturaId}]]></textFieldExpression>
             </textField>

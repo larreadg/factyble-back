@@ -18,4 +18,15 @@ const PLANTILLA_PDF_DEFAULT = "FacturaBN";
 const resolverPlantillaPdf = (plantilla) =>
   PLANTILLAS_PDF.includes(plantilla) ? plantilla : PLANTILLA_PDF_DEFAULT;
 
-module.exports = { PLANTILLAS_PDF, PLANTILLA_PDF_DEFAULT, resolverPlantillaPdf };
+// Subconjunto de `PLANTILLAS_PDF` que imprime en hoja A4 vertical (595x842pt). Es la única fuente
+// del criterio "es una plantilla de hoja, no un ticket térmico": la imposición 2-up de
+// `imponerDuplicadoPdf.js` solo aplica a estas, porque duplicar un ticket de 80mm/58mm lado a lado
+// en una A4 horizontal no tiene sentido físico (el rollo no es una hoja).
+const PLANTILLAS_PDF_A4 = ["Factura", "FacturaBN"];
+
+// `plantilla` puede venir sin normalizar (null, o un valor no reconocido). Se resuelve primero para
+// que el chequeo se haga sobre la plantilla que realmente se va a imprimir — la default histórica
+// (FacturaBN) es A4, así que una empresa sin `plantilla_pdf` seteado sí entra en el duplicado.
+const esPlantillaA4 = (plantilla) => PLANTILLAS_PDF_A4.includes(resolverPlantillaPdf(plantilla));
+
+module.exports = { PLANTILLAS_PDF, PLANTILLAS_PDF_A4, PLANTILLA_PDF_DEFAULT, resolverPlantillaPdf, esPlantillaA4 };

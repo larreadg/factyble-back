@@ -83,11 +83,17 @@ const crearEmpresaCompleta = async ({ empresa, establecimientos, usuarioAdmin, c
           timbrado: empresa.timbrado,
           direccion: empresa.direccion,
           vigente_desde: new Date(empresa.vigenteDesde),
+          // Ojo: `empresa.vigenteHasta` es el fin de vigencia del TIMBRADO (dato del body), no el
+          // `vigenteHasta` de más arriba, que es el vencimiento del certificado .p12. Opcional:
+          // si no viene queda NULL y el KuDE no imprime la línea.
+          vigente_hasta: empresa.vigenteHasta ? new Date(empresa.vigenteHasta) : null,
           telefono: empresa.telefono,
           email: empresa.email,
           ciudad: empresa.ciudad,
           logo: path.basename(archivoLogoPath),
           plantilla_pdf: empresa.plantillaPdf,
+          // Opcional: si no viene queda en el default `false` de la columna (una sola copia).
+          duplicar_doc: empresa.duplicarDoc,
           ruc_sin_dv: empresa.rucSinDv,
           digito_verificador: empresa.digitoVerificador,
           tipo_contribuyente: empresa.tipoContribuyente,
@@ -194,11 +200,13 @@ const EMPRESA_COMPLETA_SELECT = {
   timbrado: true,
   direccion: true,
   vigente_desde: true,
+  vigente_hasta: true,
   telefono: true,
   email: true,
   ciudad: true,
   logo: true,
   plantilla_pdf: true,
+  duplicar_doc: true,
   ruc_sin_dv: true,
   digito_verificador: true,
   tipo_contribuyente: true,
@@ -349,10 +357,12 @@ const EMPRESA_CAMPOS_EDITABLES = {
   timbrado: 'timbrado',
   direccion: 'direccion',
   vigenteDesde: 'vigente_desde',
+  vigenteHasta: 'vigente_hasta',
   telefono: 'telefono',
   email: 'email',
   ciudad: 'ciudad',
   plantillaPdf: 'plantilla_pdf',
+  duplicarDoc: 'duplicar_doc',
   rucSinDv: 'ruc_sin_dv',
   digitoVerificador: 'digito_verificador',
   tipoContribuyente: 'tipo_contribuyente',
@@ -364,6 +374,24 @@ const EMPRESA_CAMPOS_EDITABLES = {
   codMoneda: 'cod_moneda',
   descMoneda: 'desc_moneda',
   cscId: 'csc_id',
+};
+
+// Campos de `EMPRESA_CAMPOS_EDITABLES` que son fechas y hay que convertir a `Date` antes de mandarlos
+// a Prisma (el body los trae como string ISO8601).
+const EMPRESA_CAMPOS_FECHA = new Set(['vigenteDesde', 'vigenteHasta']);
+
+// `vigenteHasta` es nullable en la base, así que mandar `null` (o "") es la forma de borrar el fin de
+// vigencia del timbrado. `vigenteDesde` no lo es: sin este chequeo, un `null` en el body terminaría en
+// `new Date(null)` = 1970-01-01, que Prisma acepta sin chistar y dejaría el timbrado con una fecha de
+// inicio falsa impresa en el KuDE y en el `dFeIniT` del XML.
+const parsearFechaEditable = (campo, valor) => {
+  if (valor === null || valor === '') {
+    if (campo === 'vigenteDesde') {
+      throw new ErrorApp('vigenteDesde no puede quedar vacío', 400);
+    }
+    return null;
+  }
+  return new Date(valor);
 };
 
 /**
@@ -436,7 +464,7 @@ const actualizarEmpresa = async ({ empresaId, cambios, archivoCertificadoPath, a
     const data = {};
     for (const [campo, columna] of Object.entries(EMPRESA_CAMPOS_EDITABLES)) {
       if (cambios[campo] !== undefined) {
-        data[columna] = campo === 'vigenteDesde' ? new Date(cambios[campo]) : cambios[campo];
+        data[columna] = EMPRESA_CAMPOS_FECHA.has(campo) ? parsearFechaEditable(campo, cambios[campo]) : cambios[campo];
       }
     }
     if (cambios.csc !== undefined) {

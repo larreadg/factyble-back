@@ -3,9 +3,10 @@ const notaDeCreditoController = require('../controllers/notaDeCreditoController'
 const { body, query, param } = require('express-validator');
 const { authJwt } = require('../middleware/authJwt');
 const { validarFields } = require('../utils/fields');
-const { CAMPOS_NOTA_CREDITO } = require('../services/notaDeCreditoService');
+const { CAMPOS_NOTA_CREDITO, CAMPOS_CONSULTA_LOTE_NOTA_CREDITO } = require('../services/notaDeCreditoService');
 const { validarCantidad } = require('../utils/facturacion');
 const { validadoresNotaCreditoSimple } = require('../validators/notaCreditoSimpleValidators');
+const { MAX_NUMEROS_CONSULTA_LOTE } = require('../utils/consultaLote');
 
 routes.post(
     '/',
@@ -32,7 +33,7 @@ routes.post(
         return true
     }).withMessage('Parámetro caja inválido'),
     body('idExterno', 'Parámetro idExterno inválido').optional({ checkFalsy: true })
-    .custom(v => ['string', 'number'].includes(typeof v)).customSanitizer(v => String(v)).isLength({ max: 255 }),
+    .custom(v => ['string', 'number'].includes(typeof v)).customSanitizer(v => String(v).trim()).isLength({ max: 255 }),
     notaDeCreditoController.emitirNotaDeCredito
 )
 
@@ -68,6 +69,24 @@ routes.get(
     query('fields').optional().isString().bail().custom(validarFields(CAMPOS_NOTA_CREDITO)),
     notaDeCreditoController.getNotaDeCreditoByIdExterno
 )
+
+routes.post(
+    '/id-externo/consultar-lote',
+    authJwt(['ADMIN']),
+    // Consulta en lote por id_externo: hasta 100 identificadores en el body. Es POST porque la lista
+    // va en el body (una query string con 100 valores es frágil y tiene tope de longitud), pero no
+    // muta nada. No colisiona con el GET '/id-externo/:id' de arriba: distinto método.
+    // Cada elemento se sanea a string trimmeado ANTES de validarlo, así el service siempre recibe
+    // strings normalizados y el eco `numero` de la respuesta coincide con lo que se indexó.
+    query('fields').optional().isString().bail().custom(validarFields(CAMPOS_CONSULTA_LOTE_NOTA_CREDITO)),
+    body('numeros', `Parámetro numeros debe ser un array de 1 a ${MAX_NUMEROS_CONSULTA_LOTE} elementos`)
+        .isArray({ min: 1, max: MAX_NUMEROS_CONSULTA_LOTE }),
+    body('numeros.*', 'Cada elemento de numeros debe ser un texto o número no vacío de hasta 255 caracteres')
+        .custom(v => ['string', 'number'].includes(typeof v))
+        .customSanitizer(v => String(v).trim())
+        .notEmpty().isLength({ max: 255 }),
+    notaDeCreditoController.consultarNotasDeCreditoPorIdExternoLote
+);
 
 routes.post(
     '/cancelar',

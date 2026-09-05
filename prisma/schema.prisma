@@ -66,6 +66,12 @@ model Empresa {
   timbrado                  String             @db.VarChar(255)
   direccion                 String             @db.VarChar(255)
   vigente_desde             DateTime
+  // Fin de vigencia del timbrado electrónico (el KuDE lo imprime como "Fecha Fin Vigencia"). No
+  // viaja al XML: el DE solo informa el inicio (dFeIniT, D019), no hay campo para el fin. Nullable
+  // porque las empresas ya existentes no lo tienen cargado y no se puede agregar NOT NULL a una
+  // tabla con filas de producción sin default/backfill; mientras esté en NULL el KuDE simplemente
+  // no dibuja esa línea (printWhenExpression sobre string vacío en los jrxml).
+  vigente_hasta             DateTime?
   telefono                  String             @db.VarChar(20)
   email                     String             @db.VarChar(255)
   ciudad                    String             @db.VarChar(100)
@@ -75,6 +81,12 @@ model Empresa {
   // caen a la default histórica (FacturaBN) al imprimir; no se puede agregar NOT NULL a una tabla
   // con filas de producción sin default/backfill.
   plantilla_pdf             String?            @db.VarChar(50)
+  // Imprime el KuDE por duplicado: la misma factura/nota de crédito dos veces, lado a lado, en una
+  // hoja A4 horizontal (imposición 2-up post-Jasper, ver utils/imponerDuplicadoPdf.js). Solo aplica
+  // a las plantillas de hoja A4 (Factura/FacturaBN); los tickets térmicos 80mm/58mm quedan fuera.
+  // A diferencia del resto de columnas agregadas después, esta SÍ puede ser NOT NULL sobre una tabla
+  // con filas de producción porque tiene default: `false` = comportamiento actual, sin backfill.
+  duplicar_doc              Boolean            @default(false)
   // Datos fiscales SIFEN — nullable: se backfillean antes del corte, no existen hoy
   ruc_sin_dv                String?            @db.VarChar(15)
   digito_verificador        String?            @db.VarChar(1)
@@ -143,11 +155,11 @@ model Cliente {
   // `SituacionTributaria`: un OEE sigue siendo CONTRIBUYENTE para todo lo demás (iNatRec=1,
   // dRucRec/dDVRec, iTiContRec=2), y agregarlo al enum rompería todos los `=== "CONTRIBUYENTE"`
   // del código, incluido el lookup de receptor acotado por situación tributaria.
-  es_oee               Boolean?
+  es_oee Boolean?
 
-  fecha_creacion       DateTime            @default(now())
-  fecha_modificacion   DateTime            @updatedAt
-  empresas             ClienteEmpresa[]
+  fecha_creacion     DateTime         @default(now())
+  fecha_modificacion DateTime         @updatedAt
+  empresas           ClienteEmpresa[]
 
   @@map("cliente")
 }
@@ -234,6 +246,12 @@ model Factura {
   caja_id               Int?
   caja                  Caja?            @relation(fields: [caja_id], references: [id])
 
+  // `id_externo` es la clave con la que los ERP integrados releen sus documentos: la usan el GET
+  // unitario y, sobre todo, `POST /<recurso>/id-externo/consultar-lote`, que resuelve hasta 100
+  // valores en un solo `WHERE id_externo IN (...)`. Sin índice esa consulta escanea la tabla entera.
+  // No es `@@unique`: la columna admite repetidos a propósito (un reintento del ERP puede emitir dos
+  // documentos con el mismo id externo) y el desempate por `id` lo resuelve la consulta.
+  @@index([id_externo])
   @@index([lote_id])
   @@index([estado_sifen])
   @@map("factura")
@@ -420,6 +438,12 @@ model NotaCredito {
   caja_id               Int?
   caja                  Caja?                @relation(fields: [caja_id], references: [id])
 
+  // `id_externo` es la clave con la que los ERP integrados releen sus documentos: la usan el GET
+  // unitario y, sobre todo, `POST /<recurso>/id-externo/consultar-lote`, que resuelve hasta 100
+  // valores en un solo `WHERE id_externo IN (...)`. Sin índice esa consulta escanea la tabla entera.
+  // No es `@@unique`: la columna admite repetidos a propósito (un reintento del ERP puede emitir dos
+  // documentos con el mismo id externo) y el desempate por `id` lo resuelve la consulta.
+  @@index([id_externo])
   @@index([lote_id])
   @@index([estado_sifen])
   @@map("nota_credito")
@@ -477,6 +501,12 @@ model Recibo {
   transferencias       ReciboTransferencia[]
 
   @@unique([caja_id, numero_recibo], map: "uk_recibo_caja_numero")
+  // `id_externo` es la clave con la que los ERP integrados releen sus documentos: la usan el GET
+  // unitario y, sobre todo, `POST /<recurso>/id-externo/consultar-lote`, que resuelve hasta 100
+  // valores en un solo `WHERE id_externo IN (...)`. Sin índice esa consulta escanea la tabla entera.
+  // No es `@@unique`: la columna admite repetidos a propósito (un reintento del ERP puede emitir dos
+  // documentos con el mismo id externo) y el desempate por `id` lo resuelve la consulta.
+  @@index([id_externo])
   @@map("recibo")
 }
 
@@ -736,12 +766,12 @@ enum OrigenPadronRuc {
 }
 
 model PadronRuc {
-  id                 Int      @id @default(autoincrement())
-  ruc                String   @unique @db.VarChar(15)
-  razon_social       String   @db.VarChar(255)
-  digito_verificador String   @db.VarChar(2)
-  ruc_anterior       String?  @db.VarChar(20)
-  estado             String   @db.VarChar(50)
+  id                 Int     @id @default(autoincrement())
+  ruc                String  @unique @db.VarChar(15)
+  razon_social       String  @db.VarChar(255)
+  digito_verificador String  @db.VarChar(2)
+  ruc_anterior       String? @db.VarChar(20)
+  estado             String  @db.VarChar(50)
 
   // Nullable obligatoriamente: la tabla ya tenía ~2M filas cuando se agregaron estas columnas y
   // MySQL/Prisma no pueden agregar un NOT NULL sin default a una tabla poblada (mismo criterio que

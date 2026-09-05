@@ -5,13 +5,15 @@ const { calcularImpuesto, calcularTotalItem, normalizarCantidadDetalles } = requ
 const generarPdf = require("../utils/generarPdf");
 const { v4: uuidv4 } = require("uuid");
 const { formatNumber, formatNumeroDocumento, parseNumeroDocumento } = require("../utils/format");
+const { formatearFechaCalendario } = require("../utils/fechaCalendario");
 const { separarCajaEstablecimiento, parseNumeroCompuesto } = require("../utils/documento");
 const { parsearFields, proyectar } = require("../utils/fields");
+const { indexarPorIdExterno, armarRespuestaConsultaLote } = require("../utils/consultaLote");
 const { enviarFactura } = require("./correoService");
 const { construirCdc, calcularDigitoVerificador } = require("../utils/sifen/cdc");
 const loteService = require("./sifen/loteService");
 const eventoService = require("./sifen/eventoService");
-const { esAprobado, esCancelado } = require("../utils/sifen/estadoHistorico");
+const { esAprobado, esCancelado, resolverEstado } = require("../utils/sifen/estadoHistorico");
 const { buscarPorRuc, guardarLote, ORIGEN_SIFEN, ORIGEN_FABRICADO } = require("./padronRucPersistenciaService");
 const { bloqueaEmision } = require("../utils/sifen/estadoPadronRuc");
 const { consultarCedula } = require("./cedulaService");
@@ -32,6 +34,54 @@ const CAMPOS_FACTURA = [
   "detalles", "cliente_empresa", "eventos_sifen", "caja", "establecimiento",
   "notas_credito",
 ];
+
+// Lista cerrada de atributos que `fields` puede pedir en POST /factura/id-externo/consultar-lote. Es
+// un subconjunto deliberadamente más chico que CAMPOS_FACTURA: el endpoint resuelve hasta 100
+// documentos por request, así que deja afuera las relaciones (detalles, cliente_empresa,
+// eventos_sifen, notas_credito) y las columnas TEXT/MEDIUMTEXT pesadas (xml, xml_firmado). Quien
+// necesite el documento completo tiene el GET unitario por id_externo.
+// `estado` es sintetizado (no es una columna): ver resolverEstado en utils/sifen/estadoHistorico.js.
+// NO incluye `sifen_estado`: ese es el campo legacy congelado (texto libre de la API PHP, sin
+// escrituras desde el corte y marcado en el schema para dropear en el apagado). El estado autoritativo
+// es `estado_sifen`, y el histórico donde ese es NULL ya queda cubierto por `estado`. Exponer el
+// legacy en un contrato nuevo lo ataría a una columna condenada — ver el par legacy/nativo en CLAUDE.md.
+// Sin `fields` se devuelven todos estos atributos. Ver src/utils/fields.js.
+const CAMPOS_CONSULTA_LOTE_FACTURA = [
+  "id", "numero_factura", "id_externo", "cdc", "estado", "estado_sifen",
+  "sifen_estado_mensaje", "sifen_cod_respuesta", "condicion_venta", "total", "total_iva", "fuente",
+  "lote_id", "linkqr", "fecha_creacion", "fecha_firma", "fecha_envio_sifen", "fecha_respuesta_sifen",
+];
+
+// Columnas que trae la consulta en lote. Es un `select` explícito (no un `include`) para que el
+// payload quede acotado a CAMPOS_CONSULTA_LOTE_FACTURA aun cuando no se pase `fields`. `caja` y
+// `sifen_estado` entran solo como insumo —la primera para formatear el número impreso, el segundo para
+// resolver `estado` en el histórico— y las dos se descartan del objeto de respuesta.
+const SELECT_CONSULTA_LOTE_FACTURA = {
+  id: true,
+  numero_factura: true,
+  id_externo: true,
+  cdc: true,
+  estado_sifen: true,
+  sifen_estado: true,
+  sifen_estado_mensaje: true,
+  sifen_cod_respuesta: true,
+  condicion_venta: true,
+  total: true,
+  total_iva: true,
+  fuente: true,
+  lote_id: true,
+  linkqr: true,
+  fecha_creacion: true,
+  fecha_firma: true,
+  fecha_envio_sifen: true,
+  fecha_respuesta_sifen: true,
+  caja: {
+    select: {
+      codigo: true,
+      establecimiento: { select: { codigo: true } },
+    },
+  },
+};
 
 // Subconjunto de columnas de NotaCredito que los GET de Factura exponen en `notas_credito`. Se
 // selecciona explícito en vez de traer la fila entera porque xml / xml_firmado / linkqr son
@@ -651,17 +701,28 @@ const emitirFactura = async (datos, datosUsuario) => {
     // responde la API, y de paso deja de tragarse en silencio un eventual error de JasperReports.
     await generarPdf({
       plantilla: usuario.empresa.plantilla_pdf,
+      // Duplicado 2-up del KuDE en A4 horizontal (solo plantillas de hoja — ver
+      // utils/imponerDuplicadoPdf.js). `empresaId` va únicamente para el log del post-proceso.
+      duplicarDoc: usuario.empresa.duplicar_doc,
+      empresaId: usuario.empresa.id,
       empresaLogo: usuario.empresa.logo,
       empresaRuc: usuario.empresa.ruc,
       empresaTimbrado: usuario.empresa.timbrado,
-      empresaVigenteDesde: dayjs(usuario.empresa.vigente_desde).format(
-        "YYYY-MM-DD"
-      ),
+      // Fechas-calendario del timbrado: van por `formatearFechaCalendario` (dayjs.utc), NO por
+      // `dayjs()` local. Se guardan como medianoche UTC y leerlas con los getters locales las corre un
+      // día hacia atrás en UTC-3 — el mismo error que causó el rechazo SIFEN 1107 en `dFeIniT`.
+      // El helper además devuelve null cuando la columna está vacía (`vigente_hasta` es nullable), así
+      // que no hay forma de imprimir "Invalid Date" en el KuDE.
+      empresaVigenteDesde: formatearFechaCalendario(usuario.empresa.vigente_desde),
+      empresaVigenteHasta: formatearFechaCalendario(usuario.empresa.vigente_hasta),
       empresaNombre: usuario.empresa.nombre_empresa,
       empresaDireccion: usuario.empresa.direccion,
       empresaTelefono: usuario.empresa.telefono,
       empresaCiudad: usuario.empresa.ciudad,
       empresaCorreoElectronico: usuario.empresa.email,
+      // Solo la descripción, sin el código: el KuDE la imprime como texto suelto, sin etiqueta.
+      empresaActEc1: usuario.empresa.desc_actividad_principal,
+      empresaActEc2: usuario.empresa.desc_actividad_secundaria,
       facturaId: numeroFacturaFormateada,
       condicionVenta: datos.condicionVenta,
       ruc: cliente.ruc,
@@ -959,6 +1020,57 @@ const getFacturaByIdExterno = async (idExterno, empresaId, fields = null) => {
   }
 };
 
+// Versión en lote de getFacturaByIdExterno: resuelve hasta 100 `id_externo` en una sola consulta.
+// Devuelve un ítem por cada valor pedido, en el MISMO orden y conservando duplicados; los que no
+// existen (o son de otra empresa) vienen con `encontrado: false` en vez de cortar la respuesta con un
+// 404 — un id_externo inexistente no puede tumbar la consulta de los otros. Ver utils/consultaLote.js.
+const consultarFacturasPorIdExterno = async (numeros, empresaId, fields = null) => {
+  try {
+    const campos = parsearFields(fields);
+    // Se consulta una sola vez con el set único; el orden y los duplicados de la request se
+    // reconstruyen después sobre el índice.
+    const unicos = [...new Set(numeros)];
+
+    const facturas = await prisma.factura.findMany({
+      where: {
+        id_externo: { in: unicos },
+        // Mismo acotamiento por empresa que getFacturaByIdExterno (usuario.empresa_id): sin esto un
+        // ADMIN podría leer facturas de otra empresa mandando ids externos al azar (IDOR).
+        usuario: { empresa_id: empresaId },
+      },
+      // ASC a propósito: ante varias facturas con el mismo id_externo (la columna no es única), el
+      // último `set` del índice gana, y ese es el de mayor id — la misma factura que devuelve el GET
+      // unitario con su `orderBy: { id: "desc" }`.
+      orderBy: { id: "asc" },
+      select: SELECT_CONSULTA_LOTE_FACTURA,
+    });
+
+    const indice = indexarPorIdExterno(
+      // `sifen_estado` se destructura afuera a propósito: se consulta para calcular `estado` pero no
+      // forma parte de la respuesta (ver CAMPOS_CONSULTA_LOTE_FACTURA). Sin esto se colaría igual en el
+      // caso sin `fields`, donde `proyectar` devuelve el objeto entero.
+      facturas.map(({ caja, sifen_estado, ...factura }) => ({
+        ...factura,
+        // Número tal como se imprime en el PDF (establecimiento-caja-numero, relleno a 7 dígitos).
+        // Cae al número crudo cuando no se puede formatear (documentos legacy con caja_id NULL).
+        numero_factura: formatNumeroDocumento(
+          caja?.establecimiento?.codigo,
+          caja?.codigo,
+          factura.numero_factura
+        ) ?? factura.numero_factura,
+        // Lectura dual nativo/legacy resuelta del lado del servidor: para el histórico anterior al
+        // corte `estado_sifen` es NULL y el dato vive en `sifen_estado` (texto libre, congelado). Este
+        // campo es lo que el consumidor lee en vez del legacy.
+        estado: resolverEstado({ estado_sifen: factura.estado_sifen, sifen_estado }),
+      }))
+    );
+
+    return armarRespuestaConsultaLote(numeros, indice, campos);
+  } catch (error) {
+    ErrorApp.handleServiceError(error, "Error al consultar facturas por id externo");
+  }
+};
+
 const getMontoTotalPorCdc = async (cdc, empresaId) => {
   const factura = await prisma.factura.findFirst({
     where: {
@@ -1128,9 +1240,11 @@ module.exports = {
   getFacturas,
   getFacturaById,
   getFacturaByIdExterno,
+  consultarFacturasPorIdExterno,
   getMontoTotalPorCdc,
   reenviarFactura,
   cancelarFactura,
   reintentarEnvioSifen,
-  CAMPOS_FACTURA
+  CAMPOS_FACTURA,
+  CAMPOS_CONSULTA_LOTE_FACTURA
 };

@@ -101,6 +101,28 @@ const getNotaDeCreditoByIdExterno = async (req, res) => {
     }
 }
 
+const consultarNotasDeCreditoPorIdExternoLote = async (req, res) => {
+    try {
+
+        const errors = validationResult(req);
+        if(!errors.isEmpty()) return res.status(400).send(new Response('error', 400, errors.array(), 'Error de validación'));
+
+        // `numeros` ya viene normalizado por los sanitizers de la ruta (string trimmeado por elemento).
+        const { numeros } = req.body;
+        const fields = req.query.fields || null;
+
+        const data = await notaDeCreditoService.consultarNotasDeCreditoPorIdExterno(numeros, Number(req.usuario.empresaId), fields);
+
+        return res.status(200).send(Response.success(data, 'Datos obtenidos'));
+
+    } catch (error) {
+        const { code, message } = ErrorApp.handleControllerError(error, 'Error al consultar notas de crédito por id externo');
+
+        return res.status(code).send(Response.error(message, code));
+
+    }
+}
+
 const cancelarNotaDeCredito = async (req, res) => {
     try {
 
@@ -181,6 +203,7 @@ module.exports = {
     emitirNotasDeCreditoBulk,
     getNotasDeCredito,
     getNotaDeCreditoByIdExterno,
+    consultarNotasDeCreditoPorIdExternoLote,
     cancelarNotaDeCredito,
     cancelarNotaDeCreditoSimple,
     reenviarNotaDeCredito,

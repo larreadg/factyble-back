@@ -3,7 +3,8 @@ const path = require("path");
 const dayjs = require("dayjs");
 const QRCode = require("qrcode");
 const { formatNumber } = require("./format");
-const { resolverPlantillaPdf } = require("./plantillasPdf");
+const { resolverPlantillaPdf, esPlantillaA4 } = require("./plantillasPdf");
+const { aplicarDuplicadoEnArchivo } = require("./imponerDuplicadoPdf");
 const LOGOS_DIR = path.resolve(__dirname, "../..", process.env.LOGOS_DIR || "logos");
 const PUBLIC_QR = path.resolve(__dirname, '../../public/qr');
 const FACTYBLE_LOGO = path.resolve(__dirname, "..", "resources", "factura.png");
@@ -56,11 +57,21 @@ const generarPdf = async (datos) => {
     params.putSync("empresaRuc",             toStringValue(datos.empresaRuc));
     params.putSync("empresaTimbrado",        toStringValue(datos.empresaTimbrado));
     params.putSync("empresaVigenteDesde",    toStringValue(datos.empresaVigenteDesde));
+    // Fin de vigencia del timbrado. Puede no estar cargado (columna nullable): ahí va "" y el jrxml
+    // no dibuja la línea — por eso el caller no debe mandar un dayjs(null).format(), que daría el
+    // string "Invalid Date" impreso en el KuDE.
+    params.putSync("empresaVigenteHasta",    toStringValue(datos.empresaVigenteHasta));
     params.putSync("empresaNombre",          toStringValue(datos.empresaNombre));
     params.putSync("empresaDireccion",       toStringValue(datos.empresaDireccion));
     params.putSync("empresaTelefono",        toStringValue(datos.empresaTelefono));
     params.putSync("empresaCiudad",          toStringValue(datos.empresaCiudad));
     params.putSync("empresaCorreoElectronico", toStringValue(datos.empresaCorreoElectronico));
+    // Actividades económicas del emisor: solo la descripción (dDesActEco), sin el código. Se mandan
+    // siempre, incluso vacías: los jrxml que las imprimen las ocultan con printWhenExpression sobre
+    // string vacío, y los que todavía no declaran el parámetro simplemente lo ignoran al llenar el
+    // reporte (JasperReports lee solo los parámetros declarados; las claves de más no molestan).
+    params.putSync("empresaActEc1",          toStringValue(datos.empresaActEc1));
+    params.putSync("empresaActEc2",          toStringValue(datos.empresaActEc2));
     params.putSync("facturaId",              toStringValue(datos.facturaId));
     params.putSync("fechaHora",              dayjs().format("YYYY-MM-DD HH:mm:ss"));
     params.putSync("condicionVenta",         toStringValue(datos.condicionVenta));
@@ -120,6 +131,21 @@ const generarPdf = async (datos) => {
     // 7) Exporta a PDF
     const JasperExportManager = java.import("net.sf.jasperreports.engine.JasperExportManager");
     JasperExportManager.exportReportToPdfFileSync(jasperPrint, outputPath);
+
+    // 8) Duplicado opcional (empresa.duplicar_doc): post-proceso 2-up que reescribe el MISMO path con
+    // la versión A4 horizontal de dos copias lado a lado. Se hace acá, en el único punto que escribe
+    // el archivo, para que valga por igual para facturas y notas de crédito y para que no pueda
+    // aplicarse dos veces sobre el mismo PDF. Solo para las plantillas de hoja: un ticket térmico
+    // 80mm/58mm queda fuera aunque el flag esté prendido.
+    // No corta el flujo si falla — `aplicarDuplicadoEnArchivo` nunca lanza y a esta altura el DE ya
+    // está firmado; ante un error queda el PDF vertical, que es un KuDE perfectamente válido.
+    if (datos.duplicarDoc && esPlantillaA4(datos.plantilla)) {
+      await aplicarDuplicadoEnArchivo({
+        pdfPath: outputPath,
+        empresaId: datos.empresaId,
+        documentoId: datos.facturaId,
+      });
+    }
 
     console.log("PDF generado exitosamente en:", outputPath);
     return { outputPath };

@@ -1,5 +1,6 @@
 const { body } = require('express-validator');
 const { validarCantidad } = require('../utils/facturacion');
+const { FUENTES_DOCUMENTO } = require('../utils/fuenteDocumento');
 
 // Reglas de validación del body de una nota de crédito simple. Se extraen aquí para reutilizarlas tal cual en
 // dos puntos: (1) la ruta POST /nota-credito/simple (una NC por request) y (2) POST /nota-credito/bulk-insert,
@@ -29,7 +30,13 @@ const validadoresNotaCreditoSimple = [
         return true
     }).withMessage('Parámetro caja inválido'),
     body('idExterno', 'Parámetro idExterno inválido').optional({ checkFalsy: true })
-    .custom(v => ['string', 'number'].includes(typeof v)).customSanitizer(v => String(v)).isLength({ max: 255 }),
+    .custom(v => ['string', 'number'].includes(typeof v)).customSanitizer(v => String(v).trim()).isLength({ max: 255 }),
+    // `fuente` marca el origen del documento. Opcional: si no viene (o viene vacío) el service cae a
+    // FUENTE_SIMPLE_POR_DEFECTO ("BOT"), que es el valor que estos endpoints escribían hardcodeado.
+    // Ojo: no es solo una etiqueta — solo los documentos con fuente BOT se reenvían al bot de WhatsApp
+    // con el resultado de SIFEN (loteService.notificarResultadoDocumento). Ver utils/fuenteDocumento.js.
+    body('fuente', 'Parámetro fuente inválido, valores permitidos: APP, API, BOT')
+        .optional({ checkFalsy: true }).isIn(FUENTES_DOCUMENTO),
 ];
 
 module.exports = { validadoresNotaCreditoSimple };

@@ -91,6 +91,10 @@ routes.post(
     body('empresa.timbrado', 'Parámetro empresa.timbrado es requerido').isString().notEmpty(),
     body('empresa.direccion', 'Parámetro empresa.direccion es requerido').isString().notEmpty(),
     body('empresa.vigenteDesde', 'Parámetro empresa.vigenteDesde debe ser una fecha ISO8601 válida').isISO8601(),
+    // Fin de vigencia del timbrado: opcional (las empresas que hoy no lo tienen cargado siguen
+    // emitiendo igual, solo que el KuDE no imprime la línea).
+    body('empresa.vigenteHasta').optional({ nullable: true }).isISO8601()
+        .withMessage('Parámetro empresa.vigenteHasta debe ser una fecha ISO8601 válida'),
     body('empresa.telefono', 'Parámetro empresa.telefono es requerido').isString().notEmpty(),
     body('empresa.email', 'Parámetro empresa.email debe ser un email válido').isEmail(),
     body('empresa.ciudad', 'Parámetro empresa.ciudad es requerido').isString().notEmpty(),
@@ -108,6 +112,10 @@ routes.post(
     body('empresa.cscId', 'Parámetro empresa.cscId es requerido').isString().notEmpty(),
     body('empresa.plantillaPdf').optional().isIn(PLANTILLAS_PDF)
         .withMessage(`Parámetro empresa.plantillaPdf inválido (valores: ${PLANTILLAS_PDF.join(', ')})`),
+    // Imprime el KuDE por duplicado (2-up en A4 horizontal). Opcional: si no viene, la columna cae a
+    // su default `false` y la empresa imprime una sola copia, como siempre.
+    body('empresa.duplicarDoc').optional().isBoolean()
+        .withMessage('Parámetro empresa.duplicarDoc debe ser booleano').toBoolean(),
 
     // Establecimientos + cajas + secuencias
     body('establecimientos', 'Parámetro establecimientos debe ser un array con al menos un elemento')
@@ -203,6 +211,11 @@ routes.put(
     body('timbrado').optional().isString().notEmpty().withMessage('Parámetro timbrado debe ser un string no vacío'),
     body('direccion').optional().isString().notEmpty().withMessage('Parámetro direccion debe ser un string no vacío'),
     body('vigenteDesde').optional().isISO8601().withMessage('Parámetro vigenteDesde debe ser una fecha ISO8601 válida'),
+    // `null` es válido acá: es la forma de borrar el fin de vigencia del timbrado (la columna es
+    // nullable). Con `optional({ nullable: true })` express-validator saltea la validación y el valor
+    // igual llega al service, que lo traduce a NULL.
+    body('vigenteHasta').optional({ nullable: true }).isISO8601()
+        .withMessage('Parámetro vigenteHasta debe ser una fecha ISO8601 válida'),
     body('telefono').optional().isString().notEmpty().withMessage('Parámetro telefono debe ser un string no vacío'),
     body('email').optional().isEmail().withMessage('Parámetro email debe ser un email válido'),
     body('ciudad').optional().isString().notEmpty().withMessage('Parámetro ciudad debe ser un string no vacío'),
@@ -218,6 +231,8 @@ routes.put(
     body('cscId').optional().isString().notEmpty().withMessage('Parámetro cscId debe ser un string no vacío'),
     body('plantillaPdf').optional().isIn(PLANTILLAS_PDF)
         .withMessage(`Parámetro plantillaPdf inválido (valores: ${PLANTILLAS_PDF.join(', ')})`),
+    body('duplicarDoc').optional().isBoolean()
+        .withMessage('Parámetro duplicarDoc debe ser booleano').toBoolean(),
 
     // Certificado: alias/clave son opcionales, pero si se quiere renovar tienen que venir los
     // tres juntos (alias + clave + archivo) — un certificado a medio informar no sirve para

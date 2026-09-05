@@ -2,6 +2,7 @@ const { validationResult } = require("express-validator");
 const prisma = require("../prisma/cliente");
 const ErrorApp = require("../utils/error");
 const { calcularImpuesto, calcularTotalItem } = require("../utils/facturacion");
+const { FUENTE_SIMPLE_POR_DEFECTO } = require("../utils/fuenteDocumento");
 const { validadoresNotaCreditoSimple } = require("../validators/notaCreditoSimpleValidators");
 const notaDeCreditoService = require("./notaDeCreditoService");
 
@@ -72,7 +73,10 @@ const emitirNotaDeCreditoSimple = async (datos, datosUsuario) => {
       establecimiento: establecimiento.codigo,
       caja: caja.codigo,
       idExterno: datos.idExterno,
-      fuente: "BOT",
+      // Origen del documento. El body puede pisarlo (p. ej. "APP" para una emisión hecha desde el panel
+      // web a través de este endpoint); si no viene, se mantiene el "BOT" histórico. El valor ya lo
+      // validó la ruta contra FUENTES_DOCUMENTO, acá solo se resuelve el default.
+      fuente: datos.fuente || FUENTE_SIMPLE_POR_DEFECTO,
     };
 
     return await notaDeCreditoService.emitirNotaDeCredito(datosCompletos, datosUsuario);
